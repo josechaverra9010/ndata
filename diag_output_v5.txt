@@ -1,0 +1,123 @@
+
+--- Schema for table 'users' ---
+('id', 'int(11)', 'NO', 'PRI', None, 'auto_increment')
+('nombres', 'varchar(100)', 'NO', '', None, '')
+('apellidos', 'varchar(100)', 'NO', '', None, '')
+('email', 'varchar(100)', 'NO', 'UNI', None, '')
+('telefono', 'varchar(20)', 'YES', '', None, '')
+('fecha_nacimiento', 'date', 'YES', '', None, '')
+('genero', "enum('Masculino','Femenino','Otro')", 'YES', '', None, '')
+('direccion', 'text', 'YES', '', None, '')
+('password', 'varchar(255)', 'NO', '', None, '')
+('role', "enum('superadmin','admin','patient')", 'YES', '', 'patient', '')
+('status', "enum('activo','pendiente','inactivo')", 'YES', '', 'activo', '')
+('created_at', 'timestamp', 'NO', '', 'current_timestamp()', '')
+('foto_perfil', 'varchar(255)', 'YES', '', None, '')
+('altura', 'float', 'YES', '', None, '')
+('peso_inicial', 'float', 'YES', '', None, '')
+('peso_actual', 'float', 'YES', '', None, '')
+('peso_objetivo', 'float', 'YES', '', None, '')
+('nivel_actividad', 'varchar(50)', 'YES', '', None, '')
+('alergias', 'longtext', 'YES', '', "'[]'", '')
+('preferencias', 'longtext', 'YES', '', "'[]'", '')
+('objetivos_salud', 'text', 'YES', '', None, '')
+('condiciones_medicas', 'text', 'YES', '', None, '')
+('alimentos_disgusto', 'text', 'YES', '', None, '')
+('notas_metas', 'text', 'YES', '', None, '')
+('updated_at', 'varchar(50)', 'YES', '', None, '')
+('tipo_documento', 'varchar(20)', 'YES', '', None, '')
+('numero_documento', 'varchar(50)', 'YES', 'UNI', None, '')
+('antecedentes_familiares', 'text', 'YES', '', None, '')
+
+--- Schema for table 'progress_metrics' ---
+('id', 'int(11)', 'NO', 'PRI', None, 'auto_increment')
+('patient_id', 'int(11)', 'NO', 'MUL', None, '')
+('date', 'date', 'NO', 'MUL', None, '')
+('weight', 'float', 'NO', '', None, '')
+('body_fat', 'float', 'YES', '', None, '')
+('muscle', 'float', 'YES', '', None, '')
+('water', 'float', 'YES', '', None, '')
+('notes', 'text', 'YES', '', None, '')
+('created_at', 'varchar(50)', 'YES', '', None, '')
+('waist', 'float', 'YES', '', None, '')
+('hip', 'float', 'YES', '', None, '')
+('chest', 'float', 'YES', '', None, '')
+('arm', 'float', 'YES', '', None, '')
+
+--- Schema for table 'meal_food_items' ---
+('id', 'int(11)', 'NO', 'PRI', None, 'auto_increment')
+('meal_tracking_id', 'int(11)', 'YES', 'MUL', None, '')
+('name', 'varchar(100)', 'YES', '', None, '')
+('calories', 'int(11)', 'YES', '', None, '')
+('protein', 'float', 'YES', '', None, '')
+('carbs', 'float', 'YES', '', None, '')
+('fat', 'float', 'YES', '', None, '')
+('order_index', 'int(11)', 'YES', '', None, '')
+('portion_size', 'varchar(100)', 'YES', '', None, '')
+('checked', 'int(11)', 'YES', '', '0', '')
+
+--- Schema for table 'recipes' ---
+('id', 'int(11)', 'NO', 'PRI', None, 'auto_increment')
+('name', 'varchar(150)', 'NO', '', None, '')
+('description', 'text', 'YES', '', None, '')
+('category', 'varchar(50)', 'YES', '', None, '')
+('prepTime', 'int(11)', 'YES', '', '0', '')
+('cookTime', 'int(11)', 'YES', '', '0', '')
+('servings', 'int(11)', 'YES', '', '1', '')
+('calories', 'int(11)', 'YES', '', '0', '')
+('protein', 'int(11)', 'YES', '', '0', '')
+('carbs', 'int(11)', 'YES', '', '0', '')
+('fat', 'int(11)', 'YES', '', '0', '')
+('ingredients', 'longtext', 'YES', '', "'[]'", '')
+('instructions', 'longtext', 'YES', '', "'[]'", '')
+('tags', 'longtext', 'YES', '', "'[]'", '')
+('image', 'varchar(255)', 'YES', '', None, '')
+('isFavorite', 'tinyint(1)', 'YES', '', '0', '')
+
+--- Schema for table 'meal_plans' ---
+('id', 'int(11)', 'NO', 'PRI', None, 'auto_increment')
+('name', 'varchar(150)', 'NO', '', None, '')
+('description', 'text', 'YES', '', None, '')
+('calories', 'int(11)', 'NO', '', None, '')
+('duration', 'varchar(50)', 'YES', '', None, '')
+('category', 'varchar(50)', 'YES', '', None, '')
+('color', 'varchar(20)', 'YES', '', 'primary', '')
+('protein_target', 'int(11)', 'YES', '', '0', '')
+('carbs_target', 'int(11)', 'YES', '', '0', '')
+('fat_target', 'int(11)', 'YES', '', '0', '')
+('meals_per_day', 'int(11)', 'YES', '', '3', '')
+('is_active', 'tinyint(1)', 'YES', '', '1', '')
+('created_at', 'varchar(50)', 'YES', '', None, '')
+
+--- Analysis of users float/int columns: ['altura', 'peso_actual', 'peso_objetivo', 'peso_inicial'] ---
+Table 'users', Column 'altura': 1 NULLs, 0 detected as ''
+Table 'users', Column 'peso_actual': 0 NULLs, 0 detected as ''
+Table 'users', Column 'peso_objetivo': 1 NULLs, 0 detected as ''
+Table 'users', Column 'peso_inicial': 0 NULLs, 0 detected as ''
+
+--- Analysis of progress_metrics float/int columns: ['weight', 'body_fat', 'muscle', 'water', 'waist', 'hip', 'chest', 'arm'] ---
+Table 'progress_metrics', Column 'weight': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'body_fat': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'muscle': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'water': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'waist': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'hip': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'chest': 0 NULLs, 0 detected as ''
+Table 'progress_metrics', Column 'arm': 0 NULLs, 0 detected as ''
+
+--- Analysis of meal_food_items float/int columns: ['protein', 'carbs', 'fat'] ---
+Table 'meal_food_items', Column 'protein': 0 NULLs, 0 detected as ''
+Table 'meal_food_items', Column 'carbs': 0 NULLs, 0 detected as ''
+Table 'meal_food_items', Column 'fat': 0 NULLs, 0 detected as ''
+
+--- Analysis of recipes float/int columns: ['calories', 'protein', 'carbs', 'fat'] ---
+Table 'recipes', Column 'calories': 0 NULLs, 0 detected as ''
+Table 'recipes', Column 'protein': 0 NULLs, 0 detected as ''
+Table 'recipes', Column 'carbs': 0 NULLs, 0 detected as ''
+Table 'recipes', Column 'fat': 0 NULLs, 0 detected as ''
+
+--- Analysis of meal_plans float/int columns: ['calories', 'protein_target', 'carbs_target', 'fat_target'] ---
+Table 'meal_plans', Column 'calories': 0 NULLs, 0 detected as ''
+Table 'meal_plans', Column 'protein_target': 0 NULLs, 0 detected as ''
+Table 'meal_plans', Column 'carbs_target': 0 NULLs, 0 detected as ''
+Table 'meal_plans', Column 'fat_target': 0 NULLs, 0 detected as ''

@@ -1,6 +1,20 @@
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = "mysql+pymysql://root:@localhost/ndata"
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Si no hay DATABASE_URL en el entorno, usar una por defecto para desarrollo local
+if not DATABASE_URL:
+    DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/ndata"
+
+# Render a veces proporciona URLs que empiezan con 'postgres://', pero SQLAlchemy requiere 'postgresql://'
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(DATABASE_URL)
 
 def migrate():

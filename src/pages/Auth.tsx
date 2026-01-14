@@ -283,43 +283,13 @@ const Auth = () => {
         </div>
       </div>
 
-      {/* Right side - Decorative */}
-      <div className="hidden lg:flex flex-1 gradient-primary relative overflow-hidden">
-        <div className="absolute top-20 right-20 w-64 h-64 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute bottom-32 left-16 w-80 h-80 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border border-white/10" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full border border-white/5" />
-
-        <div className="relative z-10 flex flex-col justify-center p-16 text-primary-foreground">
-          <div className="space-y-6 max-w-lg">
-            <div className="flex items-center gap-2">
-              <div className="h-1 w-12 rounded-full bg-white/50" />
-              <span className="text-sm font-medium text-white/70">Nutrición Personalizada</span>
-            </div>
-            <h2 className="text-4xl font-bold leading-tight">
-              Gestiona la salud nutricional de tus pacientes
-            </h2>
-            <p className="text-lg text-white/80">
-              Accede a tu panel para crear planes personalizados, dar seguimiento al progreso y
-              mejorar la calidad de vida de quienes confían en ti.
-            </p>
-
-            <div className="flex gap-8 pt-8">
-              <div>
-                <p className="text-3xl font-bold">+2,500</p>
-                <p className="text-sm text-white/70">Pacientes activos</p>
-              </div>
-              <div>
-                <p className="text-3xl font-bold">98%</p>
-                <p className="text-sm text-white/70">Satisfacción</p>
-              </div>
-              <div>
-                <p className="text-3xl font-bold">+500</p>
-                <p className="text-sm text-white/70">Nutricionistas</p>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Right side - Image */}
+      <div className="hidden lg:flex flex-1 relative overflow-hidden">
+        <img
+          src="/uploads/nutri.jpg"
+          alt="Nutrición Personalizada"
+          className="w-full h-full object-cover"
+        />
       </div>
     </div>
   );

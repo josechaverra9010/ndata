@@ -167,7 +167,7 @@ const AdminWeeklyMenus = () => {
         setLoading(true);
         setError(null);
         try {
-            let url = `${API_URL}/api/weekly-menus`;
+            let url = `${API_URL}/weekly-menus`;
             const params = new URLSearchParams();
             if (categoryFilter) params.append('category', categoryFilter);
             if (params.toString()) url += `?${params.toString()}`;
@@ -198,7 +198,7 @@ const AdminWeeklyMenus = () => {
 
     const fetchRecipes = async () => {
         try {
-            const response = await fetch(`${API_URL}/api/recipes`);
+            const response = await fetch(`${API_URL}/recipes`);
 
             if (!response.ok) {
                 throw new Error(`Error ${response.status}`);
@@ -325,7 +325,7 @@ const AdminWeeklyMenus = () => {
         };
 
         try {
-            const response = await fetch(`${API_URL}/api/weekly-menus/${selectedMenu.id}`, {
+            const response = await fetch(`${API_URL}/weekly-menus/${selectedMenu.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updateData)
@@ -414,7 +414,7 @@ const AdminWeeklyMenus = () => {
 
     const handleDuplicateMenu = async (menu: WeeklyMenu) => {
         try {
-            const response = await fetch(`${API_URL}/api/weekly-menus/${menu.id}/duplicate`, {
+            const response = await fetch(`${API_URL}/weekly-menus/${menu.id}/duplicate`, {
                 method: 'POST'
             });
 
@@ -434,7 +434,7 @@ const AdminWeeklyMenus = () => {
         if (!menuToDelete) return;
 
         try {
-            const response = await fetch(`${API_URL}/api/weekly-menus/${menuToDelete.id}`, {
+            const response = await fetch(`${API_URL}/weekly-menus/${menuToDelete.id}`, {
                 method: 'DELETE'
             });
 

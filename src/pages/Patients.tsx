@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Plus, Filter, Mail, Phone, Loader2, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList } from "lucide-react";
 import { NewPatientDialog } from "@/components/admin/NewPatientDialog";
 import { PatientDetailsDialog } from "@/components/admin/PatientDetailsDialog";
-import { EditPatientDialog } from "@/components/admin/EditPatientDialog";
 import { ScheduleAppointmentDialog } from "@/components/admin/ScheduleAppointmentDialog";
 import { PatientPlansDialog } from "@/components/admin/PatientPlansDialog";
 import { AssignPlanToPatientDialog } from "@/components/admin/AssignPlanToPatientDialog";
@@ -159,7 +158,7 @@ const Patients = () => {
   const handleEdit = (patient: Patient, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setSelectedPatient(patient);
-    setEditOpen(true);
+    setNewPatientOpen(true);
   };
 
   // Handler para agendar cita
@@ -232,7 +231,10 @@ const Patients = () => {
           </div>
           <Button
             className="gradient-primary border-0"
-            onClick={() => setNewPatientOpen(true)}
+            onClick={() => {
+              setSelectedPatient(null);
+              setNewPatientOpen(true);
+            }}
             disabled={loading}
           >
             <Plus className="mr-2 h-4 w-4" />
@@ -316,7 +318,10 @@ const Patients = () => {
                 : "Comienza creando tu primer paciente"}
             </p>
             {!searchQuery && !statusFilter && (
-              <Button onClick={() => setNewPatientOpen(true)}>
+              <Button onClick={() => {
+                setSelectedPatient(null);
+                setNewPatientOpen(true);
+              }}>
                 <Plus className="mr-2 h-4 w-4" />
                 Crear Paciente
               </Button>
@@ -453,8 +458,15 @@ const Patients = () => {
 
       {/* Dialogs */}
       <NewPatientDialog
+        patient={selectedPatient}
         open={newPatientOpen}
-        onOpenChange={setNewPatientOpen}
+        onOpenChange={(open) => {
+          setNewPatientOpen(open);
+          if (!open) {
+            // No limpiar selectedPatient inmediatamente para evitar saltos en otros dialogos
+            // pero si cerramos NewPatientDialog, queremos asegurarnos de que el siguiente "Nuevo" sea limpio
+          }
+        }}
         onSuccess={handleNewPatientSuccess}
       />
 
@@ -469,12 +481,6 @@ const Patients = () => {
             onViewPlans={() => handleViewPlans(selectedPatient)}
           />
 
-          <EditPatientDialog
-            patient={selectedPatient}
-            open={editOpen}
-            onOpenChange={setEditOpen}
-            onSuccess={handlePatientUpdate}
-          />
 
           <ScheduleAppointmentDialog
             patient={selectedPatient}

@@ -110,8 +110,6 @@ interface Stats {
   total_weight_lost: number;
 }
 
-import { API_URL } from "@/config/api";
-
 const AdminProgress = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();

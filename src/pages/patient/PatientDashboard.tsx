@@ -20,6 +20,7 @@ import {
   Loader2
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { MealCard } from "@/components/patient/MealCard";
 
 interface DashboardStats {
   calories: {
@@ -170,7 +171,7 @@ export default function PatientDashboard() {
 
     try {
       const response = await fetch(
-        `${API_URL} /patient/${patientId} /water/add`,
+        `${API_URL}/patient/${patientId}/water/add`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -287,19 +288,42 @@ export default function PatientDashboard() {
                     de {stats.water.target_liters}L objetivo
                   </p>
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleAddWater}
-                  disabled={addingWater}
-                  className="h-9 w-9 lg:h-12 lg:w-12 shrink-0 rounded-xl bg-info/10 hover:bg-info/20"
-                >
-                  {addingWater ? (
-                    <Loader2 className="h-4 w-4 lg:h-6 lg:w-6 text-info animate-spin" />
-                  ) : (
-                    <Droplets className="h-4 w-4 lg:h-6 lg:w-6 text-info" />
-                  )}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={async () => {
+                      setAddingWater(true);
+                      try {
+                        const response = await fetch(`${API_URL}/patient/${patientId}/water/add`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ glass_ml: -250 })
+                        });
+                        if (response.ok) fetchDashboardData();
+                      } finally {
+                        setAddingWater(false);
+                      }
+                    }}
+                    disabled={addingWater || stats.water.consumed_ml <= 0}
+                    className="h-9 w-9 lg:h-12 lg:w-12 shrink-0 rounded-xl bg-destructive/10 hover:bg-destructive/20"
+                  >
+                    <Plus className="h-4 w-4 lg:h-6 lg:w-6 text-destructive rotate-45" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={handleAddWater}
+                    disabled={addingWater}
+                    className="h-9 w-9 lg:h-12 lg:w-12 shrink-0 rounded-xl bg-info/10 hover:bg-info/20 shadow-sm transition-all hover:scale-105"
+                  >
+                    {addingWater ? (
+                      <Loader2 className="h-4 w-4 lg:h-6 lg:w-6 text-info animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4 lg:h-6 lg:w-6 text-info" />
+                    )}
+                  </Button>
+                </div>
               </div>
               <Progress
                 value={stats.water.percentage}
@@ -370,59 +394,28 @@ export default function PatientDashboard() {
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-2 lg:space-y-3">
+            <CardContent className="space-y-3">
               {today_meals.length === 0 ? (
-                <div className="text-center py-8">
-                  <Apple className="h-12 w-12 text-muted-foreground/50 mx-auto mb-3" />
-                  <p className="text-muted-foreground">No tienes comidas programadas hoy</p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">
+                <div className="text-center py-12">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 mx-auto mb-4">
+                    <Apple className="h-8 w-8 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-base font-medium text-foreground mb-1">No tienes comidas programadas hoy</p>
+                  <p className="text-sm text-muted-foreground">
                     Consulta con tu nutricionista para asignar un plan
                   </p>
                 </div>
               ) : (
-                today_meals.map((meal, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleToggleMeal(meal)}
-                    disabled={updatingMeal === meal.meal_type}
-                    className={`w - full flex items - center justify - between p - 3 lg: p - 4 rounded - xl border transition - all ${meal.completed
-                      ? "bg-primary/5 border-primary/20"
-                      : "bg-muted/30 border-border hover:border-primary/30"
-                      } ${updatingMeal === meal.meal_type ? 'opacity-50 cursor-not-allowed' : ''} `}
-                  >
-                    <div className="flex items-center gap-3 lg:gap-4 min-w-0">
-                      <div className={`flex h - 8 w - 8 lg: h - 10 lg: w - 10 shrink - 0 items - center justify - center rounded - full ${meal.completed ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                        } `}>
-                        {updatingMeal === meal.meal_type ? (
-                          <Loader2 className="h-4 w-4 lg:h-5 lg:w-5 animate-spin" />
-                        ) : meal.completed ? (
-                          <CheckCircle2 className="h-4 w-4 lg:h-5 lg:w-5" />
-                        ) : (
-                          <Clock className="h-4 w-4 lg:h-5 lg:w-5" />
-                        )}
-                      </div>
-                      <div className="min-w-0 text-left">
-                        <p className="font-medium text-foreground text-sm lg:text-base">
-                          {meal.name}
-                        </p>
-                        <p className="text-xs lg:text-sm text-muted-foreground truncate">
-                          {meal.description}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0 ml-2">
-                      <Badge
-                        variant={meal.completed ? "default" : "secondary"}
-                        className="mb-1 text-[10px] lg:text-xs"
-                      >
-                        {meal.calories} kcal
-                      </Badge>
-                      <p className="text-[10px] lg:text-xs text-muted-foreground">
-                        {meal.time}
-                      </p>
-                    </div>
-                  </button>
-                ))
+                <div className="grid gap-4">
+                  {today_meals.map((meal, index) => (
+                    <MealCard
+                      key={index}
+                      meal={meal}
+                      onToggle={() => handleToggleMeal(meal)}
+                      isUpdating={updatingMeal === meal.meal_type}
+                    />
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

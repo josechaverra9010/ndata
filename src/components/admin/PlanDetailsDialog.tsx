@@ -130,6 +130,127 @@ const mealLabels: Record<string, string> = {
   snack: "Snack",
 };
 
+interface WeeklyMenuComplete {
+  id: number;
+  name: string;
+  description: string;
+  category: string;
+  total_calories: number;
+  assigned_patients: number;
+}
+
+function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssignSuccess: () => void }) {
+  const [menus, setMenus] = useState<WeeklyMenuComplete[]>([]);
+  const [selectedMenuId, setSelectedMenuId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+
+  useEffect(() => {
+    fetchMenus();
+  }, []);
+
+  const fetchMenus = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/weekly-menus-complete`);
+      if (response.ok) {
+        const data = await response.json();
+        setMenus(data);
+      }
+    } catch (error) {
+      console.error("Error fetching menus:", error);
+      toast.error("Error al cargar menús disponibles");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!selectedMenuId) return;
+
+    setAssigning(true);
+    try {
+      const response = await fetch(`${API_URL}/meal-plans/${planId}/assign-menu`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekly_menu_id: parseInt(selectedMenuId) }),
+      });
+
+      if (response.ok) {
+        toast.success("Menú asignado correctamente");
+        onAssignSuccess();
+      } else {
+        toast.error("Error al asignar el menú");
+      }
+    } catch (error) {
+      console.error("Error assigning menu:", error);
+      toast.error("Error de conexión");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const selectedMenu = menus.find(m => m.id.toString() === selectedMenuId);
+
+  if (loading) {
+    return <div className="text-center py-4 text-muted-foreground">Cargando menús disponibles...</div>;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Asignar Menú Semanal</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Selecciona un menú semanal existente para asignarlo a este plan nutricional.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Menú Semanal Disponible</Label>
+          <Select value={selectedMenuId} onValueChange={setSelectedMenuId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccionar menú..." />
+            </SelectTrigger>
+            <SelectContent>
+              {menus.map((menu) => (
+                <SelectItem key={menu.id} value={menu.id.toString()}>
+                  {menu.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {selectedMenu && (
+          <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+            <div className="flex justify-between">
+              <span className="font-semibold">{selectedMenu.name}</span>
+              <Badge variant="outline">{selectedMenu.category}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{selectedMenu.description}</p>
+            <div className="flex gap-4 text-xs text-muted-foreground pt-2">
+              <span className="flex items-center gap-1">
+                <Flame className="h-3 w-3" /> {selectedMenu.total_calories} kcal
+              </span>
+              <span className="flex items-center gap-1">
+                <Users className="h-3 w-3" /> {selectedMenu.assigned_patients} asignados
+              </span>
+            </div>
+          </div>
+        )}
+
+        <Button
+          className="w-full"
+          disabled={!selectedMenuId || assigning}
+          onClick={handleAssign}
+        >
+          {assigning ? "Asignando..." : "Asignar Menú Seleccionado"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: PlanDetailsDialogProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenu | null>(null);
@@ -172,7 +293,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
     console.log(`🔍 Buscando menú para plan ${planId}...`);
     setLoadingMenu(true);
     try {
-      const response = await fetch(`${API_URL}/meal-plans/${planId}/assigned-menu`);
+      const response = await fetch(`${API_URL}/weekly-menus/by-plan/${planId}`);
 
       if (response.ok) {
         const data = await response.json();
@@ -283,7 +404,20 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
   const renderDayMenu = (dayData: { day: string; meals: MealData[] }) => {
     console.log("📅 Renderizando día:", dayData.day, "Comidas:", dayData.meals);
 
-    if (!dayData.meals || dayData.meals.length === 0) {
+    // Asegurar que meals sea un array
+    let mealsList: MealData[] = [];
+    if (Array.isArray(dayData.meals)) {
+      mealsList = dayData.meals;
+    } else if (typeof dayData.meals === 'object' && dayData.meals !== null) {
+      // Si es objeto, intentar convertirlo
+      if ('meals' in dayData.meals && Array.isArray((dayData.meals as any).meals)) {
+        mealsList = (dayData.meals as any).meals;
+      } else {
+        mealsList = Object.values(dayData.meals);
+      }
+    }
+
+    if (mealsList.length === 0) {
       return (
         <div className="text-center py-8 text-muted-foreground">
           <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -294,7 +428,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
 
     return (
       <div className="space-y-3">
-        {dayData.meals.map((meal, index) => renderMealCard(meal, index))}
+        {mealsList.map((meal, index) => renderMealCard(meal, index))}
       </div>
     );
   };
@@ -654,6 +788,14 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                         <Button
                           variant="outline"
                           size="sm"
+                          onClick={() => setWeeklyMenu(null)}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Cambiar Menú
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => plan && fetchWeeklyMenu(plan.id)}
                         >
                           <RefreshCw className="h-3 w-3 mr-1" />
@@ -686,20 +828,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                   </CardContent>
                 </Card>
               ) : (
-                <Card>
-                  <CardContent className="pt-12 pb-12">
-                    <div className="text-center">
-                      <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-semibold mb-2">Sin menú semanal</h3>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Este plan aún no tiene un menú semanal asignado
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-4">
-                        Para asignar un menú, usa el botón "Asignar" en la lista de planes
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+                <AssignMenuSection planId={plan.id} onAssignSuccess={() => fetchWeeklyMenu(plan.id)} />
               )}
             </TabsContent>
 

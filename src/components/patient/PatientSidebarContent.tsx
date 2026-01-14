@@ -12,6 +12,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Mi Dashboard", path: "/patient" },
@@ -29,9 +30,10 @@ const bottomMenuItems = [
 
 export function PatientSidebarContent() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const handleLogout = () => {
-    navigate("/auth");
+    logout();
   };
 
   return (

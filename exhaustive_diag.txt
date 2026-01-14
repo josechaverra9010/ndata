@@ -1,0 +1,69 @@
+
+--- Auditing table: achievements ---
+Processed 0 rows in achievements successfully.
+
+--- Auditing table: users ---
+Processed 2 rows in users successfully.
+
+--- Auditing table: admin_appearance_settings ---
+Processed 0 rows in admin_appearance_settings successfully.
+
+--- Auditing table: admin_notification_settings ---
+Processed 0 rows in admin_notification_settings successfully.
+
+--- Auditing table: admin_profiles ---
+Processed 0 rows in admin_profiles successfully.
+
+--- Auditing table: appointments ---
+Processed 1 rows in appointments successfully.
+
+--- Auditing table: custom_foods ---
+Processed 0 rows in custom_foods successfully.
+
+--- Auditing table: daily_meal_assignments ---
+Processed 7 rows in daily_meal_assignments successfully.
+
+--- Auditing table: patient_meal_plans ---
+Processed 1 rows in patient_meal_plans successfully.
+
+--- Auditing table: meal_plans ---
+Processed 1 rows in meal_plans successfully.
+
+--- Auditing table: meal_food_items ---
+Processed 0 rows in meal_food_items successfully.
+
+--- Auditing table: meal_tracking ---
+Processed 0 rows in meal_tracking successfully.
+
+--- Auditing table: messages ---
+Processed 0 rows in messages successfully.
+
+--- Auditing table: notifications ---
+Processed 0 rows in notifications successfully.
+
+--- Auditing table: nutritionist_notes ---
+Processed 0 rows in nutritionist_notes successfully.
+
+--- Auditing table: patient_achievements ---
+Processed 0 rows in patient_achievements successfully.
+
+--- Auditing table: patient_metrics ---
+Processed 0 rows in patient_metrics successfully.
+
+--- Auditing table: patient_notes ---
+Processed 0 rows in patient_notes successfully.
+
+--- Auditing table: progress_metrics ---
+Processed 0 rows in progress_metrics successfully.
+
+--- Auditing table: recipes ---
+Processed 1 rows in recipes successfully.
+
+--- Auditing table: water_tracking ---
+Processed 0 rows in water_tracking successfully.
+
+--- Auditing table: weekly_menus ---
+Processed 0 rows in weekly_menus successfully.
+
+--- Auditing table: weekly_menus_complete ---
+Processed 1 rows in weekly_menus_complete successfully.

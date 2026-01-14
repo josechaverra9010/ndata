@@ -1,9 +1,10 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
-import { 
-  LayoutDashboard, 
-  Users, 
+import { useAuth } from "@/hooks/useAuth";
+import {
+  LayoutDashboard,
+  Users,
   UserCog,
   Building2,
   CreditCard,
@@ -27,9 +28,10 @@ const bottomMenuItems = [
 export function SuperadminSidebarContent() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { logout } = useAuth();
 
   const handleLogout = () => {
-    navigate("/auth");
+    logout();
   };
 
   return (
