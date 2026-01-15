@@ -23,15 +23,15 @@ from sqlalchemy import func, and_
 # Configuración de Base de Datos (PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Si no hay DATABASE_URL en el entorno, usar una por defecto para MySQL
 if not DATABASE_URL:
-    DATABASE_URL = "mysql+pymysql://root@localhost/ndata"
+    DB_USER = os.getenv("MYSQL_USER")
+    DB_PASS = os.getenv("MYSQL_PASSWORD")
+    DB_HOST = os.getenv("MYSQL_HOST")
+    DB_PORT = os.getenv("MYSQL_PORT")
+    DB_NAME = os.getenv("MYSQL_DB")
+    DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# Render a veces proporciona URLs que empiezan con 'postgres://', pero SQLAlchemy requiere 'postgresql://'
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_recycle=3600, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 class Base(DeclarativeBase):
     pass
