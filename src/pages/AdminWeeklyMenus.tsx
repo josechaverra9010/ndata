@@ -131,6 +131,13 @@ const AdminWeeklyMenus = () => {
     const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
     const [mealNotes, setMealNotes] = useState("");
 
+    const getImageUrl = (imagePath: string | undefined | null) => {
+        if (!imagePath) return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+        if (imagePath.startsWith("http")) return imagePath;
+        const baseUrl = API_URL.replace("/api", "");
+        return `${baseUrl}${imagePath}`;
+    };
+
     // Initialize empty week
     const createEmptyWeek = (): DayMenu[] => {
         return daysOfWeek.map(day => ({
@@ -842,7 +849,7 @@ const AdminWeeklyMenus = () => {
                                                                         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
                                                                             {meal.image && (
                                                                                 <img
-                                                                                    src={meal.image}
+                                                                                    src={getImageUrl(meal.image)}
                                                                                     alt={meal.recipe_name}
                                                                                     className="w-16 h-16 rounded-lg object-cover"
                                                                                 />
@@ -915,7 +922,7 @@ const AdminWeeklyMenus = () => {
                                             onClick={() => setSelectedRecipe(recipe)}
                                         >
                                             <img
-                                                src={recipe.image}
+                                                src={getImageUrl(recipe.image)}
                                                 alt={recipe.name}
                                                 className="w-20 h-20 rounded-lg object-cover"
                                             />
@@ -1051,7 +1058,7 @@ const AdminWeeklyMenus = () => {
                                                                             <div className="flex items-center gap-4">
                                                                                 {meal.image && (
                                                                                     <img
-                                                                                        src={meal.image}
+                                                                                        src={getImageUrl(meal.image)}
                                                                                         alt={meal.recipe_name}
                                                                                         className="w-24 h-24 rounded-lg object-cover"
                                                                                     />

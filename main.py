@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float, JSON, ForeignKey, Enum, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -1734,22 +1734,126 @@ def get_recipes(db: Session = Depends(get_db)):
     return db.query(RecipeDB).all()
 
 @app.post("/api/recipes", response_model=RecipeResponse)
-def create_recipe(recipe: RecipeCreate, db: Session = Depends(get_db)):
-    new_recipe = RecipeDB(**recipe.model_dump())
+async def create_recipe(
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    category: str = Form(...),
+    prepTime: int = Form(...),
+    cookTime: int = Form(...),
+    servings: int = Form(...),
+    calories: int = Form(...),
+    protein: int = Form(...),
+    carbs: int = Form(...),
+    fat: int = Form(...),
+    ingredients: str = Form(...),  # JSON string
+    instructions: str = Form(...), # JSON string
+    tags: str = Form(...),         # JSON string
+    isFavorite: bool = Form(False),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    image_url = None
+    if image:
+        filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{image.filename}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        with open(file_path, "wb") as buffer:
+            import shutil
+            shutil.copyfileobj(image.file, buffer)
+        image_url = f"/uploads/{filename}"
+
+    # Parse lists from JSON strings
+    import json
+    try:
+        ingredients_list = json.loads(ingredients)
+        instructions_list = json.loads(instructions)
+        tags_list = json.loads(tags)
+    except Exception:
+        # Fallback if they are sent as simple strings or comma separated
+        ingredients_list = [i.strip() for i in ingredients.split("\n") if i.strip()]
+        instructions_list = [i.strip() for i in instructions.split("\n") if i.strip()]
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    new_recipe = RecipeDB(
+        name=name,
+        description=description,
+        category=category,
+        prepTime=prepTime,
+        cookTime=cookTime,
+        servings=servings,
+        calories=calories,
+        protein=protein,
+        carbs=carbs,
+        fat=fat,
+        ingredients=ingredients_list,
+        instructions=instructions_list,
+        tags=tags_list,
+        isFavorite=1 if isFavorite else 0,
+        image=image_url
+    )
     db.add(new_recipe)
     db.commit()
     db.refresh(new_recipe)
     return new_recipe
 
 @app.put("/api/recipes/{recipe_id}", response_model=RecipeResponse)
-def update_recipe(recipe_id: int, recipe_data: RecipeCreate, db: Session = Depends(get_db)):
+async def update_recipe(
+    recipe_id: int,
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    category: str = Form(...),
+    prepTime: int = Form(...),
+    cookTime: int = Form(...),
+    servings: int = Form(...),
+    calories: int = Form(...),
+    protein: int = Form(...),
+    carbs: int = Form(...),
+    fat: int = Form(...),
+    ingredients: str = Form(...),
+    instructions: str = Form(...),
+    tags: str = Form(...),
+    isFavorite: bool = Form(False),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
     
-    for key, value in recipe_data.model_dump().items():
-        setattr(recipe, key, value)
-    
+    image_url = recipe.image
+    if image:
+        filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{image.filename}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        with open(file_path, "wb") as buffer:
+            import shutil
+            shutil.copyfileobj(image.file, buffer)
+        image_url = f"/uploads/{filename}"
+
+    import json
+    try:
+        ingredients_list = json.loads(ingredients)
+        instructions_list = json.loads(instructions)
+        tags_list = json.loads(tags)
+    except Exception:
+        ingredients_list = [i.strip() for i in ingredients.split("\n") if i.strip()]
+        instructions_list = [i.strip() for i in instructions.split("\n") if i.strip()]
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    recipe.name = name
+    recipe.description = description
+    recipe.category = category
+    recipe.prepTime = prepTime
+    recipe.cookTime = cookTime
+    recipe.servings = servings
+    recipe.calories = calories
+    recipe.protein = protein
+    recipe.carbs = carbs
+    recipe.fat = fat
+    recipe.ingredients = ingredients_list
+    recipe.instructions = instructions_list
+    recipe.tags = tags_list
+    recipe.isFavorite = 1 if isFavorite else 0
+    recipe.image = image_url
+
     db.commit()
     db.refresh(recipe)
     return recipe

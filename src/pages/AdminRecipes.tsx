@@ -114,27 +114,43 @@ export default function AdminRecipes() {
     }
   };
 
+  const getImageUrl = (imagePath: string | undefined) => {
+    if (!imagePath) return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+    if (imagePath.startsWith("http")) return imagePath;
+    const baseUrl = API_URL.replace("/api", "");
+    return `${baseUrl}${imagePath}`;
+  };
+
   const handleSaveRecipe = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    const formElement = e.currentTarget;
+    const formData = new FormData(formElement);
 
-    const recipeData = {
-      name: formData.get("name") as string,
-      description: formData.get("description") as string,
-      category: formData.get("category") as string,
-      prepTime: Number(formData.get("prepTime")),
-      cookTime: Number(formData.get("cookTime")),
-      servings: Number(formData.get("servings")),
-      calories: Number(formData.get("calories")),
-      protein: Number(formData.get("protein")),
-      carbs: Number(formData.get("carbs")),
-      fat: Number(formData.get("fat")),
-      ingredients: (formData.get("ingredients") as string).split("\n").filter(i => i.trim()),
-      instructions: (formData.get("instructions") as string).split("\n").filter(i => i.trim()),
-      tags: (formData.get("tags") as string).split(",").map(t => t.trim()).filter(t => t),
-      image: formData.get("image") as string || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400",
-      isFavorite: editingRecipe?.isFavorite || false
-    };
+    const data = new FormData();
+    data.append("name", formData.get("name") as string);
+    data.append("description", formData.get("description") as string);
+    data.append("category", formData.get("category") as string);
+    data.append("prepTime", formData.get("prepTime") as string);
+    data.append("cookTime", formData.get("cookTime") as string);
+    data.append("servings", formData.get("servings") as string);
+    data.append("calories", formData.get("calories") as string);
+    data.append("protein", formData.get("protein") as string);
+    data.append("carbs", formData.get("carbs") as string);
+    data.append("fat", formData.get("fat") as string);
+
+    const ingredientsList = (formData.get("ingredients") as string).split("\n").filter(i => i.trim());
+    const instructionsList = (formData.get("instructions") as string).split("\n").filter(i => i.trim());
+    const tagsList = (formData.get("tags") as string).split(",").map(t => t.trim()).filter(t => t);
+
+    data.append("ingredients", JSON.stringify(ingredientsList));
+    data.append("instructions", JSON.stringify(instructionsList));
+    data.append("tags", JSON.stringify(tagsList));
+    data.append("isFavorite", String(editingRecipe?.isFavorite || false));
+
+    const imageFile = (formElement.querySelector('input[name="image"]') as HTMLInputElement).files?.[0];
+    if (imageFile) {
+      data.append("image", imageFile);
+    }
 
     const url = editingRecipe
       ? `${API_URL}/recipes/${editingRecipe.id}`
@@ -145,8 +161,7 @@ export default function AdminRecipes() {
     try {
       const response = await fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(recipeData)
+        body: data
       });
 
       if (response.ok) {
@@ -194,29 +209,29 @@ export default function AdminRecipes() {
   };
 
   const handleDuplicate = async (recipe: Recipe) => {
-    const duplicatedData = {
-      name: `${recipe.name} (Copia)`,
-      description: recipe.description,
-      category: recipe.category,
-      prepTime: recipe.prepTime,
-      cookTime: recipe.cookTime,
-      servings: recipe.servings,
-      calories: recipe.calories,
-      protein: recipe.protein,
-      carbs: recipe.carbs,
-      fat: recipe.fat,
-      ingredients: recipe.ingredients,
-      instructions: recipe.instructions,
-      tags: recipe.tags,
-      image: recipe.image,
-      isFavorite: false
-    };
+    const data = new FormData();
+    data.append("name", `${recipe.name} (Copia)`);
+    data.append("description", recipe.description || "");
+    data.append("category", recipe.category);
+    data.append("prepTime", String(recipe.prepTime));
+    data.append("cookTime", String(recipe.cookTime));
+    data.append("servings", String(recipe.servings));
+    data.append("calories", String(recipe.calories));
+    data.append("protein", String(recipe.protein));
+    data.append("carbs", String(recipe.carbs));
+    data.append("fat", String(recipe.fat));
+    data.append("ingredients", JSON.stringify(recipe.ingredients));
+    data.append("instructions", JSON.stringify(recipe.instructions));
+    data.append("tags", JSON.stringify(recipe.tags));
+    data.append("isFavorite", "false");
+    // Note: We can't easily duplicate the file from a URL, so we leave it empty or send the current URL if the backend handles it as a string
+    // In this case, our backend expects a File object for 'image'. If none is provided, it stays as is (on PUT) or null (on POST).
+    // Let's assume we don't duplicate the image for now if it's a file, or we can add logic later.
 
     try {
       const response = await fetch(`${API_URL}/recipes`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(duplicatedData)
+        body: data
       });
 
       if (response.ok) {
@@ -431,14 +446,18 @@ export default function AdminRecipes() {
                 </div>
 
                 <div>
-                  <Label htmlFor="image">URL de Imagen</Label>
+                  <Label htmlFor="image">Imagen de la Receta</Label>
                   <Input
                     id="image"
                     name="image"
-                    type="url"
-                    placeholder="https://ejemplo.com/imagen.jpg"
-                    defaultValue={editingRecipe?.image}
+                    type="file"
+                    accept="image/*"
                   />
+                  {editingRecipe?.image && !editingRecipe.image.startsWith('http') && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Ya tiene una imagen cargada. Suba una nueva para reemplazarla.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-4">
@@ -545,7 +564,7 @@ export default function AdminRecipes() {
             <Card key={recipe.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
               <div className="relative">
                 <img
-                  src={recipe.image}
+                  src={getImageUrl(recipe.image)}
                   alt={recipe.name}
                   className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
                 />
@@ -693,11 +712,13 @@ export default function AdminRecipes() {
                 </DialogHeader>
                 <ScrollArea className="max-h-[70vh]">
                   <div className="space-y-6">
-                    <img
-                      src={selectedRecipe.image}
-                      alt={selectedRecipe.name}
-                      className="w-full h-64 object-cover rounded-lg"
-                    />
+                    <div className="relative h-64 sm:h-80">
+                      <img
+                        src={getImageUrl(selectedRecipe.image)}
+                        alt={selectedRecipe.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
 
                     <p className="text-muted-foreground">{selectedRecipe.description}</p>
 
