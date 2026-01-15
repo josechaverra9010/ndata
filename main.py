@@ -13,6 +13,7 @@ import json
 from fastapi import UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from fastapi.responses import FileResponse
 
 # Cargar variables de entorno
 load_dotenv()
@@ -8666,8 +8667,35 @@ def debug_patient_plan(patient_id: int, db: Session = Depends(get_db)):
     }
 
 
+if os.path.exists("dist"):
+    # 1. Montamos los assets generados por Vite (JS, CSS, Imágenes)
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+
+    # 2. Ruta raíz para servir el index.html
+    @app.get("/")
+    async def serve_spa_root():
+        return FileResponse("dist/index.html")
+
+    # 3. Ruta "catch-all" para manejar el enrutamiento de React (SPA)
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        # Si la ruta intenta acceder a la API pero no existe, devolvemos 404 real
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Endpoint API no encontrado")
+        
+        # Verificamos si es un archivo físico (como robots.txt o un favicon)
+        static_file_path = os.path.join("dist", full_path)
+        if os.path.isfile(static_file_path):
+            return FileResponse(static_file_path)
+        
+        # Para cualquier otra ruta (como /dashboard), devolvemos el index.html 
+        # para que React Router tome el control.
+        return FileResponse("dist/index.html")
+
+# Bloque de arranque para producción (Cloud Run, Render, etc.)
 if __name__ == "__main__":
     import uvicorn
-    # Create tables if they don't exist
-    Base.metadata.create_all(bind=engine)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Importante: toma el puerto de la variable de entorno o usa 8000 por defecto
+    port = int(os.environ.get("PORT", 8000))
+    print(f"Iniciando servidor en el puerto: {port}")
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
