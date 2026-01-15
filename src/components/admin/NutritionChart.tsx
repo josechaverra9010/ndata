@@ -31,7 +31,7 @@ export function NutritionChart() {
   useEffect(() => {
     const fetchChartData = async () => {
       try {
-        const response = await fetch(`${API_URL} /dashboard/chart - data`);
+        const response = await fetch(`${API_URL}/dashboard/chart-data`);
         if (response.ok) {
           const chartData = await response.json();
           setData(chartData);
