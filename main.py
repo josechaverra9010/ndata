@@ -13,6 +13,10 @@ import json
 from fastapi import UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import requests
 
 # Cargar variables de entorno
 load_dotenv()
@@ -79,6 +83,145 @@ def get_db():
 
 # Montar la carpeta para que las fotos sean accesibles vía URL
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# ==================== FUNCIÓN DE ENVÍO DE EMAIL ====================
+
+def send_reset_email(to_email: str, reset_token: str, user_name: str):
+    """
+    Enviar email de recuperación de contraseña
+    """
+    try:
+        # Configuración de Gmail SMTP
+        smtp_server = "smtp.gmail.com"
+        smtp_port = 587
+        sender_email = os.getenv("EMAIL_USER", "tu-email@gmail.com")
+        sender_password = os.getenv("EMAIL_PASSWORD", "tu-contraseña-de-aplicacion")
+        
+        # URL del frontend (ajustar según entorno)
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+        
+        # Crear mensaje
+        message = MIMEMultipart("alternative")
+        message["Subject"] = "Recuperación de Contraseña - NutriData"
+        message["From"] = f"NutriData <{sender_email}>"
+        message["To"] = to_email
+        
+        # Contenido HTML del email
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .button {{ display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🔐 Recuperación de Contraseña</h1>
+                </div>
+                <div class="content">
+                    <p>Hola <strong>{user_name}</strong>,</p>
+                    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en NutriData.</p>
+                    <p>Haz clic en el siguiente botón para crear una nueva contraseña:</p>
+                    <p style="text-align: center;">
+                        <a href="{reset_link}" class="button">Restablecer Contraseña</a>
+                    </p>
+                    <p>O copia y pega este enlace en tu navegador:</p>
+                    <p style="word-break: break-all; background: #e9ecef; padding: 10px; border-radius: 5px;">
+                        {reset_link}
+                    </p>
+                    <p><strong>Este enlace expirará en 1 hora.</strong></p>
+                    <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+                    <p>Saludos,<br>El equipo de NutriData</p>
+                </div>
+                <div class="footer">
+                    <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Adjuntar HTML
+        html_part = MIMEText(html_content, "html")
+        message.attach(html_part)
+        
+        # Enviar email
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, message.as_string())
+        
+        print(f"✅ Email de recuperación enviado a: {to_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error al enviar email: {str(e)}")
+        return False
+
+# ==================== FUNCIÓN DE ENVÍO DE WHATSAPP ====================
+
+def send_whatsapp_notification(phone: str, message: str):
+    """
+    Enviar notificación vía WhatsApp Cloud API
+    """
+    try:
+        access_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
+        phone_id = os.getenv("WHATSAPP_PHONE_ID")
+        
+        if not access_token or not phone_id:
+            print(f"\n{'='*60}")
+            print(f"⚠️  CONFIGURACIÓN WHATSAPP INCOMPLETA - LOG DE MENSAJE:")
+            print(f"{'='*60}")
+            print(f"Para: {phone}")
+            print(f"Mensaje: {message}")
+            print(f"{'='*60}\n")
+            return False
+
+        # Limpiar número de teléfono (solo dígitos)
+        clean_phone = "".join(filter(str.isdigit, phone))
+        
+        # URL de la API de Meta
+        url = f"https://graph.facebook.com/v18.0/{phone_id}/messages"
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # Enviar mensaje de texto simple (o usar plantillas si es producción)
+        # Nota: Meta requiere plantillas para iniciar conversaciones, pero enviaremos como texto para desarrollo
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": clean_phone,
+            "type": "text",
+            "text": {
+                "body": message
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            print(f"✅ WhatsApp enviado a {phone}")
+            return True
+        else:
+            print(f"❌ Error WhatsApp ({response.status_code}): {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error al enviar WhatsApp: {str(e)}")
+        return False
+
+
 
 # ==================== MODELOS DE BASE DE DATOS ====================
 
@@ -1463,20 +1606,93 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "id": user.id,
             "name": f"{user.nombres} {user.apellidos}",
             "role": user.role
-        }
     }
 
 @app.post("/api/forgot-password")
 def forgot_password(data: ForgotPasswordSchema, db: Session = Depends(get_db)):
-    # Verificar si el usuario existe (opcional, para logging)
+    """Solicitar recuperación de contraseña"""
     user = db.query(UserDB).filter(UserDB.email == data.email).first()
     
-    # En un entorno real, aquí se generaría un token y se enviaría un email.
-    # Por seguridad, siempre retornamos éxito aunque el email no exista.
+    # Por seguridad, siempre retornamos éxito aunque el email no exista
     if user:
-        print(f"Solicitud de reseteo de password para: {user.email}")
+        # Generar token de reseteo (válido por 1 hora)
+        reset_token = jwt.encode({
+            "user_id": user.id,
+            "email": user.email,
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "type": "password_reset"
+        }, SECRET_KEY, algorithm="HS256")
+        
+        # Enviar email de recuperación
+        user_name = f"{user.nombres} {user.apellidos}"
+        email_sent = send_reset_email(user.email, reset_token, user_name)
+        
+        # También imprimir en consola para desarrollo
+        if email_sent:
+            print(f"\n{'='*60}")
+            print(f"✅ EMAIL ENVIADO EXITOSAMENTE")
+            print(f"{'='*60}")
+            print(f"Destinatario: {user.email}")
+            print(f"Usuario: {user_name}")
+            print(f"{'='*60}\n")
+        else:
+            # Si falla el envío, imprimir el link en consola como fallback
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+            reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+            print(f"\n{'='*60}")
+            print(f"⚠️  ERROR AL ENVIAR EMAIL - LINK DE RESPALDO")
+            print(f"{'='*60}")
+            print(f"Usuario: {user_name}")
+            print(f"Email: {user.email}")
+            print(f"Link de reseteo: {reset_link}")
+            print(f"{'='*60}\n")
     
-    return {"success": True, "message": "Si el correo existe, se enviaron las instrucciones"}
+    return {
+        "success": True, 
+        "message": "Si el correo existe, recibirás instrucciones para restablecer tu contraseña"
+    }
+
+@app.post("/api/reset-password")
+def reset_password(data: dict, db: Session = Depends(get_db)):
+    """Restablecer contraseña con token"""
+    token = data.get("token")
+    new_password = data.get("new_password")
+    
+    if not token or not new_password:
+        raise HTTPException(status_code=400, detail="Token y nueva contraseña son requeridos")
+    
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+    
+    try:
+        # Verificar y decodificar el token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        
+        # Verificar que sea un token de reseteo de contraseña
+        if payload.get("type") != "password_reset":
+            raise HTTPException(status_code=400, detail="Token inválido")
+        
+        user_id = payload.get("user_id")
+        user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        # Actualizar contraseña
+        user.password = pwd_context.hash(new_password)
+        db.commit()
+        
+        print(f"\n✅ Contraseña actualizada exitosamente para: {user.email}\n")
+        
+        return {
+            "success": True,
+            "message": "Contraseña actualizada correctamente"
+        }
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="El token ha expirado. Solicita un nuevo enlace de recuperación")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Token inválido")
 
 
 # ==================== DASHBOARD ENDPOINTS ====================
@@ -2137,6 +2353,18 @@ def assign_plan_with_weekly_menu(data: dict, db: Session = Depends(get_db)):
     db.flush()  # Para obtener el ID sin hacer commit completo
     print(f"✅ Asignación creada con ID: {assignment.id}")
     
+    # Notificar al paciente vía WhatsApp
+    if patient.telefono:
+        msg = (
+            f"🍏 ¡Hola {patient.nombres}! Te hemos asignado un nuevo plan nutricional: *{plan.name}*.\n\n"
+            f"📅 Fecha de inicio: {start_date_str}\n"
+            f"📝 El nutricionista ha actualizado tu menú semanal.\n\n"
+            f"¡Puedes revisarlo ahora en la app!\n"
+            f"🔗 http://localhost:8080/patient/my-plan"
+        )
+        send_whatsapp_notification(patient.telefono, msg)
+
+    
     # Mapear días
     days_map = {
         0: ("monday", "Lunes"),
@@ -2597,6 +2825,18 @@ def create_appointment(appointment_data: AppointmentCreate, db: Session = Depend
         db.add(new_appointment)
         db.commit()
         db.refresh(new_appointment)
+        
+        # Notificar al paciente vía WhatsApp
+        if patient.telefono:
+            msg = (
+                f"Hola {patient.nombres}, te han asignado una nueva cita en NutriData.\n\n"
+                f"📅 Fecha: {appointment_date.strftime('%d/%m/%Y')}\n"
+                f"⏰ Hora: {new_appointment.time}\n"
+                f"📍 Tipo: {new_appointment.type.capitalize()}\n"
+                f"🔗 Link: http://localhost:8080/patient/appointments\n\n"
+                f"¡Te esperamos!"
+            )
+            send_whatsapp_notification(patient.telefono, msg)
         
         return {
             "id": new_appointment.id,
@@ -3968,6 +4208,25 @@ def request_appointment(
     db.add(new_appointment)
     db.commit()
     db.refresh(new_appointment)
+    
+    # Notificar al nutricionista (admin) vía WhatsApp
+    # Buscar el primer nutricionista (admin/superadmin) con teléfono
+    admin = db.query(UserDB).filter(UserDB.role.in_(['admin', 'superadmin']), UserDB.telefono != None).first()
+    admin_phone = os.getenv("ADMIN_WHATSAPP_NUMBER")
+    
+    target_phone = admin.telefono if admin else admin_phone
+    
+    if target_phone:
+        msg = (
+            f"🔔 NUEVA SOLICITUD DE CITA\n\n"
+            f"Paciente: {patient.nombres} {patient.apellidos}\n"
+            f"📅 Fecha: {appointment_date.strftime('%d/%m/%Y')}\n"
+            f"⏰ Hora: {new_appointment.time}\n"
+            f"📝 Nota: {new_appointment.notes or 'Sin observaciones'}\n\n"
+            f"Revisa el panel de administración para confirmarla."
+        )
+        send_whatsapp_notification(target_phone, msg)
+
     
     return {
         "success": True,

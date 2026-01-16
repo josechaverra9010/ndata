@@ -31,6 +31,7 @@ import SuperadminNutritionists from "./pages/superadmin/SuperadminNutritionists"
 import SuperadminOrganizations from "./pages/superadmin/SuperadminOrganizations";
 import SuperadminBilling from "./pages/superadmin/SuperadminBilling";
 import SuperadminSettings from "./pages/superadmin/SuperadminSettings";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ const App = () => (
             <Routes>
               {/* Auth */}
               <Route path="/auth" element={<Auth />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
               {/* Admin Routes */}
               <Route path="/" element={<ProtectedRoute allowedRoles={['admin']}><Index /></ProtectedRoute>} />

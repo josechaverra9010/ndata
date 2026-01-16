@@ -15,6 +15,7 @@ import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/hooks/use-theme";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -34,6 +35,7 @@ const bottomMenuItems = [
 export function AdminSidebarContent() {
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { theme } = useTheme();
 
   const handleLogout = () => {
     logout();
@@ -43,9 +45,11 @@ export function AdminSidebarContent() {
     <div className="flex h-full flex-col bg-sidebar">
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl gradient-primary shadow-glow">
-          <Apple className="h-5 w-5 text-primary-foreground" />
-        </div>
+        <img
+          src={theme === 'dark' ? "/logo-dark.png" : "/logo-light.png"}
+          alt="NutriData"
+          className="h-10 w-auto"
+        />
         <div>
           <h1 className="text-lg font-semibold text-foreground">NutriData</h1>
           <p className="text-xs text-muted-foreground">Panel de Nutricionista</p>

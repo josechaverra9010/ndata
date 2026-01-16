@@ -6,12 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "@/hooks/use-theme";
-import { 
-  Bell, 
-  Moon, 
-  Sun, 
-  Smartphone, 
-  Mail, 
+import {
+  Bell,
+  Moon,
+  Sun,
+  Smartphone,
+  Mail,
   MessageSquare,
   Shield,
   Save,
@@ -74,7 +74,7 @@ export default function PatientSettings() {
                       <p className="text-sm text-muted-foreground">Citas y resúmenes semanales</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.emailReminders}
                     onCheckedChange={() => handleNotificationChange("emailReminders")}
                   />
@@ -90,7 +90,7 @@ export default function PatientSettings() {
                       <p className="text-sm text-muted-foreground">Notificación push para cada comida</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.pushMeals}
                     onCheckedChange={() => handleNotificationChange("pushMeals")}
                   />
@@ -106,7 +106,7 @@ export default function PatientSettings() {
                       <p className="text-sm text-muted-foreground">24h y 1h antes de tu cita</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.pushAppointments}
                     onCheckedChange={() => handleNotificationChange("pushAppointments")}
                   />
@@ -122,7 +122,7 @@ export default function PatientSettings() {
                       <p className="text-sm text-muted-foreground">Mensajes de texto para citas</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.smsReminders}
                     onCheckedChange={() => handleNotificationChange("smsReminders")}
                   />
@@ -138,7 +138,7 @@ export default function PatientSettings() {
                       <p className="text-sm text-muted-foreground">Resumen de tu progreso cada domingo</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.weeklyReport}
                     onCheckedChange={() => handleNotificationChange("weeklyReport")}
                   />
@@ -154,7 +154,7 @@ export default function PatientSettings() {
                       <p className="text-sm text-muted-foreground">Notificaciones con consejos nutricionales</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.tips}
                     onCheckedChange={() => handleNotificationChange("tips")}
                   />
@@ -175,39 +175,26 @@ export default function PatientSettings() {
             <CardContent className="space-y-6">
               <div className="space-y-3">
                 <Label>Tema</Label>
-                <div className="grid grid-cols-3 gap-3">
-                  <button 
+                <div className="grid grid-cols-2 gap-3">
+                  <button
                     onClick={() => setTheme("light")}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                      theme === "light" 
-                        ? "border-primary bg-primary/5" 
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${theme === "light"
+                        ? "border-primary bg-primary/5"
                         : "border-border hover:border-primary/50"
-                    }`}
+                      }`}
                   >
                     <Sun className={`h-6 w-6 ${theme === "light" ? "text-primary" : "text-muted-foreground"}`} />
                     <span className={`text-sm font-medium ${theme === "light" ? "text-foreground" : "text-muted-foreground"}`}>Claro</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => setTheme("dark")}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                      theme === "dark" 
-                        ? "border-primary bg-primary/5" 
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${theme === "dark"
+                        ? "border-primary bg-primary/5"
                         : "border-border hover:border-primary/50"
-                    }`}
+                      }`}
                   >
                     <Moon className={`h-6 w-6 ${theme === "dark" ? "text-primary" : "text-muted-foreground"}`} />
                     <span className={`text-sm font-medium ${theme === "dark" ? "text-foreground" : "text-muted-foreground"}`}>Oscuro</span>
-                  </button>
-                  <button 
-                    onClick={() => setTheme("system")}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                      theme === "system" 
-                        ? "border-primary bg-primary/5" 
-                        : "border-border hover:border-primary/50"
-                    }`}
-                  >
-                    <Monitor className={`h-6 w-6 ${theme === "system" ? "text-primary" : "text-muted-foreground"}`} />
-                    <span className={`text-sm font-medium ${theme === "system" ? "text-foreground" : "text-muted-foreground"}`}>Sistema</span>
                   </button>
                 </div>
               </div>
@@ -275,12 +262,12 @@ export default function PatientSettings() {
                     <div className="space-y-2">
                       <Label htmlFor="currentPassword">Contraseña actual</Label>
                       <div className="relative">
-                        <Input 
-                          id="currentPassword" 
+                        <Input
+                          id="currentPassword"
                           type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
                         />
-                        <button 
+                        <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
@@ -291,16 +278,16 @@ export default function PatientSettings() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="newPassword">Nueva contraseña</Label>
-                      <Input 
-                        id="newPassword" 
+                      <Input
+                        id="newPassword"
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-                      <Input 
-                        id="confirmPassword" 
+                      <Input
+                        id="confirmPassword"
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
                       />
