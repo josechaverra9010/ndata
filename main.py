@@ -1606,6 +1606,7 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "id": user.id,
             "name": f"{user.nombres} {user.apellidos}",
             "role": user.role
+        }
     }
 
 
@@ -1638,7 +1639,7 @@ def forgot_password(data: ForgotPasswordSchema, db: Session = Depends(get_db)):
             print(f"{'='*60}\n")
         else:
             # Si falla el envío, imprimir el link en consola como fallback
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+            frontend_url = os.getenv("FRONTEND_URL", "/")
             reset_link = f"{frontend_url}/reset-password?token={reset_token}"
             print(f"\n{'='*60}")
             print(f"⚠️  ERROR AL ENVIAR EMAIL - LINK DE RESPALDO")
