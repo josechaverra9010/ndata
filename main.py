@@ -1608,6 +1608,7 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "role": user.role
     }
 
+
 @app.post("/api/forgot-password")
 def forgot_password(data: ForgotPasswordSchema, db: Session = Depends(get_db)):
     """Solicitar recuperación de contraseña"""
