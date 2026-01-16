@@ -742,7 +742,7 @@ const AdminSettings = () => {
                 <CardDescription>Personaliza la apariencia de la aplicación</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 gap-4 md:w-2/3">
+                <div className="grid grid-cols-2 gap-4 md:w-2/3">
                   <Button
                     variant={theme === "light" ? "default" : "outline"}
                     className="h-24 flex-col gap-2"
@@ -758,14 +758,6 @@ const AdminSettings = () => {
                   >
                     <Moon className="h-6 w-6" />
                     Oscuro
-                  </Button>
-                  <Button
-                    variant={theme === "system" ? "default" : "outline"}
-                    className="h-24 flex-col gap-2"
-                    onClick={() => setTheme("system")}
-                  >
-                    <Monitor className="h-6 w-6" />
-                    Sistema
                   </Button>
                 </div>
               </CardContent>

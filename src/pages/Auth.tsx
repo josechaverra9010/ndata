@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Moon, Sun } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { getRedirectPath } from "@/lib/auth";
-import { Pear } from "../components/icons/Pear";
+import { useTheme } from "@/hooks/use-theme";
 
 const Auth = () => {
 
@@ -38,6 +38,7 @@ const Auth = () => {
   });
   const navigate = useNavigate();
   const { setUser } = useAuth();
+  const { theme, setTheme } = useTheme();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,15 +146,30 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen flex">
+      {/* Theme Toggle Button */}
+      <button
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        className="fixed top-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background/80 backdrop-blur-sm hover:bg-accent transition-colors"
+        aria-label="Toggle theme"
+      >
+        {theme === "dark" ? (
+          <Sun className="h-5 w-5 text-foreground" />
+        ) : (
+          <Moon className="h-5 w-5 text-foreground" />
+        )}
+      </button>
+
       {/* Left side - Form */}
       <div className="flex-1 flex items-center justify-center p-8 bg-background">
         <div className="w-full max-w-md space-y-8 animate-fade-in">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl gradient-primary shadow-glow">
-              <Pear className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <div>
+          <div className="flex flex-col items-center gap-4">
+            <img
+              src="/logo.png"
+              alt="NutriData"
+              className="h-24 w-auto"
+            />
+            <div className="text-center">
               <h1 className="text-2xl font-bold text-foreground">NutriData</h1>
               <p className="text-sm text-muted-foreground">Panel de Control</p>
             </div>
