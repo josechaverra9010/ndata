@@ -1606,6 +1606,7 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "id": user.id,
             "name": f"{user.nombres} {user.apellidos}",
             "role": user.role
+        }
     }
 
 @app.post("/api/forgot-password")
@@ -4991,6 +4992,355 @@ def get_complete_settings(user_id: int, db: Session = Depends(get_db)):
             "timeFormat": appearance.time_format if appearance else "24h"
         }
     }
+
+# ==================== ENDPOINTS DE CONFIGURACIÓN PARA PACIENTES ====================
+
+# Modelos de base de datos para configuración de pacientes
+class PatientNotificationSettingsDB(Base):
+    __tablename__ = "patient_notification_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    
+    email_reminders = Column(Integer, default=1)
+    push_meals = Column(Integer, default=1)
+    push_appointments = Column(Integer, default=1)
+    sms_reminders = Column(Integer, default=0)
+    weekly_report = Column(Integer, default=1)
+    tips = Column(Integer, default=1)
+    
+    user = relationship("UserDB", foreign_keys=[user_id])
+
+class PatientAppearanceSettingsDB(Base):
+    __tablename__ = "patient_appearance_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    
+    theme = Column(String(20), default="light")
+    language = Column(String(10), default="es")
+    units = Column(String(20), default="metric")
+    date_format = Column(String(20), default="dd-mm-yyyy")
+    
+    user = relationship("UserDB", foreign_keys=[user_id])
+
+# Modelo para configuración del sistema (superadmin)
+class SystemSettingsDB(Base):
+    __tablename__ = "system_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    
+    site_name = Column(String(100), default="NutriData")
+    support_email = Column(String(100), default="soporte@nutridata.com")
+    max_users_per_org = Column(Integer, default=100)
+    max_patients_per_nutritionist = Column(Integer, default=50)
+    enable_registration = Column(Integer, default=1)
+    require_email_verification = Column(Integer, default=1)
+    enable_two_factor = Column(Integer, default=0)
+    maintenance_mode = Column(Integer, default=0)
+    email_notifications = Column(Integer, default=1)
+    slack_notifications = Column(Integer, default=0)
+    updated_at = Column(String(50))
+
+# Crear las tablas
+Base.metadata.create_all(bind=engine)
+
+# Esquemas Pydantic para pacientes
+class PatientNotificationSettingsUpdate(BaseModel):
+    emailReminders: bool
+    pushMeals: bool
+    pushAppointments: bool
+    smsReminders: bool
+    weeklyReport: bool
+    tips: bool
+
+class PatientAppearanceSettingsUpdate(BaseModel):
+    theme: str
+    language: str
+    units: str
+    dateFormat: str
+
+# Esquemas para superadmin
+class SystemSettingsUpdate(BaseModel):
+    siteName: str
+    supportEmail: str
+    maxUsersPerOrg: int
+    maxPatientsPerNutritionist: int
+    enableRegistration: bool
+    requireEmailVerification: bool
+    enableTwoFactor: bool
+    maintenanceMode: bool
+    emailNotifications: bool
+    slackNotifications: bool
+
+@app.get("/api/patient/settings/{user_id}")
+def get_patient_settings(user_id: int, db: Session = Depends(get_db)):
+    """Obtener toda la configuración del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    # Obtener o crear notificaciones
+    notifications = db.query(PatientNotificationSettingsDB).filter(
+        PatientNotificationSettingsDB.user_id == user_id
+    ).first()
+    
+    if not notifications:
+        notifications = PatientNotificationSettingsDB(
+            user_id=user_id,
+            email_reminders=1,
+            push_meals=1,
+            push_appointments=1,
+            sms_reminders=0,
+            weekly_report=1,
+            tips=1
+        )
+        db.add(notifications)
+        db.commit()
+        db.refresh(notifications)
+    
+    # Obtener o crear apariencia
+    appearance = db.query(PatientAppearanceSettingsDB).filter(
+        PatientAppearanceSettingsDB.user_id == user_id
+    ).first()
+    
+    if not appearance:
+        appearance = PatientAppearanceSettingsDB(
+            user_id=user_id,
+            theme="light",
+            language="es",
+            units="metric",
+            date_format="dd-mm-yyyy"
+        )
+        db.add(appearance)
+        db.commit()
+        db.refresh(appearance)
+    
+    return {
+        "profile": {
+            "id": user.id,
+            "name": f"{user.nombres} {user.apellidos}",
+            "email": user.email,
+            "phone": user.telefono,
+            "avatar": user.foto_perfil
+        },
+        "notifications": {
+            "emailReminders": bool(notifications.email_reminders),
+            "pushMeals": bool(notifications.push_meals),
+            "pushAppointments": bool(notifications.push_appointments),
+            "smsReminders": bool(notifications.sms_reminders),
+            "weeklyReport": bool(notifications.weekly_report),
+            "tips": bool(notifications.tips)
+        },
+        "appearance": {
+            "theme": appearance.theme,
+            "language": appearance.language,
+            "units": appearance.units,
+            "dateFormat": appearance.date_format
+        }
+    }
+
+@app.put("/api/patient/notifications/{user_id}")
+def update_patient_notifications(
+    user_id: int,
+    settings_data: PatientNotificationSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración de notificaciones del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    settings = db.query(PatientNotificationSettingsDB).filter(
+        PatientNotificationSettingsDB.user_id == user_id
+    ).first()
+    
+    if not settings:
+        settings = PatientNotificationSettingsDB(user_id=user_id)
+        db.add(settings)
+    
+    settings.email_reminders = int(settings_data.emailReminders)
+    settings.push_meals = int(settings_data.pushMeals)
+    settings.push_appointments = int(settings_data.pushAppointments)
+    settings.sms_reminders = int(settings_data.smsReminders)
+    settings.weekly_report = int(settings_data.weeklyReport)
+    settings.tips = int(settings_data.tips)
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Preferencias de notificaciones guardadas"
+    }
+
+@app.put("/api/patient/appearance/{user_id}")
+def update_patient_appearance(
+    user_id: int,
+    settings_data: PatientAppearanceSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración de apariencia del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    settings = db.query(PatientAppearanceSettingsDB).filter(
+        PatientAppearanceSettingsDB.user_id == user_id
+    ).first()
+    
+    if not settings:
+        settings = PatientAppearanceSettingsDB(user_id=user_id)
+        db.add(settings)
+    
+    settings.theme = settings_data.theme
+    settings.language = settings_data.language
+    settings.units = settings_data.units
+    settings.date_format = settings_data.dateFormat
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Preferencias de apariencia guardadas"
+    }
+
+@app.post("/api/patient/profile/{user_id}/change-password")
+def change_patient_password(
+    user_id: int,
+    password_data: PasswordChangeSchema,
+    db: Session = Depends(get_db)
+):
+    """Cambiar contraseña del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    # Verificar contraseña actual
+    if not pwd_context.verify(password_data.current_password, user.password):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+    
+    # Verificar que las contraseñas nuevas coincidan
+    if password_data.new_password != password_data.confirm_password:
+        raise HTTPException(status_code=400, detail="Las contraseñas no coinciden")
+    
+    # Validar longitud de nueva contraseña
+    if len(password_data.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 6 caracteres"
+        )
+    
+    # Actualizar contraseña
+    user.password = pwd_context.hash(password_data.new_password)
+    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Contraseña actualizada correctamente"
+    }
+
+# ==================== ENDPOINTS DE CONFIGURACIÓN PARA SUPERADMIN ====================
+
+@app.get("/api/superadmin/settings/{user_id}")
+def get_system_settings(user_id: int, db: Session = Depends(get_db)):
+    """Obtener configuración del sistema (solo superadmin)"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "superadmin"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Obtener o crear configuración del sistema
+    settings = db.query(SystemSettingsDB).first()
+    
+    if not settings:
+        settings = SystemSettingsDB(
+            site_name="NutriData",
+            support_email="soporte@nutridata.com",
+            max_users_per_org=100,
+            max_patients_per_nutritionist=50,
+            enable_registration=1,
+            require_email_verification=1,
+            enable_two_factor=0,
+            maintenance_mode=0,
+            email_notifications=1,
+            slack_notifications=0,
+            updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    
+    return {
+        "siteName": settings.site_name,
+        "supportEmail": settings.support_email,
+        "maxUsersPerOrg": settings.max_users_per_org,
+        "maxPatientsPerNutritionist": settings.max_patients_per_nutritionist,
+        "enableRegistration": bool(settings.enable_registration),
+        "requireEmailVerification": bool(settings.require_email_verification),
+        "enableTwoFactor": bool(settings.enable_two_factor),
+        "maintenanceMode": bool(settings.maintenance_mode),
+        "emailNotifications": bool(settings.email_notifications),
+        "slackNotifications": bool(settings.slack_notifications)
+    }
+
+@app.put("/api/superadmin/settings/{user_id}")
+def update_system_settings(
+    user_id: int,
+    settings_data: SystemSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración del sistema (solo superadmin)"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "superadmin"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    settings = db.query(SystemSettingsDB).first()
+    
+    if not settings:
+        settings = SystemSettingsDB()
+        db.add(settings)
+    
+    settings.site_name = settings_data.siteName
+    settings.support_email = settings_data.supportEmail
+    settings.max_users_per_org = settings_data.maxUsersPerOrg
+    settings.max_patients_per_nutritionist = settings_data.maxPatientsPerNutritionist
+    settings.enable_registration = int(settings_data.enableRegistration)
+    settings.require_email_verification = int(settings_data.requireEmailVerification)
+    settings.enable_two_factor = int(settings_data.enableTwoFactor)
+    settings.maintenance_mode = int(settings_data.maintenanceMode)
+    settings.email_notifications = int(settings_data.emailNotifications)
+    settings.slack_notifications = int(settings_data.slackNotifications)
+    settings.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Configuración del sistema actualizada"
+    }
+
 # ==================== ENDPOINTS ADICIONALES PARA PORTAL DEL PACIENTE ====================
 # Agregar estos endpoints al archivo main.py existente
 
