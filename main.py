@@ -1,17 +1,17 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Form
+from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float, JSON, ForeignKey, Enum, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, ConfigDict
-from typing import Optional, List
-from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, date
 import jwt
 import os
 import json
-from fastapi import UploadFile, File
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText
@@ -20,8 +20,7 @@ import requests
 
 # Cargar variables de entorno
 load_dotenv()
-from datetime import datetime, timedelta, date
-from typing import Optional, List, Dict, Any
+
 from sqlalchemy import func, and_
 
 # Configuración de Base de Datos (PostgreSQL)
@@ -4994,12 +4993,7 @@ def get_complete_settings(user_id: int, db: Session = Depends(get_db)):
         }
     }
 # ==================== ENDPOINTS ADICIONALES PARA PORTAL DEL PACIENTE ====================
-# Agregar estos endpoints al archivo main.py existente
-
-from datetime import datetime, timedelta
-from typing import Optional, List
-from fastapi import HTTPException, Depends
-from sqlalchemy.orm import Session
+# 
 
 # ==================== ENDPOINTS DE DASHBOARD DEL PACIENTE ====================
 
