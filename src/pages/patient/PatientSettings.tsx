@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "@/hooks/use-theme";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Bell,
   Moon,
@@ -18,13 +19,18 @@ import {
   Eye,
   EyeOff,
   Lock,
-  Monitor
+  Monitor,
+  Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { API_URL } from "@/config/api";
 
 export default function PatientSettings() {
   const { theme, setTheme } = useTheme();
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [notifications, setNotifications] = useState({
     emailReminders: true,
@@ -35,13 +41,182 @@ export default function PatientSettings() {
     tips: true,
   });
 
+
+  const [appearance, setAppearance] = useState({
+    language: "es",
+    units: "metric",
+    dateFormat: "dd-mm-yyyy"
+  });
+
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
+
+  const getUserId = () => {
+    if (user?.id) return user.id;
+    const userData = localStorage.getItem("userData");
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      return parsed.id;
+    }
+    return null;
+  };
+
+  const userId = getUserId();
+
+  useEffect(() => {
+    if (userId) {
+      loadSettings();
+    } else {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  const loadSettings = async () => {
+    if (!userId) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/patient/settings/${userId}`);
+
+      if (!response.ok) {
+        throw new Error("Error al cargar configuración");
+      }
+
+      const data = await response.json();
+
+      setNotifications(data.notifications);
+      setAppearance({
+        language: data.appearance.language,
+        units: data.appearance.units,
+        dateFormat: data.appearance.dateFormat
+      });
+
+      if (data.appearance.theme) {
+        setTheme(data.appearance.theme);
+      }
+    } catch (error) {
+      console.error("Error al cargar configuración:", error);
+      toast.error("Error al cargar la configuración");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const handleNotificationChange = (key: keyof typeof notifications) => {
     setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSave = () => {
-    toast.success("Configuración guardada correctamente");
+const handleSave = async () => {
+    if (!userId) {
+      toast.error("Usuario no identificado");
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // Guardar notificaciones
+      const notifResponse = await fetch(`${API_URL}/patient/notifications/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notifications)
+      });
+
+      if (!notifResponse.ok) {
+        throw new Error("Error al guardar notificaciones");
+      }
+
+      // Guardar apariencia
+      const appearanceResponse = await fetch(`${API_URL}/patient/appearance/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          theme: theme,
+          language: appearance.language,
+          units: appearance.units,
+          dateFormat: appearance.dateFormat
+        })
+      });
+
+      if (!appearanceResponse.ok) {
+        throw new Error("Error al guardar apariencia");
+      }
+
+      toast.success("Configuración guardada correctamente");
+    } catch (error: any) {
+      console.error("Error:", error);
+      toast.error(error.message || "Error al guardar configuración");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const handleChangePassword = async () => {
+    if (!userId) {
+      toast.error("Usuario no identificado");
+      return;
+    }
+
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      toast.error("Complete todos los campos");
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error("Las contraseñas no coinciden");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const response = await fetch(`${API_URL}/patient/profile/${userId}/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: passwordData.currentPassword,
+          new_password: passwordData.newPassword,
+          confirm_password: passwordData.confirmPassword
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Error al cambiar contraseña");
+      }
+
+      toast.success("Contraseña actualizada correctamente");
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      });
+    } catch (error: any) {
+      console.error("Error:", error);
+      toast.error(error.message || "Error al cambiar contraseña");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <PatientLayout>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </PatientLayout>
+    );
+  }
 
   return (
     <PatientLayout>
@@ -179,8 +354,8 @@ export default function PatientSettings() {
                   <button
                     onClick={() => setTheme("light")}
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${theme === "light"
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50"
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
                       }`}
                   >
                     <Sun className={`h-6 w-6 ${theme === "light" ? "text-primary" : "text-muted-foreground"}`} />
@@ -189,8 +364,8 @@ export default function PatientSettings() {
                   <button
                     onClick={() => setTheme("dark")}
                     className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${theme === "dark"
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50"
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
                       }`}
                   >
                     <Moon className={`h-6 w-6 ${theme === "dark" ? "text-primary" : "text-muted-foreground"}`} />
@@ -201,7 +376,7 @@ export default function PatientSettings() {
 
               <div className="space-y-3">
                 <Label htmlFor="language">Idioma</Label>
-                <Select defaultValue="es">
+                <Select value={appearance.language} onValueChange={(v) => setAppearance({ ...appearance, language: v })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona idioma" />
                   </SelectTrigger>
@@ -215,7 +390,7 @@ export default function PatientSettings() {
 
               <div className="space-y-3">
                 <Label htmlFor="units">Unidades de medida</Label>
-                <Select defaultValue="metric">
+                <Select value={appearance.units} onValueChange={(v) => setAppearance({ ...appearance, units: v })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona unidades" />
                   </SelectTrigger>
@@ -228,7 +403,7 @@ export default function PatientSettings() {
 
               <div className="space-y-3">
                 <Label htmlFor="dateFormat">Formato de fecha</Label>
-                <Select defaultValue="dd-mm-yyyy">
+                <Select value={appearance.dateFormat} onValueChange={(v) => setAppearance({ ...appearance, dateFormat: v })}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona formato" />
                   </SelectTrigger>
@@ -266,6 +441,8 @@ export default function PatientSettings() {
                           id="currentPassword"
                           type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
+                          value={passwordData.currentPassword}
+                          onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
                         />
                         <button
                           type="button"
@@ -282,6 +459,8 @@ export default function PatientSettings() {
                         id="newPassword"
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
@@ -290,10 +469,13 @@ export default function PatientSettings() {
                         id="confirmPassword"
                         type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                       />
                     </div>
-                    <Button variant="outline" className="w-full">
-                      Actualizar Contraseña
+                    <Button variant="outline" className="w-full" onClick={handleChangePassword} disabled={saving}>
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      {saving ? "Actualizando..." : "Actualizar Contraseña"}
                     </Button>
                   </div>
                 </div>
@@ -339,9 +521,9 @@ export default function PatientSettings() {
 
         {/* Save Button */}
         <div className="flex justify-end">
-          <Button onClick={handleSave} size="lg" className="gap-2">
-            <Save className="h-4 w-4" />
-            Guardar Configuración
+          <Button onClick={handleSave} size="lg" className="gap-2" disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? "Guardando..." : "Guardar Configuración"}
           </Button>
         </div>
       </div>

@@ -121,10 +121,8 @@ const AdminSettings = () => {
 
     try {
       setLoading(true);
-      console.log("Loading settings for user ID:", userId);
-
-      const response = await fetch(`${API_URL}/settings/profile`, {
-        method: "GET", // Assuming it's still a GET request for profile settings
+      const response = await fetch(`${API_URL}/admin/settings/complete/${userId}`, {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("userToken")}`
@@ -136,7 +134,6 @@ const AdminSettings = () => {
       }
 
       const data = await response.json();
-      console.log("Settings loaded:", data);
 
       setProfile(data.profile);
       setNotifications(data.notifications);

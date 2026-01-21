@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SuperadminLayout } from "@/layouts/SuperadminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,17 @@ import {
   Database,
   Lock,
   Globe,
-  Save
+  Save,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { API_URL } from "@/config/api";
 
 export default function SuperadminSettings() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState({
     siteName: "NutriData",
     supportEmail: "soporte@NutriData.com",
@@ -31,9 +37,86 @@ export default function SuperadminSettings() {
     slackNotifications: false,
   });
 
-  const handleSave = () => {
-    toast.success("Configuración guardada");
+  const getUserId = () => {
+    if (user?.id) return user.id;
+    const userData = localStorage.getItem("userData");
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      return parsed.id;
+    }
+    return null;
   };
+
+  const userId = getUserId();
+
+  useEffect(() => {
+    if (userId) {
+      loadSettings();
+    } else {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  const loadSettings = async () => {
+    if (!userId) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/superadmin/settings/${userId}`);
+
+      if (!response.ok) {
+        throw new Error("Error al cargar configuración");
+      }
+
+      const data = await response.json();
+      setSettings(data);
+    } catch (error) {
+      console.error("Error al cargar configuración:", error);
+      toast.error("Error al cargar la configuración del sistema");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const handleSave = async () => {
+    if (!userId) {
+      toast.error("Usuario no identificado");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const response = await fetch(`${API_URL}/superadmin/settings/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Error al guardar configuración");
+      }
+
+      toast.success("Configuración del sistema actualizada");
+    } catch (error: any) {
+      console.error("Error:", error);
+      toast.error(error.message || "Error al guardar configuración");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SuperadminLayout>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </SuperadminLayout>
+    );
+  }
 
   return (
     <SuperadminLayout>
@@ -206,9 +289,9 @@ export default function SuperadminSettings() {
 
         {/* Save Button */}
         <div className="flex justify-end">
-          <Button onClick={handleSave} className="gradient-primary border-0">
-            <Save className="h-4 w-4 mr-2" />
-            Guardar Configuración
+          <Button onClick={handleSave} className="gradient-primary border-0" disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            {saving ? "Guardando..." : "Guardar Configuración"}
           </Button>
         </div>
       </div>
