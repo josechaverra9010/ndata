@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { API_URL } from "@/config/api";
 import {
   User,
@@ -25,7 +26,10 @@ import {
   FileText,
   Edit,
   Trash2,
+  Clock,
+  Plus,
 } from "lucide-react";
+import { Recordatorio24hForm } from "./Recordatorio24hForm";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -37,6 +41,69 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+const getFrequencyLabel = (freqId: string) => {
+  if (!freqId) return "No registrado";
+  if (freqId === "never") return "Nunca o casi nunca";
+  if (freqId.startsWith("month_")) return `Al mes: ${freqId.split("_")[1]}`;
+  if (freqId.startsWith("week_")) return `A la semana: ${freqId.split("_")[1]}`;
+  if (freqId.startsWith("day_")) {
+    const val = freqId.split("_")[1];
+    return `Al día: ${val === "6" ? "≥ 6" : val}`;
+  }
+  return freqId; // Soporte para datos antiguos o manuales
+};
+
+const RecallDetailTable = ({ data, title }: { data: any, title: string }) => {
+  let parsed = null;
+  try {
+    if (typeof data === "string" && data.startsWith("[")) {
+      parsed = JSON.parse(data);
+    }
+  } catch (e) {
+    parsed = null;
+  }
+
+  if (!parsed || !Array.isArray(parsed) || parsed.every(row => !row.prep && !row.ingredients && !row.qty && !row.measure)) {
+    if (typeof data === "string" && !data.startsWith("[")) {
+      return (
+        <div className="p-2 rounded bg-muted/50">
+          <p className="font-bold text-xs uppercase text-muted-foreground mb-1">{title}</p>
+          <p>{data}</p>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <div className="md:col-span-2 overflow-x-auto border rounded bg-muted/20 mt-2">
+      <table className="w-full text-[10px] border-collapse">
+        <thead className="bg-muted/50 border-b">
+          <tr>
+            <th colSpan={3} className="p-1 px-2 text-left font-bold uppercase text-primary/70">{title}</th>
+          </tr>
+          <tr className="bg-muted/30">
+            <th className="p-1 border-r text-left font-semibold">PREPARACIÓN</th>
+            <th className="p-1 border-r text-left font-semibold">INGREDIENTES</th>
+            <th className="p-1 text-center font-semibold w-[60px]">QTY (g)</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {parsed.map((row: any, i: number) => (
+            (row.prep || row.ingredients || row.qty) ? (
+              <tr key={i}>
+                <td className="p-1 border-r">{row.prep}</td>
+                <td className="p-1 border-r">{row.ingredients}</td>
+                <td className="p-1 text-center">{row.qty}</td>
+              </tr>
+            ) : null
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 interface Patient {
   id: number;
@@ -52,6 +119,10 @@ interface Patient {
   nivel_actividad: string | null;
   progreso: number;
   proxima_cita: string;
+  altura: number | null;
+  edad_formateada: string | null;
+  evaluacion_nutricional: string | null;
+  frecuencia_consumo: any[] | null;
 }
 
 interface PatientDetailsDialogProps {
@@ -80,6 +151,9 @@ export function PatientDetailsDialog({
   const { toast } = useToast();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [recalls, setRecalls] = useState<any[]>([]);
+  const [loadingRecalls, setLoadingRecalls] = useState(false);
+  const [showRecallForm, setShowRecallForm] = useState(false);
 
   // SOLUCIÓN AL ERROR: Si no hay paciente, no renderizamos nada para evitar el crash
   if (!patient) return null;
@@ -104,6 +178,20 @@ export function PatientDetailsDialog({
       });
     } catch {
       return dateString;
+    }
+  };
+
+  const fetchRecalls = async () => {
+    try {
+      setLoadingRecalls(true);
+      const response = await fetch(`${API_URL}/patients/${patient.id}/recalls`);
+      if (!response.ok) throw new Error("Error fetching recalls");
+      const data = await response.json();
+      setRecalls(data);
+    } catch (error) {
+      console.error("Error fetching recalls:", error);
+    } finally {
+      setLoadingRecalls(false);
     }
   };
 
@@ -157,17 +245,25 @@ export function PatientDetailsDialog({
                     {patient.status}
                   </Badge>
                 </div>
-                <DialogDescription className="mt-1">
-                  Información detallada del paciente
-                </DialogDescription>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold">
+                    {patient.edad_formateada || "Edad no registrada"}
+                  </Badge>
+                  <DialogDescription>
+                    Información detallada del paciente
+                  </DialogDescription>
+                </div>
               </div>
             </DialogTitle>
           </DialogHeader>
 
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-y-1">
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="health">Salud</TabsTrigger>
+              <TabsTrigger value="evaluacion">Evaluación</TabsTrigger>
+              <TabsTrigger value="frecuencia">Frecuencia</TabsTrigger>
+              <TabsTrigger value="recuerdos" onClick={fetchRecalls}>Recordatorio</TabsTrigger>
               <TabsTrigger value="plans">Planes</TabsTrigger>
             </TabsList>
 
@@ -233,19 +329,62 @@ export function PatientDetailsDialog({
                   <div className="p-4 rounded-lg border border-border bg-card">
                     <div className="flex items-center gap-2 mb-3">
                       <Target className="h-5 w-5 text-primary" />
-                      <h3 className="font-semibold">Objetivos de Peso</h3>
+                      <h3 className="font-semibold">Objetivos de Peso y IMC</h3>
                     </div>
                     <div className="space-y-3">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Peso Actual</p>
-                        <p className="text-2xl font-bold">
-                          {patient.peso_actual ? `${patient.peso_actual} kg` : "No registrado"}
-                        </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Peso Actual</p>
+                          <p className="text-2xl font-bold">
+                            {patient.peso_actual ? `${patient.peso_actual} kg` : "No registrado"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Peso Objetivo</p>
+                          <p className="text-2xl font-bold">
+                            {patient.peso_objetivo ? `${patient.peso_objetivo} kg` : "No registrado"}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Peso Objetivo</p>
-                        <p className="text-2xl font-bold">
-                          {patient.peso_objetivo ? `${patient.peso_objetivo} kg` : "No registrado"}
+
+                      {/* IMC Display */}
+                      <div className="pt-2 border-t border-border">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-sm text-muted-foreground">IMC (Índice de Masa Corporal)</p>
+                          {patient.peso_actual && patient.altura && (
+                            <Badge variant="outline" className={(() => {
+                              const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
+                              const imc = patient.peso_actual / (h * h);
+                              if (imc < 18.5) return "text-blue-500 border-blue-200 bg-blue-50";
+                              if (imc < 25) return "text-green-600 border-green-200 bg-green-50";
+                              if (imc < 30) return "text-yellow-600 border-yellow-200 bg-yellow-50";
+                              return "text-red-600 border-red-200 bg-red-50";
+                            })()}>
+                              {(() => {
+                                const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
+                                const imc = patient.peso_actual / (h * h);
+                                if (imc < 18.5) return "Bajo peso";
+                                if (imc < 25) return "Peso normal";
+                                if (imc < 30) return "Sobrepeso";
+                                return "Obesidad";
+                              })()}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-2xl font-bold flex items-baseline gap-2">
+                          {patient.peso_actual && patient.altura ? (
+                            <>
+                              {(() => {
+                                const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
+                                return (patient.peso_actual / (h * h)).toFixed(1);
+                              })()}
+                              <span className="text-sm font-normal text-muted-foreground">kg/m²</span>
+                            </>
+                          ) : (
+                            <span className="text-sm text-muted-foreground italic">
+                              {!patient.peso_actual ? "Falta peso" : "Falta altura"}
+                            </span>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -271,6 +410,136 @@ export function PatientDetailsDialog({
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="evaluacion" className="space-y-4 mt-4">
+              <div className="p-4 rounded-lg border border-border bg-card min-h-[200px]">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Evaluación Nutricional</h3>
+                </div>
+                {patient.evaluacion_nutricional ? (
+                  <div className="text-sm border rounded-md p-4 bg-muted/30 whitespace-pre-wrap leading-relaxed">
+                    {patient.evaluacion_nutricional}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground italic">
+                    <AlertCircle className="h-8 w-8 mb-2 opacity-20" />
+                    <p>No se ha registrado una evaluación aún.</p>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="recuerdos" className="space-y-4 mt-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-primary" />
+                  Historial de Recordatorios 24h
+                </h3>
+                {!showRecallForm && (
+                  <Button onClick={() => setShowRecallForm(true)} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nuevo Recordatorio
+                  </Button>
+                )}
+              </div>
+
+              {showRecallForm ? (
+                <div className="bg-muted/30 p-4 rounded-lg border border-border">
+                  <Recordatorio24hForm
+                    patientId={patient.id}
+                    onSuccess={() => {
+                      setShowRecallForm(false);
+                      fetchRecalls();
+                    }}
+                    onCancel={() => setShowRecallForm(false)}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {loadingRecalls ? (
+                    <div className="flex justify-center py-10">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : recalls.length > 0 ? (
+                    recalls.map((recall) => (
+                      <Card key={recall.id} className="border border-border">
+                        <CardHeader className="py-3 px-4 bg-muted/20">
+                          <div className="flex justify-between items-center">
+                            <span className="font-semibold">{formatDate(recall.date)}</span>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-4 text-sm space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <RecallDetailTable data={recall.desayuno} title="Desayuno" />
+                            <RecallDetailTable data={recall.media_manana} title="Nueves" />
+                            <RecallDetailTable data={recall.almuerzo} title="Almuerzo" />
+                            <RecallDetailTable data={recall.media_tarde} title="Onces" />
+                            <RecallDetailTable data={recall.cena} title="Cena" />
+                            <RecallDetailTable data={recall.snack_nocturno} title="Snack Nocturno" />
+                          </div>
+                          {recall.observaciones && (
+                            <div className="mt-2 p-2 rounded bg-primary/5 border border-primary/10">
+                              <p className="font-bold text-xs uppercase text-primary/70 mb-1">Observaciones</p>
+                              <p className="italic">{recall.observaciones}</p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground border rounded-lg border-dashed">
+                      <Clock className="h-10 w-10 mb-2 opacity-20" />
+                      <p>No hay recordatorios registrados para este paciente.</p>
+                      <Button variant="link" onClick={() => setShowRecallForm(true)}>
+                        Crear el primero
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="frecuencia" className="space-y-4 mt-4">
+              <div className="rounded-md border bg-card">
+                <div className="p-4 border-b">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-primary" />
+                    <h3 className="font-semibold">Frecuencia de Consumo de Alimentos</h3>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="p-3 text-left font-medium">Grupo de Alimento</th>
+                        <th className="p-3 text-left font-medium">Frecuencia</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {patient.frecuencia_consumo && Array.isArray(patient.frecuencia_consumo) && patient.frecuencia_consumo.length > 0 ? (
+                        patient.frecuencia_consumo.map((item: any) => (
+                          <tr key={item.grupo}>
+                            <td className="p-3 font-medium">{item.grupo}</td>
+                            <td className="p-3">
+                              <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10">
+                                {getFrequencyLabel(item.frecuencia)}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={2} className="p-10 text-center text-muted-foreground italic">
+                            No se ha registrado la frecuencia de consumo para este paciente.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </TabsContent>

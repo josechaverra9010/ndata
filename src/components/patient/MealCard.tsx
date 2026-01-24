@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { CheckCircle2, Clock, Loader2, Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface MealCardProps {
     meal: {
@@ -12,25 +13,36 @@ interface MealCardProps {
         protein?: number;
         carbs?: number;
         fat?: number;
+        ingredients?: string[];
+        instructions?: string[];
+        image?: string;
     };
     onToggle: () => void;
+    onViewDetails: () => void;
     isUpdating: boolean;
 }
 
-export function MealCard({ meal, onToggle, isUpdating }: MealCardProps) {
+export function MealCard({ meal, onToggle, onViewDetails, isUpdating }: MealCardProps) {
     return (
-        <button
-            onClick={onToggle}
-            disabled={isUpdating}
+        <div
+            onClick={() => !isUpdating && onToggle()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    !isUpdating && onToggle();
+                }
+            }}
             className={`group w-full flex items-start gap-4 p-4 rounded-2xl border-2 transition-all duration-300 ${meal.completed
-                    ? "bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border-primary/30 shadow-sm"
-                    : "bg-card border-border hover:border-primary/40 hover:shadow-md"
+                ? "bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border-primary/30 shadow-sm"
+                : "bg-card border-border hover:border-primary/40 hover:shadow-md"
                 } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
         >
             {/* Icon */}
             <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-all duration-300 ${meal.completed
-                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
-                    : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
                 }`}>
                 {isUpdating ? (
                     <Loader2 className="h-6 w-6 animate-spin" />
@@ -92,6 +104,21 @@ export function MealCard({ meal, onToggle, isUpdating }: MealCardProps) {
                     </div>
                 ) : null}
             </div>
-        </button>
+
+            {/* View Details Button */}
+            <div className="flex flex-col items-center justify-center pl-2 border-l border-border/50">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onViewDetails();
+                    }}
+                >
+                    <Eye className="h-4 w-4" />
+                </Button>
+            </div>
+        </div>
     );
 }

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Apple,
@@ -17,8 +18,15 @@ import {
   CheckCircle2,
   Clock,
   Plus,
-  Loader2
+  Loader2,
+  ChefHat,
+  List,
+  Utensils,
+  ClipboardList,
+  Activity
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { MealCard } from "@/components/patient/MealCard";
 
@@ -28,6 +36,7 @@ interface DashboardStats {
     target: number;
     percentage: number;
   };
+  edad_formateada?: string;
   water: {
     consumed_ml: number;
     consumed_liters: number;
@@ -57,6 +66,9 @@ interface Meal {
   carbs?: number;
   fat?: number;
   meal_type: string;
+  ingredients?: string[];
+  instructions?: string[];
+  image?: string;
 }
 
 interface WeekDay {
@@ -88,6 +100,11 @@ export default function PatientDashboard() {
   const [loading, setLoading] = useState(true);
   const [updatingMeal, setUpdatingMeal] = useState<string | null>(null);
   const [addingWater, setAddingWater] = useState(false);
+  const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
+  const [newWeight, setNewWeight] = useState("");
+  const [savingWeight, setSavingWeight] = useState(false);
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const patientId = user?.id;
@@ -216,6 +233,31 @@ export default function PatientDashboard() {
     }
   };
 
+  const handleUpdateWeight = async () => {
+    if (!newWeight || isNaN(parseFloat(newWeight))) {
+      return toast({ title: "Error", description: "Ingresa un peso válido", variant: "destructive" });
+    }
+
+    setSavingWeight(true);
+    try {
+      const response = await fetch(`${API_URL}/profile/update`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user?.email, peso_actual: parseFloat(newWeight) }),
+      });
+
+      if (response.ok) {
+        toast({ title: "¡Éxito!", description: "Peso actualizado correctamente" });
+        setIsWeightDialogOpen(false);
+        fetchDashboardData();
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo actualizar el peso", variant: "destructive" });
+    } finally {
+      setSavingWeight(false);
+    }
+  };
+
   if (loading) {
     return (
       <PatientLayout>
@@ -249,10 +291,29 @@ export default function PatientDashboard() {
   return (
     <PatientLayout>
       <div className="space-y-6 animate-fade-in">
+        {/* Header con Bienvenida y Edad */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div>
+            <h1 className="text-xl lg:text-2xl font-bold text-foreground">
+              ¡Hola, {user?.nombres}! 👋
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Hoy es {new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+          </div>
+          {stats.edad_formateada && (
+            <Badge variant="secondary" className="w-fit bg-primary/10 text-primary border-primary/20 py-1.5 px-3">
+              <Clock className="h-3.5 w-3.5 mr-2" />
+              {stats.edad_formateada}
+            </Badge>
+          )}
+        </div>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
           {/* Calorías */}
-          <Card className="border-border shadow-card">
+          <Card className="border-border shadow-card relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1 h-full bg-accent" />
             <CardContent className="p-3 lg:p-5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
@@ -264,8 +325,8 @@ export default function PatientDashboard() {
                     de {stats.calories.target} kcal
                   </p>
                 </div>
-                <div className="flex h-9 w-9 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10">
-                  <Flame className="h-4 w-4 lg:h-6 lg:w-6 text-accent" />
+                <div className="flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10 group-hover:scale-110 transition-transform">
+                  <Flame className="h-5 w-5 lg:h-6 lg:w-6 text-accent" />
                 </div>
               </div>
               <Progress
@@ -276,7 +337,8 @@ export default function PatientDashboard() {
           </Card>
 
           {/* Agua */}
-          <Card className="border-border shadow-card">
+          <Card className="border-border shadow-card relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1 h-full bg-info" />
             <CardContent className="p-3 lg:p-5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
@@ -285,10 +347,10 @@ export default function PatientDashboard() {
                     {stats.water.consumed_liters}L
                   </p>
                   <p className="text-[10px] lg:text-xs text-muted-foreground">
-                    de {stats.water.target_liters}L objetivo
+                    Meta: {stats.water.target_liters}L
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <Button
                     size="icon"
                     variant="ghost"
@@ -306,22 +368,18 @@ export default function PatientDashboard() {
                       }
                     }}
                     disabled={addingWater || stats.water.consumed_ml <= 0}
-                    className="h-9 w-9 lg:h-12 lg:w-12 shrink-0 rounded-xl bg-destructive/10 hover:bg-destructive/20"
+                    className="h-8 w-8 lg:h-9 lg:w-9 shrink-0 rounded-lg bg-destructive/5 hover:bg-destructive/10 text-destructive"
                   >
-                    <Plus className="h-4 w-4 lg:h-6 lg:w-6 text-destructive rotate-45" />
+                    <Plus className="h-4 w-4 rotate-45" />
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
                     onClick={handleAddWater}
                     disabled={addingWater}
-                    className="h-9 w-9 lg:h-12 lg:w-12 shrink-0 rounded-xl bg-info/10 hover:bg-info/20 shadow-sm transition-all hover:scale-105"
+                    className="h-8 w-8 lg:h-9 lg:w-9 shrink-0 rounded-lg bg-info/10 hover:bg-info/20 text-info shadow-sm"
                   >
-                    {addingWater ? (
-                      <Loader2 className="h-4 w-4 lg:h-6 lg:w-6 text-info animate-spin" />
-                    ) : (
-                      <Plus className="h-4 w-4 lg:h-6 lg:w-6 text-info" />
-                    )}
+                    {addingWater ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   </Button>
                 </div>
               </div>
@@ -333,7 +391,8 @@ export default function PatientDashboard() {
           </Card>
 
           {/* Comidas */}
-          <Card className="border-border shadow-card">
+          <Card className="border-border shadow-card relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
             <CardContent className="p-3 lg:p-5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
@@ -341,10 +400,10 @@ export default function PatientDashboard() {
                   <p className="text-lg lg:text-2xl font-bold text-foreground">
                     {stats.meals.completed}/{stats.meals.total}
                   </p>
-                  <p className="text-[10px] lg:text-xs text-muted-foreground">completadas</p>
+                  <p className="text-[10px] lg:text-xs text-muted-foreground">completadas hoy</p>
                 </div>
-                <div className="flex h-9 w-9 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                  <Apple className="h-4 w-4 lg:h-6 lg:w-6 text-primary" />
+                <div className="flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 group-hover:scale-110 transition-transform">
+                  <Apple className="h-5 w-5 lg:h-6 lg:w-6 text-primary" />
                 </div>
               </div>
               <Progress
@@ -355,21 +414,22 @@ export default function PatientDashboard() {
           </Card>
 
           {/* Meta Semanal */}
-          <Card className="border-border shadow-card">
+          <Card className="border-border shadow-card relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-1 h-full bg-success" />
             <CardContent className="p-3 lg:p-5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-muted-foreground truncate">Meta Semanal</p>
+                  <p className="text-xs lg:text-sm text-muted-foreground truncate">Adherencia</p>
                   <p className="text-lg lg:text-2xl font-bold text-foreground">
                     {stats.weekly_goal.percentage}%
                   </p>
-                  <p className={`text - [10px] lg: text - xs ${stats.weekly_goal.change >= 0 ? 'text-success' : 'text-destructive'
-                    } `}>
-                    {stats.weekly_goal.change >= 0 ? '+' : ''}{stats.weekly_goal.change}% vs anterior
+                  <p className={`text-[10px] lg:text-xs flex items-center gap-1 ${stats.weekly_goal.change >= 0 ? 'text-success' : 'text-destructive'}`}>
+                    <TrendingUp className={`h-3 w-3 ${stats.weekly_goal.change < 0 ? 'rotate-180' : ''}`} />
+                    {stats.weekly_goal.change >= 0 ? '+' : ''}{stats.weekly_goal.change}%
                   </p>
                 </div>
-                <div className="flex h-9 w-9 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-success/10">
-                  <Target className="h-4 w-4 lg:h-6 lg:w-6 text-success" />
+                <div className="flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-success/10 group-hover:scale-110 transition-transform">
+                  <Target className="h-5 w-5 lg:h-6 lg:w-6 text-success" />
                 </div>
               </div>
               <Progress
@@ -378,6 +438,53 @@ export default function PatientDashboard() {
               />
             </CardContent>
           </Card>
+        </div>
+
+        {/* Quick Actions Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Button
+            variant="outline"
+            className="h-auto flex-col py-4 gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/40 transition-all"
+            onClick={() => navigate('/patient/my-plan')}
+          >
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <ChefHat className="h-5 w-5" />
+            </div>
+            <span className="text-xs font-semibold">Ver Mi Plan</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            className="h-auto flex-col py-4 gap-2 border-accent/20 hover:bg-accent/5 hover:border-accent/40 transition-all"
+            onClick={() => navigate('/patient/recipes')}
+          >
+            <div className="h-10 w-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+              <Utensils className="h-5 w-5" />
+            </div>
+            <span className="text-xs font-semibold">Mis Recetas</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            className="h-auto flex-col py-4 gap-2 border-info/20 hover:bg-info/5 hover:border-info/40 transition-all"
+            onClick={() => navigate('/patient/profile?tab=recordatorio')}
+          >
+            <div className="h-10 w-10 rounded-full bg-info/10 flex items-center justify-center text-info">
+              <ClipboardList className="h-5 w-5" />
+            </div>
+            <span className="text-xs font-semibold">Registrar Ingesta</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            className="h-auto flex-col py-4 gap-2 border-success/20 hover:bg-success/5 hover:border-success/40 transition-all"
+            onClick={() => setIsWeightDialogOpen(true)}
+          >
+            <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center text-success">
+              <Activity className="h-5 w-5" />
+            </div>
+            <span className="text-xs font-semibold">Actualizar Peso</span>
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -412,6 +519,10 @@ export default function PatientDashboard() {
                       key={index}
                       meal={meal}
                       onToggle={() => handleToggleMeal(meal)}
+                      onViewDetails={() => {
+                        setSelectedMeal(meal);
+                        setIsDetailsOpen(true);
+                      }}
                       isUpdating={updatingMeal === meal.meal_type}
                     />
                   ))}
@@ -422,6 +533,62 @@ export default function PatientDashboard() {
 
           {/* Side Panel */}
           <div className="space-y-4 lg:space-y-6">
+            {/* IMC Card */}
+            <Card className="border-border shadow-card">
+              <CardHeader className="pb-3 lg:pb-6">
+                <CardTitle className="flex items-center gap-2 text-foreground text-sm lg:text-base">
+                  <Target className="h-4 w-4 lg:h-5 lg:w-5 text-primary" />
+                  IMC (Índice de Masa Corporal)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center p-2">
+                  {((dashboardData?.stats as any)?.peso_actual || user?.peso_actual) && ((dashboardData?.stats as any)?.altura || user?.altura) ? (
+                    <>
+                      <div className="relative h-24 w-48 overflow-hidden mb-2">
+                        <div className="absolute inset-0 flex items-end justify-center">
+                          <span className="text-3xl font-bold">
+                            {(() => {
+                              const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
+                              const altura = (dashboardData?.stats as any)?.altura || user?.altura;
+                              const h = altura > 3 ? altura / 100 : altura;
+                              return (peso / (h * h)).toFixed(1);
+                            })()}
+                          </span>
+                          <span className="text-sm font-medium text-muted-foreground ml-1 mb-1">km/m²</span>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className={(() => {
+                        const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
+                        const altura = (dashboardData?.stats as any)?.altura || user?.altura;
+                        const h = altura > 3 ? altura / 100 : altura;
+                        const imc = peso / (h * h);
+                        if (imc < 18.5) return "text-blue-500 border-blue-200 bg-blue-50";
+                        if (imc < 25) return "text-green-600 border-green-200 bg-green-50";
+                        if (imc < 30) return "text-yellow-600 border-yellow-200 bg-yellow-50";
+                        return "text-red-600 border-red-200 bg-red-50";
+                      })()}>
+                        {(() => {
+                          const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
+                          const altura = (dashboardData?.stats as any)?.altura || user?.altura;
+                          const h = altura > 3 ? altura / 100 : altura;
+                          const imc = peso / (h * h);
+                          if (imc < 18.5) return "Bajo peso";
+                          if (imc < 25) return "Peso normal";
+                          if (imc < 30) return "Sobrepeso";
+                          return "Obesidad";
+                        })()}
+                      </Badge>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center">
+                      Completa tu perfil (peso y altura) para ver tu IMC
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Week Progress */}
             <Card className="border-border shadow-card">
               <CardHeader className="pb-3 lg:pb-6">
@@ -434,10 +601,10 @@ export default function PatientDashboard() {
                 <div className="flex justify-between">
                   {week_progress.map((day, index) => (
                     <div key={index} className="flex flex-col items-center gap-1.5 lg:gap-2">
-                      <div className={`h - 8 w - 8 lg: h - 10 lg: w - 10 rounded - full flex items - center justify - center text - xs lg: text - sm font - medium ${day.completed
+                      <div className={`h-8 w-8 lg:h-10 lg:w-10 rounded-full flex items-center justify-center text-xs lg:text-sm font-medium ${day.completed
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground"
-                        } `}>
+                        }`}>
                         {day.completed ? "✓" : day.day.charAt(0)}
                       </div>
                       <span className="text-[10px] lg:text-xs text-muted-foreground">
@@ -504,6 +671,120 @@ export default function PatientDashboard() {
           </div>
         </div>
       </div>
-    </PatientLayout>
+
+
+      {/* Weight Update Dialog */}
+      <Dialog open={isWeightDialogOpen} onOpenChange={setIsWeightDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Actualizar mi Peso</DialogTitle>
+            <DialogDescription>
+              Registra tu peso actual para seguir tu progreso con precisión.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="weight" className="text-right">Peso (kg)</Label>
+              <input
+                id="weight"
+                type="number"
+                step="0.1"
+                placeholder="0.0"
+                className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                value={newWeight}
+                onChange={(e) => setNewWeight(e.target.value)}
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsWeightDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateWeight} disabled={savingWeight} className="gradient-primary">
+              {savingWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar Cambios"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Recipe Details Dialog */}
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="max-w-md lg:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <ChefHat className="h-5 w-5 text-primary" />
+              {selectedMeal?.description}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedMeal?.name} - {selectedMeal?.calories} kcal
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 pr-4 -mr-4">
+            <div className="space-y-6 py-4">
+              {selectedMeal?.image && (
+                <div className="rounded-xl overflow-hidden border border-border shadow-sm aspect-video w-full">
+                  <img
+                    src={selectedMeal.image}
+                    alt={selectedMeal.description}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Ingredients */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold flex items-center gap-2 text-primary">
+                    <List className="h-4 w-4" />
+                    Ingredientes
+                  </h3>
+                  {selectedMeal?.ingredients && selectedMeal.ingredients.length > 0 ? (
+                    <ul className="space-y-2">
+                      {selectedMeal.ingredients.map((ingredient, idx) => (
+                        <li key={idx} className="text-sm flex items-start gap-2 text-muted-foreground bg-muted/30 p-2 rounded-lg">
+                          <span className="h-1.5 w-1.5 rounded-full bg-primary/50 mt-1.5 shrink-0" />
+                          {ingredient}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-sm text-muted-foreground italic bg-muted/10 p-4 rounded-lg border border-dashed text-center">
+                      No hay ingredientes registrados para esta preparación.
+                    </div>
+                  )}
+                </div>
+
+                {/* Instructions */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold flex items-center gap-2 text-primary">
+                    <Utensils className="h-4 w-4" />
+                    Instrucciones
+                  </h3>
+                  {selectedMeal?.instructions && selectedMeal.instructions.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedMeal.instructions.map((step, idx) => (
+                        <div key={idx} className="flex gap-3 text-sm group">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                            {idx + 1}
+                          </span>
+                          <p className="text-muted-foreground pt-0.5">{step}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground italic bg-muted/10 p-4 rounded-lg border border-dashed text-center">
+                      No hay instrucciones detalladas disponibles.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </PatientLayout >
   );
 }

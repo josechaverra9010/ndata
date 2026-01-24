@@ -19,9 +19,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, User, Activity, HeartPulse } from "lucide-react";
+import { Loader2, User, Activity, HeartPulse, ClipboardList } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { FoodFrequencyForm, FOOD_GROUPS } from "@/components/shared/FoodFrequencyForm";
 
 interface NewPatientDialogProps {
   patient?: any;
@@ -52,6 +53,8 @@ interface PatientFormData {
   condiciones_medicas: string;
   alimentos_disgusto: string;
   antecedentes_familiares: string;
+  evaluacion_nutricional: string;
+  frecuencia_consumo: any[];
 }
 
 const initialFormData: PatientFormData = {
@@ -75,7 +78,11 @@ const initialFormData: PatientFormData = {
   condiciones_medicas: "",
   alimentos_disgusto: "",
   antecedentes_familiares: "",
+  evaluacion_nutricional: "",
+  frecuencia_consumo: [],
 };
+
+
 
 export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: NewPatientDialogProps) {
   const { toast } = useToast();
@@ -108,9 +115,16 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
         condiciones_medicas: patient.condiciones_medicas || "",
         alimentos_disgusto: patient.alimentos_disgusto || "",
         antecedentes_familiares: patient.antecedentes_familiares || "",
+        evaluacion_nutricional: patient.evaluacion_nutricional || "",
+        frecuencia_consumo: Array.isArray(patient.frecuencia_consumo) && patient.frecuencia_consumo.length > 0
+          ? patient.frecuencia_consumo
+          : FOOD_GROUPS.map(grupo => ({ grupo, frecuencia: "never" })),
       });
     } else if (!open) {
-      setFormData(initialFormData);
+      setFormData({
+        ...initialFormData,
+        frecuencia_consumo: FOOD_GROUPS.map(grupo => ({ grupo, frecuencia: "never" }))
+      });
       setErrors({});
     }
   }, [patient, open]);
@@ -201,6 +215,8 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
           condiciones_medicas: formData.condiciones_medicas.trim() || null,
           alimentos_disgusto: formData.alimentos_disgusto.trim() || null,
           antecedentes_familiares: formData.antecedentes_familiares.trim() || null,
+          evaluacion_nutricional: formData.evaluacion_nutricional.trim() || null,
+          frecuencia_consumo: formData.frecuencia_consumo
         }),
       });
 
@@ -252,7 +268,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <Tabs defaultValue="personal" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsList className="grid w-full grid-cols-5 mb-6">
               <TabsTrigger value="personal" className="flex gap-2">
                 <User className="h-4 w-4" />
                 Personal
@@ -264,6 +280,14 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
               <TabsTrigger value="salud" className="flex gap-2">
                 <HeartPulse className="h-4 w-4" />
                 Salud
+              </TabsTrigger>
+              <TabsTrigger value="frecuencia" className="flex gap-2">
+                <Activity className="h-4 w-4" />
+                Frecuencia
+              </TabsTrigger>
+              <TabsTrigger value="evaluacion" className="flex gap-2">
+                <ClipboardList className="h-4 w-4" />
+                Evaluación
               </TabsTrigger>
             </TabsList>
 
@@ -566,6 +590,28 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   onChange={(e) => handleChange("objetivos_salud", e.target.value)}
                   disabled={loading}
                   rows={3}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="frecuencia" className="space-y-4 pt-4">
+              <FoodFrequencyForm
+                data={formData.frecuencia_consumo}
+                onChange={(newData) => setFormData(prev => ({ ...prev, frecuencia_consumo: newData }))}
+              />
+            </TabsContent>
+
+            {/* Pestaña: Evaluación Nutricional */}
+            <TabsContent value="evaluacion" className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="evaluacion_nutricional">Evaluación Nutricional Detallada</Label>
+                <Textarea
+                  id="evaluacion_nutricional"
+                  placeholder="Realiza aquí la evaluación nutricional detallada del paciente..."
+                  value={formData.evaluacion_nutricional}
+                  onChange={(e) => handleChange("evaluacion_nutricional", e.target.value)}
+                  disabled={loading}
+                  className="min-h-[300px] resize-none"
                 />
               </div>
             </TabsContent>

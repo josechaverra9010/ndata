@@ -12,6 +12,7 @@ import { PatientDetailsDialog } from "@/components/admin/PatientDetailsDialog";
 import { ScheduleAppointmentDialog } from "@/components/admin/ScheduleAppointmentDialog";
 import { PatientPlansDialog } from "@/components/admin/PatientPlansDialog";
 import { AssignPlanToPatientDialog } from "@/components/admin/AssignPlanToPatientDialog";
+import { AssignPlanWithMenuDialog } from "@/components/admin/AssignPlanWithMenuDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -41,6 +42,8 @@ interface Patient {
   nivel_actividad: string | null;
   progreso: number;
   proxima_cita: string;
+  altura: number | null;
+  edad_formateada: string | null;
 }
 
 const statusStyles: Record<string, string> = {
@@ -61,6 +64,8 @@ const Patients = () => {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const [assignPlanOpen, setAssignPlanOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -357,6 +362,9 @@ const Patients = () => {
                       >
                         {patient.status}
                       </Badge>
+                      <span className="text-xs text-muted-foreground block mt-1">
+                        {patient.edad_formateada || "Edad no registrada"}
+                      </span>
                     </div>
                   </div>
                   <div onClick={(e) => e.stopPropagation()}>
@@ -382,6 +390,14 @@ const Patients = () => {
                         <DropdownMenuItem onClick={(e) => handleViewPlans(patient)}>
                           <ClipboardList className="mr-2 h-4 w-4" />
                           Ver planes
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPatient(patient);
+                          setAssignOpen(true);
+                        }}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Crear y asignar plan
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -509,6 +525,20 @@ const Patients = () => {
               // Recargar planes si la ventana de planes está abierta
               // Pero como cerramos/abrimos dialogs, tal vez solo mostrar toast
               setPlansOpen(true); // Reabrir lista de planes
+            }}
+          />
+
+          <AssignPlanWithMenuDialog
+            plan={selectedPlan}
+            open={assignOpen}
+            onOpenChange={setAssignOpen}
+            preselectedPatient={selectedPatient}
+            onAssignSuccess={() => {
+              toast({
+                title: "¡Éxito!",
+                description: "Plan asignado correctamente al paciente",
+              });
+              fetchPatients();
             }}
           />
         </>
