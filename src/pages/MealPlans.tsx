@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, Plus, Filter, Users, Flame, Clock, Edit, Trash2, Calendar } from "lucide-react";
-import { NewPlanDialog } from "@/components/admin/NewPlanDialog";
+import { NewPlanWizard } from "@/components/admin/NewPlanWizard";
 import { PlanDetailsDialog } from "@/components/admin/PlanDetailsDialog";
 import { AssignPlanWithMenuDialog } from "@/components/admin/AssignPlanWithMenuDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -91,27 +91,11 @@ const MealPlans = () => {
     }
   };
 
-  const handleCreatePlan = async (planData: Omit<MealPlan, "id" | "patients" | "is_active" | "created_at">) => {
-    try {
-      const response = await fetch(`${API_URL}/meal-plans`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(planData),
-      });
-
-      if (response.ok) {
-        const newPlan = await response.json();
-        setMealPlans([...mealPlans, newPlan]);
-        toast({ title: "¡Éxito!", description: "Plan nutricional creado correctamente" });
-        setNewPlanOpen(false);
-      } else {
-        const error = await response.json();
-        toast({ title: "Error", description: error.detail || "No se pudo crear el plan", variant: "destructive" });
-      }
-    } catch (error) {
-      console.error("Error creating plan:", error);
-      toast({ title: "Error", description: "Error al crear el plan nutricional", variant: "destructive" });
-    }
+  const handleCreatePlan = async (newPlan: MealPlan) => {
+    // El plan ya fue creado por el wizard, solo actualizamos la lista
+    setMealPlans([...mealPlans, newPlan]);
+    setNewPlanOpen(false);
+    fetchMealPlans(); // Refrescar para obtener datos actualizados
   };
 
   const handleUpdatePlan = async (planId: number, planData: Omit<MealPlan, "id" | "patients" | "is_active" | "created_at">) => {
@@ -362,7 +346,7 @@ const MealPlans = () => {
         )}
       </div>
 
-      <NewPlanDialog open={newPlanOpen} onOpenChange={setNewPlanOpen} onCreatePlan={handleCreatePlan} />
+      <NewPlanWizard open={newPlanOpen} onOpenChange={setNewPlanOpen} onCreatePlan={handleCreatePlan} />
       <PlanDetailsDialog plan={selectedPlan} open={detailsOpen} onOpenChange={setDetailsOpen} onUpdatePlan={handleUpdatePlan} />
       <AssignPlanWithMenuDialog plan={selectedPlan} open={assignOpen} onOpenChange={setAssignOpen} onAssignSuccess={fetchMealPlans} />
 

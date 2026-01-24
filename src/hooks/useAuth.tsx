@@ -21,6 +21,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(JSON.parse(savedUser));
     }
     setIsLoading(false);
+
+    // Escuchar cambios en localStorage para actualizar el usuario
+    const handleStorageChange = () => {
+      const updatedUser = localStorage.getItem('userData');
+      if (updatedUser) {
+        setUser(JSON.parse(updatedUser));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    // También escuchar eventos personalizados para cambios en la misma pestaña
+    window.addEventListener('userUpdated', handleStorageChange as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('userUpdated', handleStorageChange as EventListener);
+    };
   }, []);
 
   const logout = () => {

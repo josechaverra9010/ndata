@@ -38,7 +38,11 @@ import {
   Moon,
   UtensilsCrossed,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Calculator,
+  ClipboardList,
+  FileText,
+  Utensils
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +61,10 @@ interface MealPlan {
   patients: number;
   is_active: number;
   created_at?: string;
+  fase_1?: any;
+  fase_2?: any;
+  fase_3?: any;
+  fase_4?: any;
 }
 
 interface MealData {
@@ -638,8 +646,9 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
           </form>
         ) : (
           <Tabs defaultValue="overview" className="w-full mt-4">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="overview">Resumen</TabsTrigger>
+              <TabsTrigger value="fases">4 Fases</TabsTrigger>
               <TabsTrigger value="menu">
                 Menú Semanal
                 {weeklyMenu && (
@@ -760,6 +769,266 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="fases" className="space-y-4">
+              <div className="space-y-4">
+                {/* Fase 1: Requerimiento Energético y Peso Saludable */}
+                {plan.fase_1 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Calculator className="h-5 w-5 text-primary" />
+                        Fase 1: Requerimiento Energético y Peso Saludable
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        {plan.fase_1.peso_actual && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Peso Actual</Label>
+                            <p className="font-medium">{plan.fase_1.peso_actual} kg</p>
+                          </div>
+                        )}
+                        {plan.fase_1.altura && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Altura</Label>
+                            <p className="font-medium">{plan.fase_1.altura} cm</p>
+                          </div>
+                        )}
+                        {plan.fase_1.edad && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Edad</Label>
+                            <p className="font-medium">{plan.fase_1.edad} años</p>
+                          </div>
+                        )}
+                        {plan.fase_1.genero && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Género</Label>
+                            <p className="font-medium capitalize">{plan.fase_1.genero}</p>
+                          </div>
+                        )}
+                        {plan.fase_1.imc && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">IMC</Label>
+                            <p className="font-medium">{plan.fase_1.imc}</p>
+                          </div>
+                        )}
+                        {plan.fase_1.tmb && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">TMB (kcal)</Label>
+                            <p className="font-medium">{plan.fase_1.tmb}</p>
+                          </div>
+                        )}
+                        {plan.fase_1.requerimiento_energetico && (
+                          <div className="col-span-2">
+                            <Label className="text-xs text-muted-foreground">Requerimiento Energético</Label>
+                            <p className="font-bold text-lg text-primary">{plan.fase_1.requerimiento_energetico} kcal</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Fase 2: Fórmula Sintética de Consumo y Planeada */}
+                {plan.fase_2 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <ClipboardList className="h-5 w-5 text-primary" />
+                        Fase 2: Fórmula Sintética de Consumo y Planeada
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {plan.fase_2.formula_consumo_actual && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Fórmula de Consumo Actual</Label>
+                          <p className="text-sm mt-1">{plan.fase_2.formula_consumo_actual}</p>
+                        </div>
+                      )}
+                      {plan.fase_2.formula_planeada && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Fórmula Planeada</Label>
+                          <p className="text-sm mt-1">{plan.fase_2.formula_planeada}</p>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-4">
+                        {plan.fase_2.distribucion_calorica_actual && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Distribución Calórica Actual</Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_2.distribucion_calorica_actual}</p>
+                          </div>
+                        )}
+                        {plan.fase_2.distribucion_calorica_planeada && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Distribución Calórica Planeada</Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_2.distribucion_calorica_planeada}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Fase 3: Fórmula Sintética Desarrollada */}
+                {plan.fase_3 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <FileText className="h-5 w-5 text-primary" />
+                        Fase 3: Fórmula Sintética Desarrollada
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {plan.fase_3.formula_desarrollada && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Fórmula Desarrollada</Label>
+                          <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_3.formula_desarrollada}</p>
+                        </div>
+                      )}
+                      {plan.fase_3.distribucion_macronutrientes && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Distribución de Macronutrientes</Label>
+                          <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_3.distribucion_macronutrientes}</p>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-3 gap-4">
+                        {plan.fase_3.proteinas_gramos && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Proteínas</Label>
+                            <p className="font-medium">{plan.fase_3.proteinas_gramos} g</p>
+                          </div>
+                        )}
+                        {plan.fase_3.carbohidratos_gramos && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Carbohidratos</Label>
+                            <p className="font-medium">{plan.fase_3.carbohidratos_gramos} g</p>
+                          </div>
+                        )}
+                        {plan.fase_3.grasas_gramos && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Grasas</Label>
+                            <p className="font-medium">{plan.fase_3.grasas_gramos} g</p>
+                          </div>
+                        )}
+                      </div>
+                      {(plan.fase_3.fibra || plan.fase_3.vitaminas || plan.fase_3.minerales) && (
+                        <div className="grid grid-cols-3 gap-4 pt-2 border-t">
+                          {plan.fase_3.fibra && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Fibra</Label>
+                              <p className="text-sm">{plan.fase_3.fibra} g</p>
+                            </div>
+                          )}
+                          {plan.fase_3.vitaminas && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Vitaminas</Label>
+                              <p className="text-sm">{plan.fase_3.vitaminas}</p>
+                            </div>
+                          )}
+                          {plan.fase_3.minerales && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Minerales</Label>
+                              <p className="text-sm">{plan.fase_3.minerales}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Fase 4: Minuta Patrón */}
+                {plan.fase_4 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Utensils className="h-5 w-5 text-primary" />
+                        Fase 4: Minuta Patrón
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-1 gap-3">
+                        {plan.fase_4.desayuno && (
+                          <div className="p-3 rounded-lg bg-muted/30">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Sun className="h-4 w-4" />
+                              Desayuno
+                            </Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.desayuno}</p>
+                          </div>
+                        )}
+                        {plan.fase_4.media_manana && (
+                          <div className="p-3 rounded-lg bg-muted/30">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Coffee className="h-4 w-4" />
+                              Media Mañana
+                            </Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.media_manana}</p>
+                          </div>
+                        )}
+                        {plan.fase_4.almuerzo && (
+                          <div className="p-3 rounded-lg bg-muted/30">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                              <UtensilsCrossed className="h-4 w-4" />
+                              Almuerzo
+                            </Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.almuerzo}</p>
+                          </div>
+                        )}
+                        {plan.fase_4.media_tarde && (
+                          <div className="p-3 rounded-lg bg-muted/30">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Coffee className="h-4 w-4" />
+                              Media Tarde
+                            </Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.media_tarde}</p>
+                          </div>
+                        )}
+                        {plan.fase_4.cena && (
+                          <div className="p-3 rounded-lg bg-muted/30">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Moon className="h-4 w-4" />
+                              Cena
+                            </Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.cena}</p>
+                          </div>
+                        )}
+                        {plan.fase_4.snack_nocturno && (
+                          <div className="p-3 rounded-lg bg-muted/30">
+                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
+                              <Moon className="h-4 w-4" />
+                              Snack Nocturno
+                            </Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.snack_nocturno}</p>
+                          </div>
+                        )}
+                        {plan.fase_4.observaciones && (
+                          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                            <Label className="text-xs text-muted-foreground">Observaciones</Label>
+                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.observaciones}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {!plan.fase_1 && !plan.fase_2 && !plan.fase_3 && !plan.fase_4 && (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                      <p className="text-sm text-muted-foreground">
+                        Este plan no tiene información de las 4 fases registrada.
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Los planes creados con el nuevo sistema incluirán esta información.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value="menu" className="space-y-4">

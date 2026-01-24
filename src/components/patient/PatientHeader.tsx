@@ -217,11 +217,14 @@ export function PatientHeader() {
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-full bg-muted/50 py-1 pl-1 pr-2 transition-colors hover:bg-muted lg:gap-3 lg:py-1.5 lg:pl-1.5 lg:pr-3">
               <Avatar className="h-7 w-7 border-2 border-primary/20 lg:h-8 lg:w-8">
-                {patientData?.photo ? (
-                  <AvatarImage src={patientData.photo} alt={patientData.name} />
+                {(patientData?.photo || user?.avatar || (user as any)?.foto_perfil) ? (
+                  <AvatarImage 
+                    src={patientData?.photo || user?.avatar || (user as any)?.foto_perfil || ""} 
+                    alt={patientData?.name || user?.name || 'Paciente'} 
+                  />
                 ) : (
                   <AvatarFallback className="bg-primary text-primary-foreground text-xs lg:text-sm">
-                    {patientData ? getInitials(patientData.name) : 'P'}
+                    {patientData ? getInitials(patientData.name) : (user?.name ? getInitials(user.name) : 'P')}
                   </AvatarFallback>
                 )}
               </Avatar>

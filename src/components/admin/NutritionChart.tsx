@@ -31,13 +31,26 @@ export function NutritionChart() {
   useEffect(() => {
     const fetchChartData = async () => {
       try {
-        const response = await fetch(`${API_URL} /dashboard/chart - data`);
+        const response = await fetch(`${API_URL}/dashboard/chart-data`);
         if (response.ok) {
           const chartData = await response.json();
-          setData(chartData);
+          // El endpoint devuelve un array con { key, month, consultas, planes }
+          // Necesitamos mapearlo al formato esperado { name, consultas, planes }
+          if (Array.isArray(chartData)) {
+            const mappedData = chartData.map((item: any) => ({
+              name: item.month || item.name || item.key,
+              consultas: item.consultas || 0,
+              planes: item.planes || 0
+            }));
+            setData(mappedData);
+          } else {
+            setData(mockData);
+          }
         }
       } catch (error) {
         console.error("Error fetching chart data:", error);
+        // Usar datos mock si falla
+        setData(mockData);
       } finally {
         setLoading(false);
       }
