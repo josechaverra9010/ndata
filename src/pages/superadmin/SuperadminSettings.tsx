@@ -14,24 +14,13 @@ import {
   Lock,
   Globe,
   Save,
-<<<<<<< HEAD
-  Loader2
-=======
   Loader2,
   Camera,
   User
->>>>>>> 0a998de141157deef767b39ad403d0e8eb2668a3
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { API_URL } from "@/config/api";
-<<<<<<< HEAD
-
-export default function SuperadminSettings() {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-=======
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function SuperadminSettings() {
@@ -41,7 +30,6 @@ export default function SuperadminSettings() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [avatar, setAvatar] = useState<string>("");
 
->>>>>>> 0a998de141157deef767b39ad403d0e8eb2668a3
   const [settings, setSettings] = useState({
     siteName: "NutriData",
     supportEmail: "soporte@NutriData.com",

@@ -27,6 +27,7 @@ from sqlalchemy import func, and_
 
 # Configuración de Base de Datos (PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")
+ENV = os.getenv("ENV", "production").strip("'\"").lower()
 
 if not DATABASE_URL:
     DB_USER = os.getenv("MYSQL_USER")
@@ -49,7 +50,14 @@ SECRET_KEY = os.getenv("SECRET_KEY", "TU_LLAVE_SECRETA_SUPER_SEGURA")
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
-app = FastAPI()
+
+app = FastAPI(
+    title="NutriData API",
+    version="1.0.0",
+    docs_url="/docs" if ENV != "production" else None,
+    redoc_url="/redoc" if ENV != "production" else None,
+    openapi_url="/openapi.json" if ENV != "production" else None,
+)
 
 # URL base para las fotos (usar variable de entorno o localhost por defecto)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
@@ -1843,14 +1851,10 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
         "user": {
             "id": user.id,
             "name": f"{user.nombres} {user.apellidos}",
-<<<<<<< HEAD
-            "role": user.role
-=======
             "role": user.role,
             "altura": user.altura,
             "peso_actual": user.peso_actual,
             "avatar": user.foto_perfil
->>>>>>> 0a998de141157deef767b39ad403d0e8eb2668a3
         }
     }
 
@@ -4988,7 +4992,7 @@ async def upload_admin_avatar(
         buffer.write(contents)
     
     # Actualizar URL de foto
-    user.foto_perfil = f"http://localhost:8000/uploads/{file_name}"
+    user.foto_perfil = f"{BASE_URL}/uploads/{file_name}"
     db.commit()
     
     return {
@@ -5303,8 +5307,6 @@ def get_complete_settings(user_id: int, db: Session = Depends(get_db)):
             "timeFormat": appearance.time_format if appearance else "24h"
         }
     }
-<<<<<<< HEAD
-=======
 
 # ==================== ENDPOINTS DE CONFIGURACIÓN PARA PACIENTES ====================
 
@@ -5656,57 +5658,6 @@ def update_system_settings(
 
 # ==================== ENDPOINTS ADICIONALES PARA PORTAL DEL PACIENTE ====================
 # Agregar estos endpoints al archivo main.py existente
->>>>>>> 0a998de141157deef767b39ad403d0e8eb2668a3
-
-
-
-
-# Modelos de base de datos para configuración de pacientes
-class PatientNotificationSettingsDB(Base):
-    __tablename__ = "patient_notification_settings"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    
-    email_reminders = Column(Integer, default=1)
-    push_meals = Column(Integer, default=1)
-    push_appointments = Column(Integer, default=1)
-    sms_reminders = Column(Integer, default=0)
-    weekly_report = Column(Integer, default=1)
-    tips = Column(Integer, default=1)
-    
-    user = relationship("UserDB", foreign_keys=[user_id])
-
-class PatientAppearanceSettingsDB(Base):
-    __tablename__ = "patient_appearance_settings"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    
-    theme = Column(String(20), default="light")
-    language = Column(String(10), default="es")
-    units = Column(String(20), default="metric")
-    date_format = Column(String(20), default="dd-mm-yyyy")
-    
-    user = relationship("UserDB", foreign_keys=[user_id])
-
-# Modelo para configuración del sistema (superadmin)
-class SystemSettingsDB(Base):
-    __tablename__ = "system_settings"
-    id = Column(Integer, primary_key=True, index=True)
-    
-    site_name = Column(String(100), default="NutriData")
-    support_email = Column(String(100), default="soporte@nutridata.com")
-    max_users_per_org = Column(Integer, default=100)
-    max_patients_per_nutritionist = Column(Integer, default=50)
-    enable_registration = Column(Integer, default=1)
-    require_email_verification = Column(Integer, default=1)
-    enable_two_factor = Column(Integer, default=0)
-    maintenance_mode = Column(Integer, default=0)
-    email_notifications = Column(Integer, default=1)
-    slack_notifications = Column(Integer, default=0)
-    updated_at = Column(String(50))
-
-# Crear las tablas
-Base.metadata.create_all(bind=engine)
 
 # Esquemas Pydantic para pacientes
 class PatientNotificationSettingsUpdate(BaseModel):

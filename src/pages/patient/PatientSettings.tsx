@@ -110,7 +110,6 @@ export default function PatientSettings() {
     setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-const handleSave = async () => {
   const handleSave = async () => {
     if (!userId) {
       toast.error("Usuario no identificado");
