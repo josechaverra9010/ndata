@@ -34,7 +34,7 @@ export function NotificationsDropdown() {
 
   const fetchNotifications = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       if (!token) return;
 
       const response = await fetch(`${API_URL}/notifications`, {
@@ -54,7 +54,7 @@ export function NotificationsDropdown() {
 
   const handleMarkAsRead = async (id: number) => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/notifications/${id}/read`, {
         method: "PUT",
         headers: {
@@ -74,7 +74,7 @@ export function NotificationsDropdown() {
 
   const handleMarkAllAsRead = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/notifications/read-all`, {
         method: "PUT",
         headers: {

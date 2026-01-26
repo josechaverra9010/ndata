@@ -47,6 +47,7 @@ interface PatientFormData {
   peso_actual: string;
   peso_objetivo: string;
   nivel_actividad: string;
+  pal_factor: string; // Nuevo campo manual
   alergias: string;
   preferencias: string;
   objetivos_salud: string;
@@ -71,7 +72,8 @@ const initialFormData: PatientFormData = {
   altura: "",
   peso_actual: "",
   peso_objetivo: "",
-  nivel_actividad: "Moderada",
+  nivel_actividad: "Moderado (1.7 - 1.99)",
+  pal_factor: "1.76", // Valor por defecto para Moderado
   alergias: "",
   preferencias: "",
   objetivos_salud: "",
@@ -108,7 +110,8 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
         altura: patient.altura?.toString() || "",
         peso_actual: patient.peso_actual?.toString() || "",
         peso_objetivo: patient.peso_objetivo?.toString() || "",
-        nivel_actividad: patient.nivel_actividad || "Moderada",
+        nivel_actividad: patient.nivel_actividad || "Moderado (1.7 - 1.99)",
+        pal_factor: patient.pal_factor ? patient.pal_factor.toString() : (patient.nivel_actividad && patient.nivel_actividad.includes("Sed") ? "1.53" : "1.76"),
         alergias: Array.isArray(patient.alergias) ? patient.alergias.join(", ") : (patient.alergias || ""),
         preferencias: Array.isArray(patient.preferencias) ? patient.preferencias.join(", ") : (patient.preferencias || ""),
         objetivos_salud: patient.objetivos_salud || "",
@@ -141,8 +144,33 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
     return age;
   }, [formData.fecha_nacimiento]);
 
+  const imc = useMemo(() => {
+    const peso = parseFloat(formData.peso_actual);
+    const altura = parseFloat(formData.altura);
+
+    if (!peso || !altura || altura <= 0) return "";
+
+    const alturaMetros = altura / 100;
+    const calculo = peso / (alturaMetros * alturaMetros);
+    return calculo.toFixed(2);
+  }, [formData.peso_actual, formData.altura]);
+
   const handleChange = (field: keyof PatientFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+
+      // Auto-calcular PAL si cambia el nivel de actividad
+      if (field === "nivel_actividad") {
+        let newPal = prev.pal_factor;
+        if (value.includes("Sedentario")) newPal = "1.53";
+        else if (value.includes("Moderado")) newPal = "1.76";
+        else if (value.includes("Vigoroso")) newPal = "2.25";
+
+        newData.pal_factor = newPal;
+      }
+
+      return newData;
+    });
     // Limpiar error del campo cuando el usuario escribe
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: "" }));
@@ -209,6 +237,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
           peso_actual: formData.peso_actual ? parseFloat(formData.peso_actual) : null,
           peso_objetivo: formData.peso_objetivo ? parseFloat(formData.peso_objetivo) : null,
           nivel_actividad: formData.nivel_actividad,
+          pal_factor: formData.pal_factor ? parseFloat(formData.pal_factor) : null,
           alergias: formData.alergias.split(',').map(s => s.trim()).filter(s => s !== ""),
           preferencias: formData.preferencias.split(',').map(s => s.trim()).filter(s => s !== ""),
           objetivos_salud: formData.objetivos_salud.trim() || null,
@@ -461,7 +490,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
 
             {/* Pestaña: Datos Físicos */}
             <TabsContent value="fisico" className="space-y-4 pt-4">
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <div className="space-y-2">
                   <Label htmlFor="altura">Altura (cm)</Label>
                   <Input
@@ -498,6 +527,16 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     disabled={loading}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="imc">IMC</Label>
+                  <Input
+                    id="imc"
+                    value={imc}
+                    readOnly
+                    placeholder="24.5"
+                    className="bg-muted font-bold"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -511,13 +550,30 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     <SelectValue placeholder="Selecciona nivel" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Sedentaria">Sedentaria (Poco o nada de ejercicio)</SelectItem>
-                    <SelectItem value="Ligera">Ligera (Ejercicio 1-3 días/semana)</SelectItem>
-                    <SelectItem value="Moderada">Moderada (Ejercicio 3-5 días/semana)</SelectItem>
-                    <SelectItem value="Fuerte">Fuerte (Ejercicio 6-7 días/semana)</SelectItem>
-                    <SelectItem value="Muy Fuerte">Muy Fuerte (Atleta, ejercicio intenso)</SelectItem>
+                    <SelectItem value="Sedentario (1.4 - 1.69)">Sedentario (1.4 - 1.69)</SelectItem>
+                    <SelectItem value="Moderado (1.7 - 1.99)">Moderado (1.7 - 1.99)</SelectItem>
+                    <SelectItem value="Vigoroso (2.0 - 2.4)">Vigoroso (2.0 - 2.4)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pal_factor">Factor de Actividad (PAL)</Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id="pal_factor"
+                    type="number"
+                    step="0.001"
+                    placeholder="1.55"
+                    value={formData.pal_factor}
+                    onChange={(e) => handleChange("pal_factor", e.target.value)}
+                    disabled={loading}
+                    className="w-1/3"
+                  />
+                  <p className="text-xs text-muted-foreground flex-1">
+                    Este valor se calcula automáticamente según el nivel de actividad, pero puedes ajustarlo manualmente si es necesario.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2">

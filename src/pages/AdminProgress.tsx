@@ -165,7 +165,7 @@ const AdminProgress = () => {
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/progress/patients?trend=${filterTrend}&search=${searchTerm}`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -199,7 +199,7 @@ const AdminProgress = () => {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/progress/stats`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -213,7 +213,7 @@ const AdminProgress = () => {
 
   const fetchPatientDetails = async (patientId: number) => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/progress/patients/${patientId}`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -378,7 +378,7 @@ const AdminProgress = () => {
     }
 
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const userId = token ? JSON.parse(atob(token.split('.')[1])).id : 1;
 
       const url = editingNoteId

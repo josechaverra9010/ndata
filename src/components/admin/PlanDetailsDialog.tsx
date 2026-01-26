@@ -263,6 +263,8 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
   const [isEditing, setIsEditing] = useState(false);
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenu | null>(null);
   const [loadingMenu, setLoadingMenu] = useState(false);
+  const [enrichedMenu, setEnrichedMenu] = useState<any>(null);
+  const [loadingRecipes, setLoadingRecipes] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -297,19 +299,77 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
     }
   }, [plan, open]);
 
+  const fetchRecipeById = async (recipeId: number) => {
+    try {
+      const response = await fetch(`${API_URL}/recipes/${recipeId}`);
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (error) {
+      console.error(`Error fetching recipe ${recipeId}:`, error);
+    }
+    return null;
+  };
+
   const fetchWeeklyMenu = async (planId: number) => {
     console.log(`🔍 Buscando menú para plan ${planId}...`);
     setLoadingMenu(true);
+    setEnrichedMenu(null);
+
     try {
       const response = await fetch(`${API_URL}/weekly-menus/by-plan/${planId}`);
 
       if (response.ok) {
         const data = await response.json();
-        console.log("✅ Menú recibido:", data);
+        console.log("✅ Menú base recibido:", data);
         setWeeklyMenu(data);
+
+        if (!data.week || !Array.isArray(data.week)) {
+          console.warn("⚠️ El menú recibido no tiene una estructura de semanas válida");
+          setLoadingMenu(false);
+          return;
+        }
+
+        // Enriquecer con recetas para Fase 4
+        setLoadingRecipes(true);
+        try {
+          console.log("🧪 Iniciando enriquecimiento de recetas...");
+          const enrichedWeek = await Promise.all(data.week.map(async (day: any) => {
+            if (!day.meals || !Array.isArray(day.meals)) {
+              console.warn(`⚠️ El día ${day.day} no tiene lista de comidas`);
+              return day;
+            }
+
+            const enrichedMeals = await Promise.all(day.meals.map(async (meal: any) => {
+              const rId = meal.recipe_id || meal.recipeId || meal.id_receta;
+              if (rId) {
+                console.log(`📡 Cargando receta ${rId} (${meal.type})...`);
+                const recipeDetails = await fetchRecipeById(rId);
+                // Mismo parseo que en el wizard
+                if (recipeDetails && typeof recipeDetails.ingredients === "string") {
+                  try { recipeDetails.ingredients = JSON.parse(recipeDetails.ingredients); }
+                  catch { recipeDetails.ingredients = []; }
+                }
+                return { ...meal, recipe_id: rId, recipeDetails };
+              }
+              return meal;
+            }));
+            return { ...day, meals: enrichedMeals };
+          }));
+
+          const fullEnriched = { ...data, week: enrichedWeek };
+          console.log("🎯 Menú enriquecido completo:", fullEnriched);
+          setEnrichedMenu(fullEnriched);
+        } catch (e) {
+          console.error("❌ Error enriqueciendo menú:", e);
+        } finally {
+          setLoadingRecipes(false);
+        }
+
       } else if (response.status === 404 || response.status === 204) {
         console.log("⚠️ No hay menú asignado");
         setWeeklyMenu(null);
+        setEnrichedMenu(null);
       } else {
         console.error("❌ Error en respuesta:", response.status);
         setWeeklyMenu(null);
@@ -499,7 +559,6 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
 
         {isEditing ? (
           <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-            {/* ... (mantén todo el formulario igual) ... */}
             <div className="space-y-2">
               <Label htmlFor="edit-name">Nombre del Plan</Label>
               <Input
@@ -657,7 +716,6 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="example">Ejemplo</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -833,42 +891,68 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
 
                 {/* Fase 2: Fórmula Sintética de Consumo y Planeada */}
                 {plan.fase_2 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <ClipboardList className="h-5 w-5 text-primary" />
-                        Fase 2: Fórmula Sintética de Consumo y Planeada
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {plan.fase_2.formula_consumo_actual && (
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Fórmula de Consumo Actual</Label>
-                          <p className="text-sm mt-1">{plan.fase_2.formula_consumo_actual}</p>
-                        </div>
-                      )}
-                      {plan.fase_2.formula_planeada && (
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Fórmula Planeada</Label>
-                          <p className="text-sm mt-1">{plan.fase_2.formula_planeada}</p>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-4">
-                        {plan.fase_2.distribucion_calorica_actual && (
-                          <div>
-                            <Label className="text-xs text-muted-foreground">Distribución Calórica Actual</Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_2.distribucion_calorica_actual}</p>
+                  (() => {
+                    const f2Raw = plan.fase_2;
+                    let f2: any = f2Raw;
+                    if (typeof f2Raw === "string") {
+                      try { f2 = JSON.parse(f2Raw); } catch { f2 = null; }
+                    }
+                    if (!f2) return null;
+
+                    return (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <ClipboardList className="h-5 w-5 text-primary" />
+                            Fase 2: Fórmula Sintética de Consumo y Planeada
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="overflow-x-auto rounded-lg border border-teal-200">
+                            <table className="w-full text-xs">
+                              <thead className="bg-teal-50">
+                                <tr>
+                                  <th className="p-2 border-b border-teal-200">Kcal</th>
+                                  <th className="p-2 border-b border-teal-200">Prot (g)</th>
+                                  <th className="p-2 border-b border-teal-200">Grasa (g)</th>
+                                  <th className="p-2 border-b border-teal-200">GS (g)</th>
+                                  <th className="p-2 border-b border-teal-200">GM (g)</th>
+                                  <th className="p-2 border-b border-teal-200">GP (g)</th>
+                                  <th className="p-2 border-b border-teal-200">COL (mg)</th>
+                                  <th className="p-2 border-b border-teal-200">CHOS (g)</th>
+                                  <th className="p-2 border-b border-teal-200">Fibra (g)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-center">
+                                <tr>
+                                  <td className="p-2 font-bold">{f2.total_calorias || "---"}</td>
+                                  <td className="p-2">{f2.proteinas_gramos || "---"}</td>
+                                  <td className="p-2">{f2.grasas_gramos || "---"}</td>
+                                  <td className="p-2">{f2.grasas_gs_gramos || "---"}</td>
+                                  <td className="p-2">{f2.grasas_gm_gramos || "---"}</td>
+                                  <td className="p-2">{f2.grasas_gp_gramos || "---"}</td>
+                                  <td className="p-2">{f2.grasas_colesterol || "---"}</td>
+                                  <td className="p-2">{f2.cho_gramos || "---"}</td>
+                                  <td className="p-2">{f2.total_fibra || "---"}</td>
+                                </tr>
+                              </tbody>
+                            </table>
                           </div>
-                        )}
-                        {plan.fase_2.distribucion_calorica_planeada && (
-                          <div>
-                            <Label className="text-xs text-muted-foreground">Distribución Calórica Planeada</Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_2.distribucion_calorica_planeada}</p>
+
+                          <div className="grid grid-cols-2 gap-4 text-xs font-medium">
+                            <div className="p-2 bg-muted/20 rounded flex justify-between">
+                              <span className="text-muted-foreground uppercase">Peso de Referencia:</span>
+                              <span className="font-bold">{f2.peso_referencia} kg</span>
+                            </div>
+                            <div className="p-2 bg-muted/20 rounded flex justify-between">
+                              <span className="text-muted-foreground uppercase">CHO Concentración:</span>
+                              <span className="font-bold">{f2.cho_concent_gramos} g ({f2.cho_concent_amdr}%)</span>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                        </CardContent>
+                      </Card>
+                    );
+                  })()
                 )}
 
                 {/* Fase 3: Fórmula Sintética Desarrollada */}
@@ -881,6 +965,54 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      {plan.fase_3.grupos_alimentos && (
+                        (() => {
+                          const gruposAlimentosRaw = plan.fase_3.grupos_alimentos;
+                          let gruposAlimentos: any = gruposAlimentosRaw;
+
+                          if (typeof gruposAlimentosRaw === "string") {
+                            try {
+                              gruposAlimentos = JSON.parse(gruposAlimentosRaw);
+                            } catch {
+                              gruposAlimentos = null;
+                            }
+                          }
+
+                          if (!gruposAlimentos || typeof gruposAlimentos !== "object") {
+                            return null;
+                          }
+
+                          const entries = Object.entries(gruposAlimentos);
+                          if (entries.length === 0) return null;
+
+                          return (
+                            <div className="space-y-2">
+                              <Label className="text-xs text-muted-foreground">Grupos de alimentos (porciones)</Label>
+                              <div className="overflow-x-auto rounded-lg border border-border">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="bg-muted/50">
+                                      <th className="p-2 text-left font-medium">Grupo</th>
+                                      <th className="p-2 text-right font-medium">Porciones</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {entries.map(([grupo, data]) => {
+                                      const porciones = (data as any)?.porciones;
+                                      return (
+                                        <tr key={grupo} className="border-t border-border">
+                                          <td className="p-2">{grupo}</td>
+                                          <td className="p-2 text-right font-medium">{porciones ?? ""}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      )}
                       {plan.fase_3.formula_desarrollada && (
                         <div>
                           <Label className="text-xs text-muted-foreground">Fórmula Desarrollada</Label>
@@ -939,103 +1071,144 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                   </Card>
                 )}
 
-                {/* Fase 4: Minuta Patrón */}
+                {/* Fase 4: Minuta Patrón e Ingredientes */}
                 {plan.fase_4 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <Utensils className="h-5 w-5 text-primary" />
-                        Fase 4: Minuta Patrón
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="grid grid-cols-1 gap-3">
-                        {plan.fase_4.desayuno && (
-                          <div className="p-3 rounded-lg bg-muted/30">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                              <Sun className="h-4 w-4" />
-                              Desayuno
-                            </Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.desayuno}</p>
-                          </div>
-                        )}
-                        {plan.fase_4.media_manana && (
-                          <div className="p-3 rounded-lg bg-muted/30">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                              <Coffee className="h-4 w-4" />
-                              Media Mañana
-                            </Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.media_manana}</p>
-                          </div>
-                        )}
-                        {plan.fase_4.almuerzo && (
-                          <div className="p-3 rounded-lg bg-muted/30">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                              <UtensilsCrossed className="h-4 w-4" />
-                              Almuerzo
-                            </Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.almuerzo}</p>
-                          </div>
-                        )}
-                        {plan.fase_4.media_tarde && (
-                          <div className="p-3 rounded-lg bg-muted/30">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                              <Coffee className="h-4 w-4" />
-                              Media Tarde
-                            </Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.media_tarde}</p>
-                          </div>
-                        )}
-                        {plan.fase_4.cena && (
-                          <div className="p-3 rounded-lg bg-muted/30">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                              <Moon className="h-4 w-4" />
-                              Cena
-                            </Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.cena}</p>
-                          </div>
-                        )}
-                        {plan.fase_4.snack_nocturno && (
-                          <div className="p-3 rounded-lg bg-muted/30">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-2">
-                              <Moon className="h-4 w-4" />
-                              Snack Nocturno
-                            </Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.snack_nocturno}</p>
-                          </div>
-                        )}
-                        {plan.fase_4.observaciones && (
-                          <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                            <Label className="text-xs text-muted-foreground">Observaciones</Label>
-                            <p className="text-sm mt-1 whitespace-pre-line">{plan.fase_4.observaciones}</p>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+                  (() => {
+                    const f4Raw = plan.fase_4;
+                    let f4: any = f4Raw;
+                    if (typeof f4Raw === "string") {
+                      try { f4 = JSON.parse(f4Raw); } catch { f4 = null; }
+                    }
+                    if (!f4) return null;
 
-                {!plan.fase_1 && !plan.fase_2 && !plan.fase_3 && !plan.fase_4 && (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                      <p className="text-sm text-muted-foreground">
-                        Este plan no tiene información de las 4 fases registrada.
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Los planes creados con el nuevo sistema incluirán esta información.
-                      </p>
-                    </CardContent>
-                  </Card>
+                    const ingredientsGramos = f4.ingredientes_f4 || {};
+
+                    return (
+                      <Card className="border-teal-100 shadow-sm">
+                        <CardHeader className="bg-teal-50/50 border-b border-teal-100">
+                          <CardTitle className="flex items-center gap-2 text-base text-teal-800">
+                            <Utensils className="h-5 w-5" />
+                            Fase 4: Minuta Patrón y Detalle de Ingredientes (4 Semanas)
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-6">
+                          {loadingRecipes ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                              <RefreshCw className="h-8 w-8 animate-spin mb-4 opacity-20 text-teal-600" />
+                              <p className="animate-pulse">Cargando detalles de ingredientes...</p>
+                            </div>
+                          ) : enrichedMenu ? (
+                            <Tabs defaultValue="1" className="w-full">
+                              <TabsList className="flex w-full mb-6 bg-teal-50/50 p-1">
+                                {[1, 2, 3, 4].map((w) => (
+                                  <TabsTrigger key={w} value={w.toString()} className="flex-1 data-[state=active]:bg-teal-600 data-[state=active]:text-white">
+                                    Semana {w}
+                                  </TabsTrigger>
+                                ))}
+                              </TabsList>
+
+                              {[1, 2, 3, 4].map((w) => (
+                                <TabsContent key={w} value={w.toString()} className="mt-0">
+                                  {(() => {
+                                    const weekDays = enrichedMenu.week.filter((d: any) => d.week === w || (!d.week && w === 1));
+                                    if (weekDays.length === 0) return <p className="text-center py-8 text-muted-foreground">No hay datos para la semana {w}</p>;
+
+                                    return (
+                                      <Tabs defaultValue={weekDays[0]?.day} className="w-full">
+                                        <TabsList className="grid w-full grid-cols-7 mb-6">
+                                          {weekDays.map((day: any) => (
+                                            <TabsTrigger key={day.day} value={day.day} className="text-[10px] md:text-xs">
+                                              {day.day.substring(0, 3)}
+                                            </TabsTrigger>
+                                          ))}
+                                        </TabsList>
+
+                                        {weekDays.map((day: any) => (
+                                          <TabsContent key={day.day} value={day.day} className="space-y-4 mt-0">
+                                            <div className="flex items-center justify-between mb-2">
+                                              <h4 className="font-bold text-teal-700">{day.day}</h4>
+                                              <Badge variant="outline" className="text-[10px] uppercase bg-teal-50">
+                                                {day.meals.length} Comidas
+                                              </Badge>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                              {day.meals.map((meal: any, mealIdx: number) => (
+                                                <Card key={`${day.day}-${mealIdx}`} className="border-teal-50 shadow-none bg-teal-50/20">
+                                                  <CardHeader className="py-2 px-3 border-b border-teal-100 flex flex-row items-center justify-between space-y-0">
+                                                    <div>
+                                                      <span className="text-[10px] font-bold uppercase text-teal-600 block leading-tight">
+                                                        {meal.type}
+                                                      </span>
+                                                      <span className="text-xs font-semibold text-teal-900">{meal.recipe_name}</span>
+                                                    </div>
+                                                    <Badge variant="secondary" className="text-[9px] bg-teal-100/50 text-teal-700">
+                                                      {meal.calories} kcal
+                                                    </Badge>
+                                                  </CardHeader>
+                                                  <CardContent className="py-3 px-3">
+                                                    {meal.recipeDetails?.ingredients && meal.recipeDetails.ingredients.length > 0 ? (
+                                                      <div className="space-y-2">
+                                                        {meal.recipeDetails.ingredients.map((ing: string, ingIdx: number) => {
+                                                          const grams = ingredientsGramos[day.day]?.[mealIdx]?.[ing] || "---";
+                                                          return (
+                                                            <div key={ingIdx} className="flex items-center justify-between text-xs py-1 border-b border-teal-50/50 last:border-0">
+                                                              <span className="text-muted-foreground">{ing}</span>
+                                                              <span className="font-bold text-teal-700">{grams} g</span>
+                                                            </div>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    ) : (
+                                                      <p className="text-[10px] text-center text-muted-foreground italic">
+                                                        Sin detalles de ingredientes
+                                                      </p>
+                                                    )}
+                                                  </CardContent>
+                                                </Card>
+                                              ))}
+                                            </div>
+                                          </TabsContent>
+                                        ))}
+                                      </Tabs>
+                                    );
+                                  })()}
+                                </TabsContent>
+                              ))}
+                            </Tabs>
+                          ) : (
+                            <div className="bg-teal-50 border border-teal-100 p-4 rounded-lg flex items-center gap-3">
+                              <AlertCircle className="h-5 w-5 text-teal-500" />
+                              <div className="text-sm">
+                                <p className="font-bold text-teal-800">Visualización no disponible</p>
+                                <p className="text-teal-700">No se pudo cargar el desglose de ingredientes para este plan.</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {f4.observaciones && (
+                            <div className="mt-4 p-4 bg-muted/30 rounded-lg border border-border">
+                              <Label className="text-xs font-bold text-muted-foreground uppercase mb-2 block">
+                                Observaciones y Recomendaciones
+                              </Label>
+                              <p className="text-sm italic text-foreground whitespace-pre-line leading-relaxed">
+                                {f4.observaciones}
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()
                 )}
               </div>
             </TabsContent>
 
             <TabsContent value="menu" className="space-y-4">
               {loadingMenu ? (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-                  <p className="text-sm text-muted-foreground">Cargando menú semanal...</p>
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <RefreshCw className="h-8 w-8 animate-spin mb-4 opacity-20" />
+                  <p>Cargando información del menú...</p>
                 </div>
               ) : weeklyMenu ? (
                 <Card>
@@ -1044,24 +1217,13 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                       <div>
                         <CardTitle className="text-base flex items-center gap-2">
                           <Calendar className="h-4 w-4" />
-                          Menú Semanal Asignado
+                          Menú Semanal (4 Semanas)
                         </CardTitle>
                         <p className="text-sm text-muted-foreground mt-1">
-                          Semana {weeklyMenu.week_number}
+                          Consulte la programación para cada semana
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        <Badge variant="outline" className="bg-success/10 text-success border-success/20">
-                          Activo
-                        </Badge>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setWeeklyMenu(null)}
-                        >
-                          <Edit className="h-3 w-3 mr-1" />
-                          Cambiar Menú
-                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -1074,23 +1236,44 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <Tabs defaultValue={weeklyMenu.week[0]?.day} className="w-full">
-                      <TabsList className="grid w-full grid-cols-7 mb-4">
-                        {weeklyMenu.week.map((day) => (
-                          <TabsTrigger key={day.day} value={day.day} className="text-xs">
-                            {day.day.substring(0, 3)}
+                    <Tabs defaultValue="1" className="w-full">
+                      <TabsList className="flex w-full mb-6 bg-muted/50 p-1">
+                        {[1, 2, 3, 4].map((w) => (
+                          <TabsTrigger key={w} value={w.toString()} className="flex-1">
+                            Semana {w}
                           </TabsTrigger>
                         ))}
                       </TabsList>
-                      {weeklyMenu.week.map((day) => (
-                        <TabsContent key={day.day} value={day.day} className="mt-0">
-                          <div className="mb-3">
-                            <h4 className="font-semibold text-foreground">{day.day}</h4>
-                            <p className="text-xs text-muted-foreground">
-                              {day.meals.length} comida{day.meals.length !== 1 ? 's' : ''} configurada{day.meals.length !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-                          {renderDayMenu(day)}
+
+                      {[1, 2, 3, 4].map((w) => (
+                        <TabsContent key={w} value={w.toString()} className="mt-0 space-y-4">
+                          {(() => {
+                            const weekDays = weeklyMenu.week.filter(d => (d as any).week === w || (!(d as any).week && w === 1));
+                            if (weekDays.length === 0) return <p className="text-center py-8 text-muted-foreground">No hay datos para la semana {w}</p>;
+
+                            return (
+                              <Tabs defaultValue={weekDays[0]?.day} className="w-full">
+                                <TabsList className="grid w-full grid-cols-7 mb-4">
+                                  {weekDays.map((day) => (
+                                    <TabsTrigger key={day.day} value={day.day} className="text-[10px] md:text-xs">
+                                      {day.day.substring(0, 3)}
+                                    </TabsTrigger>
+                                  ))}
+                                </TabsList>
+                                {weekDays.map((day: { day: string; meals: MealData[] }) => (
+                                  <TabsContent key={day.day} value={day.day} className="mt-0">
+                                    <div className="mb-3">
+                                      <h4 className="font-semibold text-foreground">{day.day}</h4>
+                                      <p className="text-xs text-muted-foreground">
+                                        {day.meals.length} comida{day.meals.length !== 1 ? 's' : ''} configurada{day.meals.length !== 1 ? 's' : ''}
+                                      </p>
+                                    </div>
+                                    {renderDayMenu(day)}
+                                  </TabsContent>
+                                ))}
+                              </Tabs>
+                            );
+                          })()}
                         </TabsContent>
                       ))}
                     </Tabs>
@@ -1100,50 +1283,11 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                 <AssignMenuSection planId={plan.id} onAssignSuccess={() => fetchWeeklyMenu(plan.id)} />
               )}
             </TabsContent>
-
-            <TabsContent value="example" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Comidas del Día (Ejemplo)</CardTitle>
-                  <p className="text-sm text-muted-foreground">Estructura sugerida de comidas diarias</p>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {[
-                      { meal: "Desayuno", time: "08:00", desc: "Avena con frutas y nueces", cal: 350 },
-                      { meal: "Media Mañana", time: "11:00", desc: "Yogur griego con almendras", cal: 200 },
-                      { meal: "Almuerzo", time: "14:00", desc: "Pollo a la plancha con verduras", cal: 500 },
-                      { meal: "Merienda", time: "17:00", desc: "Tostada integral con aguacate", cal: 250 },
-                      { meal: "Cena", time: "20:00", desc: "Salmón con ensalada", cal: 400 },
-                    ].slice(0, plan.meals_per_day).map((item, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <Apple className="h-4 w-4 text-primary" />
-                          <div>
-                            <p className="font-medium text-foreground text-sm">{item.meal}</p>
-                            <p className="text-xs text-muted-foreground">{item.desc}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-foreground">{item.cal} kcal</p>
-                          <p className="text-xs text-muted-foreground">{item.time}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 p-3 rounded-lg bg-info/10 border border-info/20">
-                    <p className="text-xs text-muted-foreground">
-                      Este es un ejemplo de estructura. Puedes personalizar las comidas específicas en la sección de menús semanales.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
           </Tabs>
         )}
 
         {!isEditing && (
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-6">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cerrar
             </Button>

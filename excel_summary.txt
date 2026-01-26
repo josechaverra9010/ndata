@@ -1,0 +1,91 @@
+=== SHEET: Adulto ===
+R1:  | REQUERIMIENTO ENERGÉTICO Y PESO SALUDABLE |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R2:  | PESO SALUDABLE IMC |  |  | TMR FAO/Schofield |  |  | ACTIVIDAD FISICA |  |  |  | REQUERIMIENTO DRI |  |  | FACTOR ACTIVIDAD FISICA PAL |  |  |  |  | 
+R3:  | Peso kg | 63.0 |  | Peso Ref | 75.0 |  | Sedentario | 1.53 | (1,4-1,69) |  | Edad |  |  |  | Hombres | Mujeres |  |  | 
+R4:  | Talla m | 1.73 |  | TMR HOMBRES |  |  | Moderado | 1.76 | (1,7-1,99) |  | Peso kg |  |  | Sedentario | 1.0 | 1.0 |  |  | 
+R5:  | IMC | 21.0498179 |  | 18-30 años | 1821.475 |  | Vigoroso | 2.25 | (2,0-2,4) |  | Talla m |  |  | Poco activo | 1.11 | 1.12 |  |  | 
+R6:  | IMC deseado | 25.0 |  | 31-60 años | 1733.5 |  |  |  |  |  | Factor act |  |  | Activo | 1.25 | 1.27 |  |  | 
+R7:  | Peso saludable IMC 25-30 |  |  | >60  años | 1466.025 |  | REQUERIMIENTO |  |  |  | HOMBRES |  |  | Muy activo | 1.48 | 1.45 |  |  | 
+R8:  | PS | 74.8225 |  | TMR MUJERES |  |  | TMR | 1821.0 |  |  | RDE | 662 |  |  |  |  |  |  | 
+R9:  | Peso ajustado IMC >30 |  |  | 18-30 años | 1597.95 |  | ACT FIS | 1.5 |  |  | MUJERES |  |  |  |  |  |  |  | 
+R10:  | PA | 71.866875 |  | 31-60 años | 1455.05 |  | Calorias | 2731.5 |  |  | RDE | 354 |  |  |  |  |  |  | 
+R11:  |  |  |  | >60  años | 1339.65 |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R12:  | FÓRMULA SINTÉTICA DE CONSUMO Y PLANEADA |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R13:  | FÓRMULA SINTÉTICA DE CONSUMO |  |  |  |  |  |  | FÓRMULA SINTÉTICA PLANEADA |  |  |  |  |  |  | Recomendaciones RIEN |  |  |  | 
+R14:  | Nutrientes | Gramos | Calorias | % AMDR | Otros |  |  | Nutrientes | Gramos | Calorías | % AMDR | Otros |  |  | Proteínas |  | 14-20% AMDR |  | 
+R15:  | Proteínas | 0 | 0 | #DIV/0! | g AVB | 0 |  | Proteínas | 127.5 | 510 | 18.67105986 | g AVB | 89.25 |  | Prote g/kg/peso |  | 1,11-1,16 |  | 
+R16:  |  |  |  |  | % AVB | #DIV/0! |  |  |  |  |  | % AVB | 70.0 |  | Prote AVB |  | 60-80% |  | 
+R17:  |  |  |  |  | g/kg/peso | #DIV/0! |  |  |  |  |  | g/kg/peso | 1.7 |  | CHOs totales |  | 50-65% |  | 
+R18:  | Grasas | 0 | 0 | #DIV/0! | g GS | 0 |  | Grasas | 75.875 | 682.875 | 25.0 | g GS | 30.35 |  | CHOs simples |  | <10% |  | 
+R19:  |  |  |  |  | %AMDR GS | #DIV/0! |  |  |  |  |  | %AMDR GS | 10.0 |  | Grasa total 27,5 |  | 20-35% AMDR |  | 
+R20:  |  |  |  |  | g GM | 0 |  |  |  |  |  | g GM | 15.175 |  | G saturada |  | <10% |  | 
+R21:  |  |  |  |  | %AMDR GM | #DIV/0! |  |  |  |  |  | %AMDR GM | 5 |  | G poli |  | 5-10% |  | 
+R22:  |  |  |  |  | g GP | 0 |  |  |  |  |  | g GP | 30.35 |  | G mono |  | GS-GM |  | 
+R23:  |  |  |  |  | %AMDR GP | #DIV/0! |  |  |  |  |  | %AMDR GP | 10.0 |  | G trans |  | <1% |  | 
+R24:  |  |  |  |  | Colesterol | 0 |  |  |  |  |  | Colesterol | 200.0 |  | Colesterol |  | <300mg |  | 
+R25:  | CHOs | 0 | 0 | #DIV/0! | g Concent | 0 |  | CHOs | 384.65625 | 1538.625 | 56.32894014 | g Concent | 184.37625 |  | Colesterol enf.card |  | <200mg |  | 
+R26:  |  |  |  |  | %AMDR | #DIV/0! |  |  |  |  |  | %AMDR | 27.0 |  | Fibra |  | 14g/1000cal |  | 
+R27:  | Total: |  | 0 | #DIV/0! | Fibra | 0 |  | Total: |  | 2731.5 | 100 | Fibra | 14.0 |  | Sodio |  | <2300mg |  | 
+R28:  | Kg Ref |  |  |  |  |  |  | Kg Ref | 75 | 5463 | 43.67105986 |  |  |  | Sodio hipertensos |  | <1500mg |  | 
+R29:  | REQUERIMIENTO FINAL |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R30:  | Kcal | Prot | Grasa | GS | GM | GP | COL | CHOS | Fibra |  |  |  |  |  |  |  |  |  | 
+R31:  | 2731.5 | 127.5 | 75.875 | 30.35 | 15.175 | 30.35 | 200 | 384.65625 | 14 |  |  |  |  |  |  |  |  |  | 
+R32:  | FÓRMULA SINTÉTICA DESARROLLADA |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R33:  | Grupo de alimentos |  |  |  |  |  | Porciones | Kcal | Prot | Grasa | GS | GM | GP | COL | CHOS | FD | Calcio (mg) | P (mg) | Fe (mg)
+R34:  | Leches enteras frescas y fermentadas |  |  |  |  |  | 3.0 | 139.1 | 6.7 | 6.7 | 4.4 | 1.95 | 0.49 | 26.0 | 13.0 | 0.0 | 236.0 | 173.0 | 0.2
+R35:  | Leches semidescremadas frescas y fermentadas |  |  |  |  |  |  | 94.5 | 5.4 | 2.1 | 0.87 | 0.54 | 0.35 | 5.0 | 13.5 | 0.8 | 153.0 | 143.0 | 0.4
+R36:  | Leches descremadas frescas y fermentadas |  |  |  |  |  |  | 82.3 | 9.0 | 0.7 | 0.45 | 0.18 | 0.03 | 6.0 | 10.0 | 0.0 | 256.0 | 214.0 | 0.1
+R37:  | Leches frescas y fermentadas enteras altas en calorías y azucares |  |  |  |  |  |  | 170.7 | 6.4 | 5.9 | 3.8 | 1.91 | 0.63 | 22.0 | 23.0 | 0.4 | 258.0 | 169.0 | 0.3
+R38:  | Sustitutos |  |  |  |  |  | 4.0 | 77.1 | 5.8 | 5.5 | 2.91 | 1.94 | 0.41 | 40.0 | 1.1 | 0.0 | 95.0 | 85.0 | 1.1
+R39:  | Carnes magras crudas y proteínas texturizada |  |  |  |  |  | 3.0 | 108.3 | 19.1 | 3.1 | 0.92 | 1.16 | 0.53 | 50.0 | 1.0 | 0.3 | 22.0 | 191.0 | 1.5
+R40:  | Carnes crudas altas en lípidos |  |  |  |  |  |  | 138.7 | 15.6 | 7.9 | 2.51 | 3.3 | 1.25 | 137.0 | 1.3 | 0.0 | 37.0 | 186.0 | 2.5
+R41:  | Leguminosas adultos |  |  |  |  |  | 3.0 | 158.1 | 9.8 | 1.7 | 0.25 | 0.32 | 0.94 | 0.0 | 25.9 | 7.9 | 50.0 | 167.0 | 3.1
+
+=== SHEET: F. Desarrollada ===
+R1:  | FÓRMULA SINTÉTICA DESARROLLADA |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R2:  | Grupo de alimentos | Porciones | Kcal | Prot | Grasa | GS | GM | GP | COL | CHOS | FD | Calcio (mg) | P (mg) | Fe (mg) | Na (mg) | K (mg) | Mg (mg) | Zn (mg) | Cu (mg)
+R3:  | Leches enteras frescas y fermentadas |  | 139.1 | 6.7 | 6.7 | 4.4 | 1.95 | 0.49 | 26.0 | 13.0 | 0.0 | 236.0 | 173.0 | 0.2 | 96.0 | 330.0 | 25.0 | 0.89 | 0.03
+R4:  | Leches semidescremadas frescas y fermentadas |  | 94.5 | 5.4 | 2.1 | 0.87 | 0.54 | 0.35 | 5.0 | 13.5 | 0.8 | 153.0 | 143.0 | 0.4 | 72.0 | 268.0 | 25.0 | 1.24 | 0.06
+R5:  | Leches descremadas frescas y fermentadas |  | 82.3 | 9.0 | 0.7 | 0.45 | 0.18 | 0.03 | 6.0 | 10.0 | 0.0 | 256.0 | 214.0 | 0.1 | 101.0 | 340.0 | 24.0 | 1.05 | 0.02
+R6:  | Leches frescas y fermentadas enteras altas en calorías y azucares |  | 170.7 | 6.4 | 5.9 | 3.8 | 1.91 | 0.63 | 22.0 | 23.0 | 0.4 | 258.0 | 169.0 | 0.3 | 115.0 | 334.0 | 27.0 | 1.03 | 0.05
+R7:  | Leches frescas, fermentadas y productos lácteos menores de 2 años |  | 50.7 | 2.9 | 3.1 | 2.01 | 0.96 | 0.18 | 12.0 | 2.8 | 0.0 | 93.0 | 62.0 | 0.1 | 57.0 | 57.0 | 6.0 | 0.38 | 0.01
+R8:  | Sustitutos |  | 77.1 | 5.8 | 5.5 | 2.91 | 1.94 | 0.41 | 40.0 | 1.1 | 0.0 | 95.0 | 85.0 | 1.1 | 211.0 | 52.0 | 6.0 | 0.65 | 0.03
+R9:  | Huevo menores de 2 años |  | 52.9 | 4.5 | 3.7 | 1.15 | 1.42 | 0.49 | 180.0 | 0.4 | 0.0 | 19.0 | 64.0 | 0.6 | 46.0 | 46.0 | 4.0 | 0.4 | 0.01
+R10:  | Carnes magras crudas y proteínas texturizada adultos y niños |  | 108.3 | 19.1 | 3.1 | 0.92 | 1.16 | 0.53 | 50.0 | 1.0 | 0.3 | 22.0 | 191.0 | 1.5 | 72.0 | 325.0 | 28.0 | 1.81 | 0.11
+R11:  | Carnes magras cocidas menores de 2 años |  | 49.2 | 7.8 | 2.0 | 0.52 | 0.84 | 0.35 | 21.0 | 0.0 | 0.0 | 7.0 | 74.0 | 0.4 | 19.0 | 108.0 | 8.0 | 0.55 | 0.04
+R12:  | Carnes crudas altas en lípidos adultos y niños |  | 138.7 | 15.6 | 7.9 | 2.51 | 3.3 | 1.25 | 137.0 | 1.3 | 0.0 | 37.0 | 186.0 | 2.5 | 101.0 | 234.0 | 20.0 | 1.87 | 0.47
+R13:  | Carnes cocidas altas en lípidos menores de 2 años |  | 46.8 | 6.9 | 2.0 | 0.78 | 0.86 | 0.31 | 79.0 | 0.3 | 0.0 | 3.0 | 57.0 | 3.0 | 62.0 | 55.0 | 6.0 | 1.21 | 0.25
+R14:  | Leguminosas adultos |  | 158.1 | 9.8 | 1.7 | 0.25 | 0.32 | 0.94 | 0.0 | 25.9 | 7.9 | 50.0 | 167.0 | 3.1 | 10.0 | 534.0 | 62.0 | 1.22 | 0.28
+R15:  | Leguminosas niños |  | 84.96 | 5.2 | 1.04 | 0.14 | 0.18 | 0.53 | 0.0 | 13.7 | 4.0 | 29.0 | 92.0 | 1.7 | 6.0 | 290.0 | 34.0 | 0.65 | 0.15
+R16:  | Leguminosas menores de 2 años |  | 41.5 | 2.7 | 0.3 | 0.03 | 0.05 | 0.14 | 0.0 | 7.0 | 2.2 | 9.0 | 48.0 | 0.9 | 1.0 | 113.0 | 13.0 | 0.37 | 0.08
+R17:  | Cereales adultos |  | 93.8 | 2.5 | 1.0 | 0.24 | 0.32 | 0.33 | 1.0 | 18.7 | 1.2 | 19.0 | 47.0 | 0.9 | 82.0 | 53.0 | 13.0 | 0.42 | 0.05
+R18:  | Cereales niños |  | 74 | 2.0 | 0.8 | 0.2 | 0.26 | 0.27 | 1.0 | 14.7 | 0.9 | 18.0 | 38.0 | 0.8 | 75.0 | 37.0 | 10.0 | 0.36 | 0.04
+R19:  | Cereales menores de 2 años |  | 41 | 1.3 | 0.6 | 0.13 | 0.18 | 0.21 | 1.0 | 7.6 | 0.5 | 13.0 | 23.0 | 0.3 | 43.0 | 24.0 | 6.0 | 0.14 | 0.02
+R20:  | Raíces, tubérculos y plátanos adultos |  | 95.7 | 1.4 | 0.1 | 0.05 | 0.01 | 0.06 | 0.0 | 22.3 | 1.9 | 11.0 | 40.0 | 0.5 | 10.0 | 376.0 | 20.0 | 0.23 | 0.13
+R21:  | Raíces, tubérculos y plátanos niños |  | 65.7 | 1.0 | 0.1 | 0.03 | 0.01 | 0.04 | 0.0 | 15.2 | 1.3 | 8.0 | 29.0 | 0.4 | 7.0 | 264.0 | 14.0 | 0.17 | 0.09
+R22:  | Raíces, tubérculos y plátanos menores de 2 años |  | 38 | 0.5 | 0.0 | 0.02 | 0.0 | 0.02 | 0.0 | 9.0 | 0.8 | 3.0 | 13.0 | 0.2 | 2.0 | 153.0 | 8.0 | 0.07 | 0.04
+R23:  | Promedio harinas adultos |  | 95.4 | 2.0 | 0.6 | 0.14 | 0.16 | 0.19 | 0.0 | 20.5 | 1.5 | 15.0 | 43.0 | 0.7 | 46.0 | 214.0 | 17.0 | 0.33 | 0.09
+R24:  | Promedio harinas niños |  | 70.5 | 1.5 | 0.5 | 0.12 | 0.14 | 0.15 | 0.0 | 15.0 | 1.1 | 13.0 | 34.0 | 0.6 | 41.0 | 150.0 | 12.0 | 0.26 | 0.07
+R25:  | Promedio harinas menores de 2 años |  | 39.5 | 0.9 | 0.3 | 0.08 | 0.09 | 0.11 | 0.0 | 8.3 | 0.6 | 8.0 | 18.0 | 0.2 | 23.0 | 89.0 | 7.0 | 0.11 | 0.03
+R26:  | Verduras y hortalizas adultos y niños |  | 29.5 | 1.2 | 0.3 | 0.05 | 0.03 | 0.13 | 0.0 | 5.5 | 1.7 | 15.0 | 32.0 | 0.7 | 68.0 | 187.0 | 12.0 | 0.29 | 0.1
+R27:  | Verduras y hortalizas menores de 2 años |  | 14.5 | 0.7 | 0.1 | 0.02 | 0.01 | 0.06 | 0.0 | 2.7 | 0.9 | 9.0 | 15.0 | 0.3 | 8.0 | 101.0 | 7.0 | 0.13 | 0.04
+R28:  | Frutas adultos y niños |  | 59.9 | 1.0 | 0.3 | 0.06 | 0.09 | 0.11 | 0.0 | 13.3 | 2.6 | 21.0 | 24.0 | 0.5 | 4.0 | 244.0 | 19.0 | 0.14 | 0.07
+R29:  | Frutas menores de 2 años |  | 23.7 | 0.3 | 0.1 | 0.03 | 0.02 | 0.05 | 0.0 | 5.4 | 1.0 | 7.0 | 7.0 | 0.1 | 1.0 | 99.0 | 6.0 | 0.05 | 0.03
+R30:  | Nueces adultos y niños |  | 56.4 | 1.3 | 4.8 | 1.15 | 2.44 | 0.99 | 0.0 | 2.0 | 0.7 | 8.0 | 34.0 | 0.3 | 6.0 | 55.0 | 16.0 | 0.28 | 0.1
+R31:  | Semillas adultos y niños |  | 58.5 | 2.3 | 4.1 | 0.5 | 0.91 | 2.48 | 0.0 | 3.1 | 2.1 | 50.0 | 74.0 | 0.9 | 2.0 | 78.0 | 37.0 | 0.58 | 0.15
+R32:  | Azucares y dulces adultos |  | 89.9 | 0.9 | 1.1 | 0.63 | 0.33 | 0.07 | 2.0 | 19.1 | 0.5 | 20.0 | 23.0 | 0.3 | 25.0 | 67.0 | 6.0 | 0.16 | 0.05
+R33:  | Azucares y dulces niños y niñas |  | 45.1 | 0.4 | 0.3 | 0.14 | 0.1 | 0.03 | 0.0 | 10.2 | 0.2 | 8.0 | 12.0 | 0.2 | 11.0 | 33.0 | 4.0 | 0.1 | 0.2
+R34:  | Grasas poliinsaturadas adultos y niños |  | 41.7 | 0.0 | 4.5 | 0.67 | 1.39 | 2.71 | 1.0 | 0.3 | 0.0 | 1.0 | 1.0 | 0.0 | 27.0 | 2.0 | 0.0 | 0.01 | 0.0
+R35:  | Grasas monoinsaturadas adultos y niños |  | 47 | 0.4 | 4.6 | 0.66 | 2.7 | 0.96 | 0.0 | 1.0 | 0.6 | 7.0 | 7.0 | 0.2 | 55.0 | 49.0 | 5.0 | 0.07 | 0.03
+R36:  | Grasas saturadas adultos y niños |  | 45.6 | 0.3 | 4.8 | 2.66 | 1.57 | 0.28 | 10.0 | 0.3 | 0.0 | 8.0 | 7.0 | 0.0 | 9.0 | 10.0 | 1.0 | 0.03 | 0.0
+R37:  | Promedio grasas adultos y niños |  | 44.6 | 0.3 | 4.6 | 1.33 | 1.88 | 1.32 | 4.0 | 0.5 | 0.2 | 5.0 | 5.0 | 0.1 | 30.0 | 20.0 | 2.0 | 0.04 | 0.01
+R38:  | Productos con reducción de grasa adultos y niños |  | 39.3 | 1.3 | 3.3 | 1.16 | 0.98 | 0.89 | 6.0 | 1.1 | 0.0 | 16.0 | 37.0 | 0.0 | 125.0 | 19.0 | 2.0 | 0.12 | 0.0
+R39:  | Grasas poliinsaturadas menores de 2 años |  | 27 | 0.0 | 3.0 | 0.39 | 0.8 | 1.68 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0
+R40:  | Grasas monoinsaturadas menores de 2 años |  | 27.5 | 0.3 | 2.7 | 0.37 | 1.72 | 0.46 | 0.0 | 0.5 | 0.3 | 1.0 | 5.0 | 0.1 | 4.0 | 38.0 | 3.0 | 0.04 | 0.02
+R41:  | Grasas saturadas menores de 2 años |  | 26.8 | 0.2 | 2.8 | 1.66 | 0.85 | 0.14 | 6.0 | 0.2 | 0.0 | 5.0 | 5.0 | 0.0 | 6.0 | 7.0 | 1.0 | 0.02 | 0.0
+R42:  | Promedio grasas menores de 2 años |  | 26.8 | 0.2 | 2.8 | 0.81 | 1.12 | 0.76 | 2.0 | 0.2 | 0.1 | 2.0 | 3.0 | 0.0 | 3.0 | 15.0 | 1.0 | 0.02 | 0.01
+R43:  | Leche materna toma/100ml |  | 71.2 | 1.0 | 4.4 | 2.01 | 1.66 | 0.5 | 14.0 | 6.9 | 0.0 | 32.0 | 14.0 | 0.0 | 17.0 | 51.0 | 3.0 | 0.17 | 0.05
+R44:  | Suplemento (Introduzca manualmente los nutrientes por porción) |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+R45:  | Grupo de alimentos | Porciones | Kcal | Prot | Grasa | GS | GM | GP | COL | CHOS | FD | Calcio (mg) | P (mg) | Fe (mg) | Na (mg) | K (mg) | Mg (mg) | Zn (mg) | Cu (mg)
+R46:  | Leches enteras frescas y fermentadas |  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0
+

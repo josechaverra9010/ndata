@@ -36,7 +36,7 @@ interface Message {
   id: string;
   content: string;
   sender: "admin" | "patient";
-  timestamp: Date;
+  timestamp: string;
   status: "sent" | "delivered" | "read";
   type: "text" | "image" | "file";
 }
@@ -46,7 +46,7 @@ interface Conversation {
   patientName: string;
   patientAvatar?: string;
   lastMessage: string;
-  lastMessageTime: Date;
+  lastMessageTime: string;
   unreadCount: number;
   isOnline: boolean;
   messages: Message[];
@@ -57,61 +57,61 @@ const mockConversations: Conversation[] = [
     id: "1",
     patientName: "María García",
     lastMessage: "Gracias por la información del plan",
-    lastMessageTime: new Date(),
+    lastMessageTime: new Date().toISOString(),
     unreadCount: 2,
     isOnline: true,
     messages: [
-      { id: "1", content: "Hola doctora, ¿cómo está?", sender: "patient", timestamp: new Date(Date.now() - 3600000 * 2), status: "read", type: "text" },
-      { id: "2", content: "¡Hola María! Muy bien, ¿en qué puedo ayudarte?", sender: "admin", timestamp: new Date(Date.now() - 3600000 * 1.5), status: "read", type: "text" },
-      { id: "3", content: "Quería preguntarle sobre mi plan de alimentación", sender: "patient", timestamp: new Date(Date.now() - 3600000), status: "read", type: "text" },
-      { id: "4", content: "Claro, te he actualizado el plan con más opciones de desayuno. Puedes verlo en la sección 'Mi Plan'", sender: "admin", timestamp: new Date(Date.now() - 1800000), status: "read", type: "text" },
-      { id: "5", content: "Gracias por la información del plan", sender: "patient", timestamp: new Date(), status: "read", type: "text" },
+      { id: "1", content: "Hola doctora, ¿cómo está?", sender: "patient", timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), status: "read", type: "text" },
+      { id: "2", content: "¡Hola María! Muy bien, ¿en qué puedo ayudarte?", sender: "admin", timestamp: new Date(Date.now() - 3600000 * 1.5).toISOString(), status: "read", type: "text" },
+      { id: "3", content: "Quería preguntarle sobre mi plan de alimentación", sender: "patient", timestamp: new Date(Date.now() - 3600000).toISOString(), status: "read", type: "text" },
+      { id: "4", content: "Claro, te he actualizado el plan con más opciones de desayuno. Puedes verlo en la sección 'Mi Plan'", sender: "admin", timestamp: new Date(Date.now() - 1800000).toISOString(), status: "read", type: "text" },
+      { id: "5", content: "Gracias por la información del plan", sender: "patient", timestamp: new Date().toISOString(), status: "read", type: "text" },
     ],
   },
   {
     id: "2",
     patientName: "Carlos López",
     lastMessage: "¿A qué hora es la cita?",
-    lastMessageTime: new Date(Date.now() - 3600000),
+    lastMessageTime: new Date(Date.now() - 3600000).toISOString(),
     unreadCount: 1,
     isOnline: false,
     messages: [
-      { id: "1", content: "Buenos días, ¿a qué hora es mi cita de mañana?", sender: "patient", timestamp: new Date(Date.now() - 3600000), status: "read", type: "text" },
+      { id: "1", content: "Buenos días, ¿a qué hora es mi cita de mañana?", sender: "patient", timestamp: new Date(Date.now() - 3600000).toISOString(), status: "read", type: "text" },
     ],
   },
   {
     id: "3",
     patientName: "Ana Martínez",
     lastMessage: "Perfecto, nos vemos el lunes",
-    lastMessageTime: new Date(Date.now() - 86400000),
+    lastMessageTime: new Date(Date.now() - 86400000).toISOString(),
     unreadCount: 0,
     isOnline: true,
     messages: [
-      { id: "1", content: "Hola Ana, te confirmo la cita para el lunes a las 10:00", sender: "admin", timestamp: new Date(Date.now() - 86400000 - 3600000), status: "read", type: "text" },
-      { id: "2", content: "Perfecto, nos vemos el lunes", sender: "patient", timestamp: new Date(Date.now() - 86400000), status: "read", type: "text" },
+      { id: "1", content: "Hola Ana, te confirmo la cita para el lunes a las 10:00", sender: "admin", timestamp: new Date(Date.now() - 86400000 - 3600000).toISOString(), status: "read", type: "text" },
+      { id: "2", content: "Perfecto, nos vemos el lunes", sender: "patient", timestamp: new Date(Date.now() - 86400000).toISOString(), status: "read", type: "text" },
     ],
   },
   {
     id: "4",
     patientName: "Pedro Sánchez",
     lastMessage: "He seguido todas las indicaciones",
-    lastMessageTime: new Date(Date.now() - 172800000),
+    lastMessageTime: new Date(Date.now() - 172800000).toISOString(),
     unreadCount: 0,
     isOnline: false,
     messages: [
-      { id: "1", content: "Doctor, he seguido todas las indicaciones de esta semana", sender: "patient", timestamp: new Date(Date.now() - 172800000), status: "read", type: "text" },
+      { id: "1", content: "Doctor, he seguido todas las indicaciones de esta semana", sender: "patient", timestamp: new Date(Date.now() - 172800000).toISOString(), status: "read", type: "text" },
     ],
   },
   {
     id: "5",
     patientName: "Laura Fernández",
     lastMessage: "¿Puedo comer frutos secos?",
-    lastMessageTime: new Date(Date.now() - 259200000),
+    lastMessageTime: new Date(Date.now() - 259200000).toISOString(),
     unreadCount: 0,
     isOnline: false,
     messages: [
-      { id: "1", content: "Hola, tengo una duda sobre mi dieta", sender: "patient", timestamp: new Date(Date.now() - 259200000 - 3600000), status: "read", type: "text" },
-      { id: "2", content: "¿Puedo comer frutos secos?", sender: "patient", timestamp: new Date(Date.now() - 259200000), status: "read", type: "text" },
+      { id: "1", content: "Hola, tengo una duda sobre mi dieta", sender: "patient", timestamp: new Date(Date.now() - 259200000 - 3600000).toISOString(), status: "read", type: "text" },
+      { id: "2", content: "¿Puedo comer frutos secos?", sender: "patient", timestamp: new Date(Date.now() - 259200000).toISOString(), status: "read", type: "text" },
     ],
   },
 ];
@@ -162,18 +162,30 @@ export default function AdminMessages() {
 
   const fetchConversations = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       if (!token) return;
+      console.log("Fetching conversations from:", `${API_URL}/messages/conversations`);
       const response = await fetch(`${API_URL}/messages/conversations`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
+      console.log("Conversations response status:", response.status);
       if (response.ok) {
         const data = await response.json();
-        setConversations(data.map((c: any) => ({
-          ...c,
-          id: String(c.id),
-          messages: [] // Init empty
-        })));
+        console.log("Conversations data received:", data);
+        if (Array.isArray(data)) {
+          setConversations(data.map((c: any) => ({
+            ...c,
+            id: String(c.id),
+            messages: [] // Init empty
+          })));
+        } else {
+          console.error("Data is not an array:", data);
+          setConversations([]);
+        }
+      } else {
+        const err = await response.text();
+        console.error("Failed to fetch conversations:", err);
+        setConversations([]);
       }
     } catch (error) {
       console.error("Error fetching conversations", error);
@@ -182,22 +194,31 @@ export default function AdminMessages() {
 
   const fetchMessages = async (userId: string) => {
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       if (!token) return;
       const response = await fetch(`${API_URL}/messages/${userId}`, {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (response.ok) {
         const data = await response.json();
+        const mapped: Message[] = (Array.isArray(data) ? data : []).map((m: any) => ({
+          id: String(m.id),
+          content: String(m.content ?? ""),
+          sender: m.sender === "me" ? "admin" : "patient",
+          timestamp: String(m.timestamp ?? ""),
+          status: (m.status === "read" ? "read" : "sent"),
+          type: (m.type === "image" || m.type === "file" ? m.type : "text"),
+        }));
+
         // Update the selected conversation with these messages
-        setSelectedConversation(prev => prev ? { ...prev, messages: data } : null);
+        setSelectedConversation(prev => prev ? { ...prev, messages: mapped } : null);
       }
     } catch (error) {
       console.error("Error fetching messages", error);
     }
   }
 
-  const formatMessageTime = (date: Date) => {
+  const formatMessageTime = (date: string) => {
     if (!date) return "";
     const d = new Date(date);
     if (isToday(d)) {
@@ -209,7 +230,7 @@ export default function AdminMessages() {
     }
   };
 
-  const formatChatTime = (date: Date) => {
+  const formatChatTime = (date: string) => {
     if (!date) return "";
     return format(new Date(date), "HH:mm");
   };
@@ -218,7 +239,7 @@ export default function AdminMessages() {
     if (!newMessage.trim() || !selectedConversation) return;
 
     try {
-      const token = localStorage.getItem("token");
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/messages`, {
         method: "POST",
         headers: {
@@ -238,7 +259,7 @@ export default function AdminMessages() {
           id: String(data.id),
           content: newMessage,
           sender: "admin",
-          timestamp: new Date(),
+          timestamp: String(data.timestamp ?? new Date().toISOString()),
           status: "sent",
           type: "text",
         };
@@ -247,7 +268,7 @@ export default function AdminMessages() {
           ...prev,
           messages: [...prev.messages, newMsg],
           lastMessage: newMessage,
-          lastMessageTime: new Date()
+          lastMessageTime: String(data.timestamp ?? new Date().toISOString())
         } : null);
         setNewMessage("");
         fetchConversations(); // Update list order
@@ -310,50 +331,56 @@ export default function AdminMessages() {
             </CardHeader>
             <CardContent className="flex-1 p-0">
               <ScrollArea className="h-full">
-                {filteredConversations.map((conversation) => (
-                  <div
-                    key={conversation.id}
-                    className={`flex cursor-pointer items-start gap-3 border-b p-4 transition-colors hover:bg-muted/50 ${selectedConversation?.id === conversation.id ? "bg-muted" : ""
-                      }`}
-                    onClick={() => {
-                      setSelectedConversation(conversation);
-                      // Mark as read
-                      setConversations(prev => prev.map(conv =>
-                        conv.id === conversation.id ? { ...conv, unreadCount: 0 } : conv
-                      ));
-                    }}
-                  >
-                    <div className="relative">
-                      <Avatar>
-                        <AvatarImage src={conversation.patientAvatar} />
-                        <AvatarFallback className="bg-primary/10 text-primary">
-                          {conversation.patientName.split(" ").map(n => n[0]).join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      {conversation.isOnline && (
-                        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background bg-green-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{conversation.patientName}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatMessageTime(conversation.lastMessageTime)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="truncate text-sm text-muted-foreground">
-                          {conversation.lastMessage}
-                        </p>
-                        {conversation.unreadCount > 0 && (
-                          <Badge className="ml-2 h-5 w-5 rounded-full p-0 text-xs">
-                            {conversation.unreadCount}
-                          </Badge>
+                {filteredConversations.length > 0 ? (
+                  filteredConversations.map((conversation) => (
+                    <div
+                      key={conversation.id}
+                      className={`flex cursor-pointer items-start gap-3 border-b p-4 transition-colors hover:bg-muted/50 ${selectedConversation?.id === conversation.id ? "bg-muted" : ""
+                        }`}
+                      onClick={() => {
+                        setSelectedConversation(conversation);
+                        // Mark as read
+                        setConversations(prev => prev.map(conv =>
+                          conv.id === conversation.id ? { ...conv, unreadCount: 0 } : conv
+                        ));
+                      }}
+                    >
+                      <div className="relative">
+                        <Avatar>
+                          <AvatarImage src={conversation.patientAvatar} />
+                          <AvatarFallback className="bg-primary/10 text-primary">
+                            {conversation.patientName ? conversation.patientName.split(" ").map(n => n[0]).join("") : "P"}
+                          </AvatarFallback>
+                        </Avatar>
+                        {conversation.isOnline && (
+                          <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background bg-green-500" />
                         )}
                       </div>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{conversation.patientName}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatMessageTime(conversation.lastMessageTime)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="truncate text-sm text-muted-foreground">
+                            {conversation.lastMessage}
+                          </p>
+                          {conversation.unreadCount > 0 && (
+                            <Badge className="ml-2 h-5 w-5 rounded-full p-0 text-xs">
+                              {conversation.unreadCount}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No hay pacientes disponibles
                   </div>
-                ))}
+                )}
               </ScrollArea>
             </CardContent>
           </Card>
@@ -508,22 +535,28 @@ export default function AdminMessages() {
           </DialogHeader>
           <ScrollArea className="h-[300px]">
             <div className="space-y-2">
-              {conversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  className="flex items-center gap-3 p-2 hover:bg-muted rounded-md cursor-pointer"
-                  onClick={() => {
-                    setSelectedConversation(conv);
-                    setNewChatOpen(false);
-                  }}
-                >
-                  <Avatar>
-                    <AvatarImage src={conv.patientAvatar} />
-                    <AvatarFallback>{conv.patientName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <span className="font-medium">{conv.patientName}</span>
+              {conversations.length > 0 ? (
+                conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    className="flex items-center gap-3 p-2 hover:bg-muted rounded-md cursor-pointer"
+                    onClick={() => {
+                      setSelectedConversation(conv);
+                      setNewChatOpen(false);
+                    }}
+                  >
+                    <Avatar>
+                      <AvatarImage src={conv.patientAvatar} />
+                      <AvatarFallback>{conv.patientName ? conv.patientName.substring(0, 2).toUpperCase() : "P"}</AvatarFallback>
+                    </Avatar>
+                    <span className="font-medium">{conv.patientName}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center text-muted-foreground">
+                  No hay pacientes disponibles para iniciar conversación
                 </div>
-              ))}
+              )}
             </div>
           </ScrollArea>
         </DialogContent>
