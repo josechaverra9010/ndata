@@ -130,13 +130,13 @@ export default function AdminRecipes() {
     data.append("name", formData.get("name") as string);
     data.append("description", formData.get("description") as string);
     data.append("category", formData.get("category") as string);
-    data.append("prepTime", formData.get("prepTime") as string);
-    data.append("cookTime", formData.get("cookTime") as string);
+    data.append("prepTime", "0");
+    data.append("cookTime", "0");
     data.append("servings", formData.get("servings") as string);
-    data.append("calories", formData.get("calories") as string);
-    data.append("protein", formData.get("protein") as string);
-    data.append("carbs", formData.get("carbs") as string);
-    data.append("fat", formData.get("fat") as string);
+    data.append("calories", "0");
+    data.append("protein", "0");
+    data.append("carbs", "0");
+    data.append("fat", "0");
 
     const ingredientsList = (formData.get("ingredients") as string).split("\n").filter(i => i.trim());
     const instructionsList = (formData.get("instructions") as string).split("\n").filter(i => i.trim());
@@ -326,6 +326,7 @@ export default function AdminRecipes() {
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div>
                     <Label htmlFor="servings">Porciones</Label>
                     <Input
@@ -337,79 +338,9 @@ export default function AdminRecipes() {
                       required
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="prepTime">Tiempo prep. (min)</Label>
-                    <Input
-                      id="prepTime"
-                      name="prepTime"
-                      type="number"
-                      defaultValue={editingRecipe?.prepTime || 15}
-                      min="0"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="cookTime">Tiempo cocción (min)</Label>
-                    <Input
-                      id="cookTime"
-                      name="cookTime"
-                      type="number"
-                      defaultValue={editingRecipe?.cookTime || 30}
-                      min="0"
-                      required
-                    />
-                  </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-3">Información Nutricional</h4>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div>
-                      <Label htmlFor="calories">Calorías</Label>
-                      <Input
-                        id="calories"
-                        name="calories"
-                        type="number"
-                        defaultValue={editingRecipe?.calories || 300}
-                        min="0"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="protein">Proteína (g)</Label>
-                      <Input
-                        id="protein"
-                        name="protein"
-                        type="number"
-                        defaultValue={editingRecipe?.protein || 20}
-                        min="0"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="carbs">Carbos (g)</Label>
-                      <Input
-                        id="carbs"
-                        name="carbs"
-                        type="number"
-                        defaultValue={editingRecipe?.carbs || 30}
-                        min="0"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="fat">Grasa (g)</Label>
-                      <Input
-                        id="fat"
-                        name="fat"
-                        type="number"
-                        defaultValue={editingRecipe?.fat || 15}
-                        min="0"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
+
 
                 <div>
                   <Label htmlFor="ingredients">Ingredientes (uno por línea)</Label>
@@ -532,27 +463,14 @@ export default function AdminRecipes() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-orange-500/10 rounded-lg">
-                <Flame className="h-5 w-5 text-orange-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {recipes.length > 0 ? Math.round(recipes.reduce((acc, r) => acc + r.calories, 0) / recipes.length) : 0}
-                </p>
-                <p className="text-xs text-muted-foreground">Calorías prom.</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 bg-blue-500/10 rounded-lg">
-                <Clock className="h-5 w-5 text-blue-500" />
+                <Users className="h-5 w-5 text-blue-500" />
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {recipes.length > 0 ? Math.round(recipes.reduce((acc, r) => acc + r.prepTime + r.cookTime, 0) / recipes.length) : 0}
+                  {recipes.length > 0 ? Math.round(recipes.reduce((acc, r) => acc + r.servings, 0) / recipes.length) : 0}
                 </p>
-                <p className="text-xs text-muted-foreground">Minutos prom.</p>
+                <p className="text-xs text-muted-foreground">Porciones prom.</p>
               </div>
             </CardContent>
           </Card>
@@ -632,14 +550,6 @@ export default function AdminRecipes() {
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{recipe.description}</p>
 
                 <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    {recipe.prepTime + recipe.cookTime} min
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Flame className="h-4 w-4" />
-                    {recipe.calories} kcal
-                  </span>
                   <span className="flex items-center gap-1">
                     <Users className="h-4 w-4" />
                     {recipe.servings}
@@ -722,17 +632,7 @@ export default function AdminRecipes() {
 
                     <p className="text-muted-foreground">{selectedRecipe.description}</p>
 
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="text-center p-3 bg-muted rounded-lg">
-                        <Clock className="h-5 w-5 mx-auto mb-1 text-primary" />
-                        <p className="text-sm font-medium">{selectedRecipe.prepTime + selectedRecipe.cookTime} min</p>
-                        <p className="text-xs text-muted-foreground">Tiempo total</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted rounded-lg">
-                        <Flame className="h-5 w-5 mx-auto mb-1 text-orange-500" />
-                        <p className="text-sm font-medium">{selectedRecipe.calories} kcal</p>
-                        <p className="text-xs text-muted-foreground">Calorías</p>
-                      </div>
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="text-center p-3 bg-muted rounded-lg">
                         <Users className="h-5 w-5 mx-auto mb-1 text-blue-500" />
                         <p className="text-sm font-medium">{selectedRecipe.servings}</p>
@@ -745,24 +645,7 @@ export default function AdminRecipes() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-2 p-4 bg-muted/50 rounded-lg">
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-primary">{selectedRecipe.protein}g</p>
-                        <p className="text-xs text-muted-foreground">Proteína</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-orange-500">{selectedRecipe.carbs}g</p>
-                        <p className="text-xs text-muted-foreground">Carbohidratos</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-yellow-500">{selectedRecipe.fat}g</p>
-                        <p className="text-xs text-muted-foreground">Grasas</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-red-500">{selectedRecipe.calories}</p>
-                        <p className="text-xs text-muted-foreground">Calorías</p>
-                      </div>
-                    </div>
+
 
                     <Tabs defaultValue="ingredients">
                       <TabsList className="w-full">
@@ -828,6 +711,6 @@ export default function AdminRecipes() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </AdminLayout>
+    </AdminLayout >
   );
 }

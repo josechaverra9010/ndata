@@ -37,14 +37,17 @@ interface AssignPlanWithMenuDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onAssignSuccess: () => void;
+    preselectedPatient?: Patient | null;
 }
 
-export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuccess }: AssignPlanWithMenuDialogProps) {
+export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuccess, preselectedPatient }: AssignPlanWithMenuDialogProps) {
     const { toast } = useToast();
     const [patients, setPatients] = useState<Patient[]>([]);
     const [weeklyMenus, setWeeklyMenus] = useState<WeeklyMenu[]>([]);
+    const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
     const [selectedPatient, setSelectedPatient] = useState<string>("");
     const [selectedMenu, setSelectedMenu] = useState<string>("");
+    const [selectedPlanId, setSelectedPlanId] = useState<string>("");
     const [startDate, setStartDate] = useState<Date>(new Date());
     const [loading, setLoading] = useState(false);
 
@@ -52,8 +55,17 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
         if (open) {
             fetchPatients();
             fetchWeeklyMenus();
+            fetchMealPlans();
+            // Si se pasa un plan, preseleccionarlo
+            if (plan && plan.id) {
+                setSelectedPlanId(plan.id.toString());
+            }
+            // Si se pasa un paciente preseleccionado, seleccionarlo
+            if (preselectedPatient && preselectedPatient.id) {
+                setSelectedPatient(preselectedPatient.id.toString());
+            }
         }
-    }, [open]);
+    }, [open, plan, preselectedPatient]);
 
     const fetchPatients = async () => {
         try {
@@ -79,8 +91,20 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
         }
     };
 
+    const fetchMealPlans = async () => {
+        try {
+            const response = await fetch(`${API_URL}/meal-plans`);
+            if (response.ok) {
+                const data = await response.json();
+                setMealPlans(data);
+            }
+        } catch (error) {
+            console.error("Error fetching meal plans:", error);
+        }
+    };
+
     const handleAssign = async () => {
-        if (!selectedPatient || !selectedMenu || !plan) {
+        if (!selectedPatient || !selectedMenu || !selectedPlanId) {
             toast({
                 title: "Campos incompletos",
                 description: "Por favor completa todos los campos",
@@ -96,7 +120,7 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     patient_id: parseInt(selectedPatient),
-                    meal_plan_id: plan.id,
+                    meal_plan_id: parseInt(selectedPlanId),
                     weekly_menu_id: parseInt(selectedMenu),
                     start_date: format(startDate, "yyyy-MM-dd"),
                 }),
@@ -133,6 +157,7 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
     const resetForm = () => {
         setSelectedPatient("");
         setSelectedMenu("");
+        setSelectedPlanId("");
         setStartDate(new Date());
     };
 
@@ -147,10 +172,29 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
                 </DialogHeader>
 
                 <div className="space-y-5 py-4">
-                    {/* Plan Info */}
-                    <div className="rounded-lg bg-muted/50 p-4">
-                        <p className="text-sm font-medium text-muted-foreground">Plan seleccionado</p>
-                        <p className="text-lg font-semibold text-foreground">{plan?.name}</p>
+                    {/* Plan Selection */}
+                    <div className="space-y-2">
+                        <Label htmlFor="plan" className="flex items-center gap-2">
+                            <ChefHat className="h-4 w-4" />
+                            Plan Nutricional
+                        </Label>
+                        <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+                            <SelectTrigger id="plan">
+                                <SelectValue placeholder="Selecciona un plan" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {mealPlans.map((mealPlan) => (
+                                    <SelectItem key={mealPlan.id} value={mealPlan.id.toString()}>
+                                        <div className="flex flex-col">
+                                            <span className="font-medium">{mealPlan.name}</span>
+                                            <span className="text-xs text-muted-foreground">
+                                                {mealPlan.category} • {mealPlan.calories} kcal
+                                            </span>
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     {/* Patient Selection */}

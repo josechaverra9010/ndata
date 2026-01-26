@@ -47,6 +47,8 @@ interface Recipe {
     fat: number;
     prepTime: number;
     image: string;
+    ingredients?: string[];
+    instructions?: string[];
 }
 
 interface MealSlot {
@@ -60,10 +62,13 @@ interface MealSlot {
     time: string;
     notes?: string;
     image?: string;
+    ingredients?: string[];
+    instructions?: string[];
 }
 
 interface DayMenu {
     day: string;
+    week: number;
     meals: MealSlot[];
 }
 
@@ -138,21 +143,26 @@ const AdminWeeklyMenus = () => {
         return `${baseUrl}${imagePath}`;
     };
 
-    // Initialize empty week
+    // Initialize empty week (now 4 weeks)
     const createEmptyWeek = (): DayMenu[] => {
-        return daysOfWeek.map(day => ({
-            day,
-            meals: mealTypes.map(mt => ({
-                type: mt.type,
-                recipe_name: "",
-                calories: 0,
-                protein: 0,
-                carbs: 0,
-                fat: 0,
-                time: mt.time,
-                notes: "",
-            })),
-        }));
+        const weeks = [];
+        for (let w = 1; w <= 4; w++) {
+            weeks.push(...daysOfWeek.map(day => ({
+                day,
+                week: w,
+                meals: mealTypes.map(mt => ({
+                    type: mt.type,
+                    recipe_name: "",
+                    calories: 0,
+                    protein: 0,
+                    carbs: 0,
+                    fat: 0,
+                    time: mt.time,
+                    notes: "",
+                })),
+            })));
+        }
+        return weeks;
     };
 
     const [currentWeek, setCurrentWeek] = useState<DayMenu[]>(createEmptyWeek());
@@ -358,11 +368,13 @@ const AdminWeeklyMenus = () => {
         setAddMealDialogOpen(true);
     };
 
+    const [currentWeekTab, setCurrentWeekTab] = useState("1");
+
     const handleConfirmAddMeal = () => {
         if (!selectedRecipe || !currentDay || !currentMealType) return;
 
         setCurrentWeek(prev => prev.map(dayMenu => {
-            if (dayMenu.day === currentDay) {
+            if (dayMenu.day === currentDay && dayMenu.week === parseInt(currentWeekTab)) {
                 return {
                     ...dayMenu,
                     meals: dayMenu.meals.map(meal => {
@@ -377,7 +389,9 @@ const AdminWeeklyMenus = () => {
                                 fat: selectedRecipe.fat,
                                 time: meal.time,
                                 notes: mealNotes,
-                                image: selectedRecipe.image
+                                image: selectedRecipe.image,
+                                ingredients: selectedRecipe.ingredients,
+                                instructions: selectedRecipe.instructions
                             };
                         }
                         return meal;
@@ -394,7 +408,7 @@ const AdminWeeklyMenus = () => {
 
     const handleRemoveMeal = (day: string, mealType: MealSlot["type"]) => {
         setCurrentWeek(prev => prev.map(dayMenu => {
-            if (dayMenu.day === day) {
+            if (dayMenu.day === day && dayMenu.week === parseInt(currentWeekTab)) {
                 return {
                     ...dayMenu,
                     meals: dayMenu.meals.map(meal => {
@@ -466,7 +480,31 @@ const AdminWeeklyMenus = () => {
             description: menu.description,
             category: menu.category
         });
-        setCurrentWeek(menu.week);
+
+        // Ensure we have 28 days (4 weeks) of data even for legacy 1-week menus
+        const existingData = menu.week;
+        const completeData = createEmptyWeek();
+
+        // Merge existing data into complete structure
+        const mergedWeek = completeData.map(emptyDay => {
+            // Try to find matching day in existing data
+            // For legacy menus, they only have week 1 data but we want to preserve it
+            // Backend should return week number, but if missing (legacy), we assume week 1
+            const foundDay = existingData.find(d =>
+                d.day === emptyDay.day &&
+                (d.week === emptyDay.week || (!d.week && emptyDay.week === 1))
+            );
+
+            if (foundDay) {
+                return {
+                    ...foundDay,
+                    week: emptyDay.week // Ensure week is set correctly
+                };
+            }
+            return emptyDay;
+        });
+
+        setCurrentWeek(mergedWeek);
         setEditMenuOpen(true);
     };
 
@@ -803,85 +841,99 @@ const AdminWeeklyMenus = () => {
                                 {/* Weekly Plan */}
                                 <div>
                                     <h3 className="text-lg font-semibold mb-4">Plan Semanal</h3>
-                                    <Tabs defaultValue="Lunes" className="w-full">
-                                        <TabsList className="grid w-full grid-cols-7">
-                                            {daysOfWeek.map(day => (
-                                                <TabsTrigger key={day} value={day} className="text-xs">
-                                                    {day.slice(0, 3)}
+                                    <Tabs defaultValue="1" value={currentWeekTab} onValueChange={setCurrentWeekTab} className="w-full">
+                                        <TabsList className="grid w-full grid-cols-4 mb-4">
+                                            {[1, 2, 3, 4].map(num => (
+                                                <TabsTrigger key={num} value={num.toString()}>
+                                                    Semana {num}
                                                 </TabsTrigger>
                                             ))}
                                         </TabsList>
-                                        {daysOfWeek.map(day => {
-                                            const dayMenu = currentWeek.find(d => d.day === day);
-                                            return (
-                                                <TabsContent key={day} value={day} className="space-y-4 mt-4">
-                                                    <div className="flex items-center justify-between mb-4">
-                                                        <h4 className="font-semibold">{day}</h4>
-                                                        <Badge variant="outline">
-                                                            {dayMenu?.meals.filter(m => m.recipe_name).length || 0}/5 comidas
-                                                        </Badge>
-                                                    </div>
-                                                    <div className="space-y-3">
-                                                        {mealTypes.map(mealType => {
-                                                            const meal = dayMenu?.meals.find(m => m.type === mealType.type);
-                                                            const MealIcon = mealType.icon;
-                                                            return (
-                                                                <div key={mealType.type} className="border rounded-lg p-4">
-                                                                    <div className="flex items-center justify-between mb-3">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <div className={`p-2 ${mealType.color} rounded-lg bg-opacity-10`}>
-                                                                                <MealIcon className={`h-4 w-4 ${mealType.color.replace('bg-', 'text-')}`} />
-                                                                            </div>
-                                                                            <div>
-                                                                                <p className="font-medium">{mealType.label}</p>
-                                                                                <p className="text-xs text-muted-foreground">{mealType.time}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        <Button
-                                                                            size="sm"
-                                                                            variant={meal?.recipe_name ? "outline" : "default"}
-                                                                            onClick={() => handleAddMeal(day, mealType.type)}
-                                                                        >
-                                                                            {meal?.recipe_name ? "Cambiar" : "Agregar"}
-                                                                        </Button>
-                                                                    </div>
-                                                                    {meal?.recipe_name && (
-                                                                        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                                                                            {meal.image && (
-                                                                                <img
-                                                                                    src={getImageUrl(meal.image)}
-                                                                                    alt={meal.recipe_name}
-                                                                                    className="w-16 h-16 rounded-lg object-cover"
-                                                                                />
-                                                                            )}
-                                                                            <div className="flex-1">
-                                                                                <p className="font-medium text-sm">{meal.recipe_name}</p>
-                                                                                <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                                                                                    <span>{meal.calories} kcal</span>
-                                                                                    <span>P: {meal.protein}g</span>
-                                                                                    <span>C: {meal.carbs}g</span>
-                                                                                    <span>G: {meal.fat}g</span>
+
+                                        {[1, 2, 3, 4].map(weekNum => (
+                                            <TabsContent key={weekNum} value={weekNum.toString()}>
+                                                <Tabs defaultValue="Lunes" className="w-full">
+                                                    <TabsList className="grid w-full grid-cols-7">
+                                                        {daysOfWeek.map(day => (
+                                                            <TabsTrigger key={day} value={day} className="text-xs">
+                                                                {day.slice(0, 3)}
+                                                            </TabsTrigger>
+                                                        ))}
+                                                    </TabsList>
+                                                    {daysOfWeek.map(day => {
+                                                        const dayMenu = currentWeek.find(d => d.day === day && d.week === weekNum);
+                                                        return (
+                                                            <TabsContent key={day} value={day} className="space-y-4 mt-4">
+                                                                <div className="flex items-center justify-between mb-4">
+                                                                    <h4 className="font-semibold">{day} - Semana {weekNum}</h4>
+                                                                    <Badge variant="outline">
+                                                                        {dayMenu?.meals.filter(m => m.recipe_name).length || 0}/5 comidas
+                                                                    </Badge>
+                                                                </div>
+                                                                <div className="space-y-3">
+                                                                    {mealTypes.map(mealType => {
+                                                                        const meal = dayMenu?.meals.find(m => m.type === mealType.type);
+                                                                        const MealIcon = mealType.icon;
+                                                                        return (
+                                                                            <div key={mealType.type} className="border rounded-lg p-4">
+                                                                                <div className="flex items-center justify-between mb-3">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <div className={`p-2 ${mealType.color} rounded-lg bg-opacity-10`}>
+                                                                                            <MealIcon className={`h-4 w-4 ${mealType.color.replace('bg-', 'text-')}`} />
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <p className="font-medium">{mealType.label}</p>
+                                                                                            <p className="text-xs text-muted-foreground">{mealType.time}</p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <Button
+                                                                                        size="sm"
+                                                                                        variant={meal?.recipe_name ? "outline" : "default"}
+                                                                                        onClick={() => handleAddMeal(day, mealType.type)}
+                                                                                    >
+                                                                                        {meal?.recipe_name ? "Cambiar" : "Agregar"}
+                                                                                    </Button>
                                                                                 </div>
-                                                                                {meal.notes && (
-                                                                                    <p className="text-xs text-muted-foreground mt-1">{meal.notes}</p>
+                                                                                {meal?.recipe_name && (
+                                                                                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                                                                                        {meal.image && (
+                                                                                            <img
+                                                                                                src={getImageUrl(meal.image)}
+                                                                                                alt={meal.recipe_name}
+                                                                                                className="w-16 h-16 rounded-lg object-cover"
+                                                                                            />
+                                                                                        )}
+                                                                                        <div className="flex-1">
+                                                                                            <p className="font-medium text-sm">{meal.recipe_name}</p>
+                                                                                            <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                                                                                                <span>{meal.calories} kcal</span>
+                                                                                                <span>P: {meal.protein}g</span>
+                                                                                                <span>C: {meal.carbs}g</span>
+                                                                                                <span>G: {meal.fat}g</span>
+                                                                                            </div>
+                                                                                            {meal.notes && (
+                                                                                                <p className="text-xs text-muted-foreground mt-1">{meal.notes}</p>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            variant="ghost"
+                                                                                            onClick={() => handleRemoveMeal(day, mealType.type)}
+                                                                                        >
+                                                                                            <Trash2 className="h-4 w-4" />
+                                                                                        </Button>
+                                                                                    </div>
                                                                                 )}
                                                                             </div>
-                                                                            <Button
-                                                                                size="sm"
-                                                                                variant="ghost"
-                                                                                onClick={() => handleRemoveMeal(day, mealType.type)}
-                                                                            >
-                                                                                <Trash2 className="h-4 w-4" />
-                                                                            </Button>
-                                                                        </div>
-                                                                    )}
+                                                                        );
+                                                                    })}
                                                                 </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </TabsContent>
-                                            );
-                                        })}
+                                                            </TabsContent>
+                                                        );
+                                                    })}
+                                                </Tabs>
+                                            </TabsContent>
+                                        ))}
                                     </Tabs>
                                 </div>
                             </div>
@@ -1013,94 +1065,108 @@ const AdminWeeklyMenus = () => {
                                         </Card>
                                     </div>
 
-                                    <Tabs defaultValue="Lunes" className="w-full">
-                                        <TabsList className="grid w-full grid-cols-7">
-                                            {daysOfWeek.map(day => (
-                                                <TabsTrigger key={day} value={day}>
-                                                    {day.slice(0, 3)}
+                                    <Tabs defaultValue="1" className="w-full">
+                                        <TabsList className="grid w-full grid-cols-4 mb-4">
+                                            {[1, 2, 3, 4].map(num => (
+                                                <TabsTrigger key={num} value={num.toString()}>
+                                                    Semana {num}
                                                 </TabsTrigger>
                                             ))}
                                         </TabsList>
-                                        {daysOfWeek.map(day => {
-                                            const dayMenu = selectedMenu.week.find(d => d.day === day);
-                                            const dayCalories = dayMenu?.meals.reduce((sum, meal) => sum + (meal.calories || 0), 0) || 0;
-                                            return (
-                                                <TabsContent key={day} value={day} className="space-y-4 mt-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <h4 className="font-semibold text-lg">{day}</h4>
-                                                        <div className="flex items-center gap-2">
-                                                            <Badge variant="outline">
-                                                                <Flame className="h-3 w-3 mr-1" />
-                                                                {dayCalories} kcal
-                                                            </Badge>
-                                                            <Badge variant="outline">
-                                                                {dayMenu?.meals.filter(m => m.recipe_name).length}/5
-                                                            </Badge>
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-3">
-                                                        {mealTypes.map(mealType => {
-                                                            const meal = dayMenu?.meals.find(m => m.type === mealType.type);
-                                                            const MealIcon = mealType.icon;
-                                                            return (
-                                                                <Card key={mealType.type}>
-                                                                    <CardContent className="p-4">
-                                                                        <div className="flex items-center gap-3 mb-3">
-                                                                            <div className={`p-2 ${mealType.color} rounded-lg bg-opacity-10`}>
-                                                                                <MealIcon className={`h-5 w-5 ${mealType.color.replace('bg-', 'text-')}`} />
-                                                                            </div>
-                                                                            <div>
-                                                                                <p className="font-semibold">{mealType.label}</p>
-                                                                                <p className="text-sm text-muted-foreground">{mealType.time}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        {meal?.recipe_name ? (
-                                                                            <div className="flex items-center gap-4">
-                                                                                {meal.image && (
-                                                                                    <img
-                                                                                        src={getImageUrl(meal.image)}
-                                                                                        alt={meal.recipe_name}
-                                                                                        className="w-24 h-24 rounded-lg object-cover"
-                                                                                    />
-                                                                                )}
-                                                                                <div className="flex-1">
-                                                                                    <p className="font-medium mb-2">{meal.recipe_name}</p>
-                                                                                    <div className="grid grid-cols-4 gap-2 text-sm">
-                                                                                        <div>
-                                                                                            <p className="text-muted-foreground text-xs">Calorías</p>
-                                                                                            <p className="font-semibold">{meal.calories}</p>
+
+                                        {[1, 2, 3, 4].map(weekNum => (
+                                            <TabsContent key={weekNum} value={weekNum.toString()}>
+                                                <Tabs defaultValue="Lunes" className="w-full">
+                                                    <TabsList className="grid w-full grid-cols-7">
+                                                        {daysOfWeek.map(day => (
+                                                            <TabsTrigger key={day} value={day}>
+                                                                {day.slice(0, 3)}
+                                                            </TabsTrigger>
+                                                        ))}
+                                                    </TabsList>
+                                                    {daysOfWeek.map(day => {
+                                                        const dayMenu = selectedMenu.week.find(d => d.day === day && d.week === weekNum);
+                                                        const dayCalories = dayMenu?.meals.reduce((sum, meal) => sum + (meal.calories || 0), 0) || 0;
+                                                        return (
+                                                            <TabsContent key={day} value={day} className="space-y-4 mt-4">
+                                                                <div className="flex items-center justify-between">
+                                                                    <h4 className="font-semibold text-lg">{day} - Semana {weekNum}</h4>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Badge variant="outline">
+                                                                            <Flame className="h-3 w-3 mr-1" />
+                                                                            {dayCalories} kcal
+                                                                        </Badge>
+                                                                        <Badge variant="outline">
+                                                                            {dayMenu?.meals.filter(m => m.recipe_name).length || 0}/5
+                                                                        </Badge>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="space-y-3">
+                                                                    {mealTypes.map(mealType => {
+                                                                        const meal = dayMenu?.meals.find(m => m.type === mealType.type);
+                                                                        const MealIcon = mealType.icon;
+                                                                        return (
+                                                                            <Card key={mealType.type}>
+                                                                                <CardContent className="p-4">
+                                                                                    <div className="flex items-center gap-3 mb-3">
+                                                                                        <div className={`p-2 ${mealType.color} rounded-lg bg-opacity-10`}>
+                                                                                            <MealIcon className={`h-5 w-5 ${mealType.color.replace('bg-', 'text-')}`} />
                                                                                         </div>
                                                                                         <div>
-                                                                                            <p className="text-muted-foreground text-xs">Proteína</p>
-                                                                                            <p className="font-semibold">{meal.protein}g</p>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <p className="text-muted-foreground text-xs">Carbos</p>
-                                                                                            <p className="font-semibold">{meal.carbs}g</p>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <p className="text-muted-foreground text-xs">Grasas</p>
-                                                                                            <p className="font-semibold">{meal.fat}g</p>
+                                                                                            <p className="font-semibold">{mealType.label}</p>
+                                                                                            <p className="text-sm text-muted-foreground">{mealType.time}</p>
                                                                                         </div>
                                                                                     </div>
-                                                                                    {meal.notes && (
-                                                                                        <p className="text-sm text-muted-foreground mt-2 italic">{meal.notes}</p>
+                                                                                    {meal?.recipe_name ? (
+                                                                                        <div className="flex items-center gap-4">
+                                                                                            {meal.image && (
+                                                                                                <img
+                                                                                                    src={getImageUrl(meal.image)}
+                                                                                                    alt={meal.recipe_name}
+                                                                                                    className="w-24 h-24 rounded-lg object-cover"
+                                                                                                />
+                                                                                            )}
+                                                                                            <div className="flex-1">
+                                                                                                <p className="font-medium mb-2">{meal.recipe_name}</p>
+                                                                                                <div className="grid grid-cols-4 gap-2 text-sm">
+                                                                                                    <div>
+                                                                                                        <p className="text-muted-foreground text-xs">Calorías</p>
+                                                                                                        <p className="font-semibold">{meal.calories}</p>
+                                                                                                    </div>
+                                                                                                    <div>
+                                                                                                        <p className="text-muted-foreground text-xs">Proteína</p>
+                                                                                                        <p className="font-semibold">{meal.protein}g</p>
+                                                                                                    </div>
+                                                                                                    <div>
+                                                                                                        <p className="text-muted-foreground text-xs">Carbos</p>
+                                                                                                        <p className="font-semibold">{meal.carbs}g</p>
+                                                                                                    </div>
+                                                                                                    <div>
+                                                                                                        <p className="text-muted-foreground text-xs">Grasas</p>
+                                                                                                        <p className="font-semibold">{meal.fat}g</p>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                {meal.notes && (
+                                                                                                    <p className="text-sm text-muted-foreground mt-2 italic">{meal.notes}</p>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <p className="text-sm text-muted-foreground text-center py-4">
+                                                                                            No hay receta asignada
+                                                                                        </p>
                                                                                     )}
-                                                                                </div>
-                                                                            </div>
-                                                                        ) : (
-                                                                            <p className="text-sm text-muted-foreground text-center py-4">
-                                                                                No hay receta asignada
-                                                                            </p>
-                                                                        )}
-                                                                    </CardContent>
-                                                                </Card>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </TabsContent>
-                                            );
-                                        })}
+                                                                                </CardContent>
+                                                                            </Card>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </TabsContent>
+                                                        );
+                                                    })}
+                                                </Tabs>
+                                            </TabsContent>
+                                        ))}
                                     </Tabs>
                                 </div>
                             )}

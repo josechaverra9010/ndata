@@ -72,7 +72,11 @@ const Auth = () => {
           name: data.user.name,
           role: userRole,
           email: formData.email,
-          profile_complete: data.profile_complete
+          profile_complete: data.profile_complete,
+          altura: data.user.altura,
+          peso_actual: data.user.peso_actual,
+          avatar: data.user.avatar || "",
+          createdAt: new Date().toISOString()
         };
 
         // Guardar datos completos del usuario

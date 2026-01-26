@@ -32,6 +32,7 @@ export default function PatientSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
   const [notifications, setNotifications] = useState({
     emailReminders: true,
     pushMeals: true,
@@ -40,7 +41,6 @@ export default function PatientSettings() {
     weeklyReport: true,
     tips: true,
   });
-
 
   const [appearance, setAppearance] = useState({
     language: "es",
@@ -111,6 +111,7 @@ export default function PatientSettings() {
   };
 
 const handleSave = async () => {
+  const handleSave = async () => {
     if (!userId) {
       toast.error("Usuario no identificado");
       return;

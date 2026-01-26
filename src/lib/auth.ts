@@ -11,6 +11,7 @@ export interface User {
   role: UserRole;
   avatar?: string;
   altura?: number;
+  peso_actual?: number;
   createdAt: string;
 }
 

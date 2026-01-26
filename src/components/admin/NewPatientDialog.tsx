@@ -19,9 +19,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, User, Activity, HeartPulse } from "lucide-react";
+import { Loader2, User, Activity, HeartPulse, ClipboardList } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { FoodFrequencyForm, FOOD_GROUPS } from "@/components/shared/FoodFrequencyForm";
 
 interface NewPatientDialogProps {
   patient?: any;
@@ -46,12 +47,15 @@ interface PatientFormData {
   peso_actual: string;
   peso_objetivo: string;
   nivel_actividad: string;
+  pal_factor: string; // Nuevo campo manual
   alergias: string;
   preferencias: string;
   objetivos_salud: string;
   condiciones_medicas: string;
   alimentos_disgusto: string;
   antecedentes_familiares: string;
+  evaluacion_nutricional: string;
+  frecuencia_consumo: any[];
 }
 
 const initialFormData: PatientFormData = {
@@ -68,14 +72,19 @@ const initialFormData: PatientFormData = {
   altura: "",
   peso_actual: "",
   peso_objetivo: "",
-  nivel_actividad: "Moderada",
+  nivel_actividad: "Moderado (1.7 - 1.99)",
+  pal_factor: "1.76", // Valor por defecto para Moderado
   alergias: "",
   preferencias: "",
   objetivos_salud: "",
   condiciones_medicas: "",
   alimentos_disgusto: "",
   antecedentes_familiares: "",
+  evaluacion_nutricional: "",
+  frecuencia_consumo: [],
 };
+
+
 
 export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: NewPatientDialogProps) {
   const { toast } = useToast();
@@ -101,16 +110,24 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
         altura: patient.altura?.toString() || "",
         peso_actual: patient.peso_actual?.toString() || "",
         peso_objetivo: patient.peso_objetivo?.toString() || "",
-        nivel_actividad: patient.nivel_actividad || "Moderada",
+        nivel_actividad: patient.nivel_actividad || "Moderado (1.7 - 1.99)",
+        pal_factor: patient.pal_factor ? patient.pal_factor.toString() : (patient.nivel_actividad && patient.nivel_actividad.includes("Sed") ? "1.53" : "1.76"),
         alergias: Array.isArray(patient.alergias) ? patient.alergias.join(", ") : (patient.alergias || ""),
         preferencias: Array.isArray(patient.preferencias) ? patient.preferencias.join(", ") : (patient.preferencias || ""),
         objetivos_salud: patient.objetivos_salud || "",
         condiciones_medicas: patient.condiciones_medicas || "",
         alimentos_disgusto: patient.alimentos_disgusto || "",
         antecedentes_familiares: patient.antecedentes_familiares || "",
+        evaluacion_nutricional: patient.evaluacion_nutricional || "",
+        frecuencia_consumo: Array.isArray(patient.frecuencia_consumo) && patient.frecuencia_consumo.length > 0
+          ? patient.frecuencia_consumo
+          : FOOD_GROUPS.map(grupo => ({ grupo, frecuencia: "never" })),
       });
     } else if (!open) {
-      setFormData(initialFormData);
+      setFormData({
+        ...initialFormData,
+        frecuencia_consumo: FOOD_GROUPS.map(grupo => ({ grupo, frecuencia: "never" }))
+      });
       setErrors({});
     }
   }, [patient, open]);
@@ -127,8 +144,33 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
     return age;
   }, [formData.fecha_nacimiento]);
 
+  const imc = useMemo(() => {
+    const peso = parseFloat(formData.peso_actual);
+    const altura = parseFloat(formData.altura);
+
+    if (!peso || !altura || altura <= 0) return "";
+
+    const alturaMetros = altura / 100;
+    const calculo = peso / (alturaMetros * alturaMetros);
+    return calculo.toFixed(2);
+  }, [formData.peso_actual, formData.altura]);
+
   const handleChange = (field: keyof PatientFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+
+      // Auto-calcular PAL si cambia el nivel de actividad
+      if (field === "nivel_actividad") {
+        let newPal = prev.pal_factor;
+        if (value.includes("Sedentario")) newPal = "1.53";
+        else if (value.includes("Moderado")) newPal = "1.76";
+        else if (value.includes("Vigoroso")) newPal = "2.25";
+
+        newData.pal_factor = newPal;
+      }
+
+      return newData;
+    });
     // Limpiar error del campo cuando el usuario escribe
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: "" }));
@@ -195,12 +237,15 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
           peso_actual: formData.peso_actual ? parseFloat(formData.peso_actual) : null,
           peso_objetivo: formData.peso_objetivo ? parseFloat(formData.peso_objetivo) : null,
           nivel_actividad: formData.nivel_actividad,
+          pal_factor: formData.pal_factor ? parseFloat(formData.pal_factor) : null,
           alergias: formData.alergias.split(',').map(s => s.trim()).filter(s => s !== ""),
           preferencias: formData.preferencias.split(',').map(s => s.trim()).filter(s => s !== ""),
           objetivos_salud: formData.objetivos_salud.trim() || null,
           condiciones_medicas: formData.condiciones_medicas.trim() || null,
           alimentos_disgusto: formData.alimentos_disgusto.trim() || null,
           antecedentes_familiares: formData.antecedentes_familiares.trim() || null,
+          evaluacion_nutricional: formData.evaluacion_nutricional.trim() || null,
+          frecuencia_consumo: formData.frecuencia_consumo
         }),
       });
 
@@ -252,7 +297,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <Tabs defaultValue="personal" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsList className="grid w-full grid-cols-5 mb-6">
               <TabsTrigger value="personal" className="flex gap-2">
                 <User className="h-4 w-4" />
                 Personal
@@ -264,6 +309,14 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
               <TabsTrigger value="salud" className="flex gap-2">
                 <HeartPulse className="h-4 w-4" />
                 Salud
+              </TabsTrigger>
+              <TabsTrigger value="frecuencia" className="flex gap-2">
+                <Activity className="h-4 w-4" />
+                Frecuencia
+              </TabsTrigger>
+              <TabsTrigger value="evaluacion" className="flex gap-2">
+                <ClipboardList className="h-4 w-4" />
+                Evaluación
               </TabsTrigger>
             </TabsList>
 
@@ -437,7 +490,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
 
             {/* Pestaña: Datos Físicos */}
             <TabsContent value="fisico" className="space-y-4 pt-4">
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <div className="space-y-2">
                   <Label htmlFor="altura">Altura (cm)</Label>
                   <Input
@@ -474,6 +527,16 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     disabled={loading}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="imc">IMC</Label>
+                  <Input
+                    id="imc"
+                    value={imc}
+                    readOnly
+                    placeholder="24.5"
+                    className="bg-muted font-bold"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -487,13 +550,30 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     <SelectValue placeholder="Selecciona nivel" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Sedentaria">Sedentaria (Poco o nada de ejercicio)</SelectItem>
-                    <SelectItem value="Ligera">Ligera (Ejercicio 1-3 días/semana)</SelectItem>
-                    <SelectItem value="Moderada">Moderada (Ejercicio 3-5 días/semana)</SelectItem>
-                    <SelectItem value="Fuerte">Fuerte (Ejercicio 6-7 días/semana)</SelectItem>
-                    <SelectItem value="Muy Fuerte">Muy Fuerte (Atleta, ejercicio intenso)</SelectItem>
+                    <SelectItem value="Sedentario (1.4 - 1.69)">Sedentario (1.4 - 1.69)</SelectItem>
+                    <SelectItem value="Moderado (1.7 - 1.99)">Moderado (1.7 - 1.99)</SelectItem>
+                    <SelectItem value="Vigoroso (2.0 - 2.4)">Vigoroso (2.0 - 2.4)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="pal_factor">Factor de Actividad (PAL)</Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id="pal_factor"
+                    type="number"
+                    step="0.001"
+                    placeholder="1.55"
+                    value={formData.pal_factor}
+                    onChange={(e) => handleChange("pal_factor", e.target.value)}
+                    disabled={loading}
+                    className="w-1/3"
+                  />
+                  <p className="text-xs text-muted-foreground flex-1">
+                    Este valor se calcula automáticamente según el nivel de actividad, pero puedes ajustarlo manualmente si es necesario.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -566,6 +646,28 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   onChange={(e) => handleChange("objetivos_salud", e.target.value)}
                   disabled={loading}
                   rows={3}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="frecuencia" className="space-y-4 pt-4">
+              <FoodFrequencyForm
+                data={formData.frecuencia_consumo}
+                onChange={(newData) => setFormData(prev => ({ ...prev, frecuencia_consumo: newData }))}
+              />
+            </TabsContent>
+
+            {/* Pestaña: Evaluación Nutricional */}
+            <TabsContent value="evaluacion" className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="evaluacion_nutricional">Evaluación Nutricional Detallada</Label>
+                <Textarea
+                  id="evaluacion_nutricional"
+                  placeholder="Realiza aquí la evaluación nutricional detallada del paciente..."
+                  value={formData.evaluacion_nutricional}
+                  onChange={(e) => handleChange("evaluacion_nutricional", e.target.value)}
+                  disabled={loading}
+                  className="min-h-[300px] resize-none"
                 />
               </div>
             </TabsContent>

@@ -25,6 +25,7 @@ import PatientMessages from "./pages/patient/PatientMessages";
 import PatientMeals from "./pages/patient/PatientMeals";
 import PatientProfile from "./pages/patient/PatientProfile";
 import PatientSettings from "./pages/patient/PatientSettings";
+import PatientRecipes from "./pages/patient/PatientRecipes";
 import SuperadminDashboard from "./pages/superadmin/SuperadminDashboard";
 import SuperadminUsers from "./pages/superadmin/SuperadminUsers";
 import SuperadminNutritionists from "./pages/superadmin/SuperadminNutritionists";
@@ -62,12 +63,12 @@ const App = () => (
               {/* Patient Routes */}
               <Route path="/patient" element={<ProtectedRoute allowedRoles={['patient']}><PatientDashboard /></ProtectedRoute>} />
               <Route path="/patient/my-plan" element={<ProtectedRoute allowedRoles={['patient']}><MyPlan /></ProtectedRoute>} />
-              <Route path="/patient/meals" element={<ProtectedRoute allowedRoles={['patient']}><PatientMeals /></ProtectedRoute>} />
               <Route path="/patient/progress" element={<ProtectedRoute allowedRoles={['patient']}><PatientProgress /></ProtectedRoute>} />
               <Route path="/patient/appointments" element={<ProtectedRoute allowedRoles={['patient']}><PatientAppointments /></ProtectedRoute>} />
               <Route path="/patient/messages" element={<ProtectedRoute allowedRoles={['patient']}><PatientMessages /></ProtectedRoute>} />
               <Route path="/patient/profile" element={<ProtectedRoute allowedRoles={['patient']}><PatientProfile /></ProtectedRoute>} />
               <Route path="/patient/settings" element={<ProtectedRoute allowedRoles={['patient']}><PatientSettings /></ProtectedRoute>} />
+              <Route path="/patient/recipes" element={<ProtectedRoute allowedRoles={['patient']}><PatientRecipes /></ProtectedRoute>} />
 
               {/* SuperAdmin Routes */}
               <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminDashboard /></ProtectedRoute>} />

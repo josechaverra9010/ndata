@@ -7,7 +7,8 @@ import {
   LogOut,
   TrendingUp,
   User,
-  Utensils
+  Utensils,
+  ChefHat
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -18,14 +19,13 @@ import { useTheme } from "@/hooks/use-theme";
 const menuItems = [
   { icon: LayoutDashboard, label: "Mi Dashboard", path: "/patient" },
   { icon: Apple, label: "Mi Plan Nutricional", path: "/patient/my-plan" },
-  { icon: Utensils, label: "Mis Comidas", path: "/patient/meals" },
+  { icon: ChefHat, label: "Recetas", path: "/patient/recipes" },
   { icon: TrendingUp, label: "Mi Progreso", path: "/patient/progress" },
   { icon: Calendar, label: "Mis Citas", path: "/patient/appointments" },
   { icon: MessageSquare, label: "Mensajes", path: "/patient/messages" },
 ];
 
 const bottomMenuItems = [
-  { icon: User, label: "Mi Perfil", path: "/patient/profile" },
   { icon: Settings, label: "Configuración", path: "/patient/settings" },
 ];
 

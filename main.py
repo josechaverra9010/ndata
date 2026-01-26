@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float, JSON, ForeignKey, Enum, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
+from sqlalchemy.orm.attributes import flag_modified
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
@@ -17,6 +18,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
+import copy
 
 # Cargar variables de entorno
 load_dotenv()
@@ -48,6 +50,9 @@ UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 app = FastAPI()
+
+# URL base para las fotos (usar variable de entorno o localhost por defecto)
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 # Define los orígenes permitidos explícitamente
 origins = [
@@ -251,15 +256,36 @@ class UserDB(Base):
     peso_actual = Column(Float, nullable=True)
     peso_objetivo = Column(Float, nullable=True)
     nivel_actividad = Column(String(50), nullable=True)
+    pal_factor = Column(Float, nullable=True) # Factor de actividad física manual
     alergias = Column(JSON, default=[]) 
     preferencias = Column(JSON, default=[])
     objetivos_salud = Column(Text, nullable=True)
     condiciones_medicas = Column(Text, nullable=True)
     alimentos_disgusto = Column(Text, nullable=True)
     antecedentes_familiares = Column(Text, nullable=True)
+    evaluacion_nutricional = Column(Text, nullable=True)
+    frecuencia_consumo = Column(JSON, nullable=True)
     
     # Relación con planes asignados
     assigned_plans = relationship("PatientMealPlanDB", back_populates="patient")
+    recuerdos_24h = relationship("Recordatorio24hDB", back_populates="patient")
+
+class Recordatorio24hDB(Base):
+    __tablename__ = "recordatorios_24h"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("users.id"), index=True)
+    date = Column(Date, default=lambda: datetime.now().date())
+    
+    desayuno = Column(Text, nullable=True)
+    media_manana = Column(Text, nullable=True)
+    almuerzo = Column(Text, nullable=True)
+    media_tarde = Column(Text, nullable=True)
+    cena = Column(Text, nullable=True)
+    snack_nocturno = Column(Text, nullable=True)
+    observaciones = Column(Text, nullable=True)
+    
+    patient = relationship("UserDB", back_populates="recuerdos_24h")
 
 class RecipeDB(Base):
     __tablename__ = "recipes"
@@ -299,6 +325,12 @@ class MealPlanDB(Base):
     meals_per_day = Column(Integer, default=3)
     is_active = Column(Integer, default=1)
     created_at = Column(String(50))
+    
+    # Campos para las 4 fases del plan nutricional
+    fase_1 = Column(JSON, nullable=True)  # Requerimiento Energético y Peso Saludable
+    fase_2 = Column(JSON, nullable=True)  # Fórmula Sintética de Consumo y Planeada
+    fase_3 = Column(JSON, nullable=True)  # Fórmula Sintética Desarrollada
+    fase_4 = Column(JSON, nullable=True)  # Minuta Patrón
     
     weekly_menus = relationship("WeeklyMenuDB", back_populates="meal_plan", cascade="all, delete-orphan")
     assigned_patients = relationship("PatientMealPlanDB", back_populates="meal_plan")
@@ -384,12 +416,15 @@ class PatientCreateSchema(BaseModel):
     peso_actual: Optional[float] = None
     peso_objetivo: Optional[float] = None
     nivel_actividad: Optional[str] = None
+    pal_factor: Optional[float] = None # Nuevo campo
     alergias: List[str] = []
     preferencias: List[str] = []
     objetivos_salud: Optional[str] = None
     condiciones_medicas: Optional[str] = None
     alimentos_disgusto: Optional[str] = None
     antecedentes_familiares: Optional[str] = None
+    evaluacion_nutricional: Optional[str] = None
+    frecuencia_consumo: Optional[List[dict]] = None
 
 class LoginSchema(BaseModel):
     email: str
@@ -401,23 +436,26 @@ class ForgotPasswordSchema(BaseModel):
 class ProfileUpdateSchema(BaseModel):
     nombres: str
     apellidos: str
-    telefono: Optional[str]
+    telefono: Optional[str] = None
     email: str
-    fecha_nacimiento: Optional[str]
-    genero: Optional[str]
-    direccion: Optional[str]
-    tipo_documento: Optional[str]
-    numero_documento: Optional[str]
-    altura: Optional[float]
-    peso_actual: Optional[float]
-    peso_objetivo: Optional[float]
-    nivel_actividad: Optional[str]
-    alergias: List[str]
-    preferencias: List[str]
-    objetivos_salud: Optional[str]
-    condiciones_medicas: Optional[str]
-    alimentos_disgusto: Optional[str]
-    antecedentes_familiares: Optional[str]
+    fecha_nacimiento: Optional[str] = None
+    genero: Optional[str] = None
+    direccion: Optional[str] = None
+    tipo_documento: Optional[str] = None
+    numero_documento: Optional[str] = None
+    altura: Optional[float] = None
+    peso_actual: Optional[float] = None
+    peso_objetivo: Optional[float] = None
+    nivel_actividad: Optional[str] = None
+    pal_factor: Optional[float] = None # Nuevo campo
+    alergias: List[str] = []
+    preferencias: List[str] = []
+    objetivos_salud: Optional[str] = None
+    condiciones_medicas: Optional[str] = None
+    alimentos_disgusto: Optional[str] = None
+    antecedentes_familiares: Optional[str] = None
+    evaluacion_nutricional: Optional[str] = None
+    frecuencia_consumo: Optional[List[dict]] = None
 
 class PatientResponse(BaseModel):
     id: int
@@ -425,6 +463,8 @@ class PatientResponse(BaseModel):
     apellidos: str
     email: str
     telefono: Optional[str]
+    fecha_nacimiento: Optional[str] = None
+    genero: Optional[str] = None
     tipo_documento: Optional[str] = None
     numero_documento: Optional[str] = None
     foto_perfil: Optional[str]
@@ -433,9 +473,30 @@ class PatientResponse(BaseModel):
     peso_actual: Optional[float]
     peso_objetivo: Optional[float]
     nivel_actividad: Optional[str]
+    pal_factor: Optional[float] = None # Nuevo campo
     progreso: int = 0 
     proxima_cita: str = "Sin programar"
+    altura: Optional[float] = None
+    edad_formateada: Optional[str] = None
+    evaluacion_nutricional: Optional[str] = None
+    frecuencia_consumo: Optional[List[dict]] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
+class RecallCreate(BaseModel):
+    desayuno: Optional[str] = None
+    media_manana: Optional[str] = None
+    almuerzo: Optional[str] = None
+    media_tarde: Optional[str] = None
+    cena: Optional[str] = None
+    snack_nocturno: Optional[str] = None
+    observaciones: Optional[str] = None
+    date: Optional[Any] = None # Can be str from front or date from DB
+
+class RecallResponse(RecallCreate):
+    id: int
+    patient_id: int
+    
     model_config = ConfigDict(from_attributes=True)
 
 class MetricCreate(BaseModel):
@@ -490,6 +551,10 @@ class MealPlanCreate(BaseModel):
     carbs_target: Optional[int] = 0
     fat_target: Optional[int] = 0
     meals_per_day: int = 3
+    fase_1: Optional[dict] = None
+    fase_2: Optional[dict] = None
+    fase_3: Optional[dict] = None
+    fase_4: Optional[dict] = None
 
 class MealPlanResponse(BaseModel):
     id: int
@@ -506,6 +571,10 @@ class MealPlanResponse(BaseModel):
     is_active: int
     created_at: Optional[str]
     patients: int = 0
+    fase_1: Optional[dict] = None
+    fase_2: Optional[dict] = None
+    fase_3: Optional[dict] = None
+    fase_4: Optional[dict] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -700,6 +769,41 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+@app.post("/login")
+def login(request: LoginSchema, db: Session = Depends(get_db)):
+    user = db.query(UserDB).filter(UserDB.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if not verify_password(request.password, user.password):
+        raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={
+            "sub": user.email,
+            "id": user.id,
+            "role": user.role,
+            "profile_complete": True 
+        },
+        expires_delta=access_token_expires
+    )
+    
+    return {
+        "success": True,
+        "token": access_token,
+        "user": {
+            "id": user.id,
+            "name": f"{user.nombres} {user.apellidos}",
+            "email": user.email,
+            "role": user.role,
+            "altura": user.altura,
+            "peso_actual": user.peso_actual,
+            "avatar": user.foto_perfil
+        },
+        "profile_complete": True
+    }
+
 class ProgressMetricDB(Base):
     __tablename__ = "progress_metrics"
     id = Column(Integer, primary_key=True, index=True)
@@ -893,6 +997,7 @@ class PatientProgressSummary(BaseModel):
     trend: str  # "up", "down", "stable"
     last_update: str
     progress_percentage: int
+    edad_formateada: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -908,6 +1013,7 @@ class PatientProgressDetails(BaseModel):
     weekly_adherence: int
     trend: str
     last_update: str
+    edad_formateada: Optional[str] = None
     metrics: List[dict]
     achievements: List[str]
     notes: List[str]
@@ -1162,6 +1268,7 @@ class MealSlotCreate(BaseModel):
 
 class DayMenuCreate(BaseModel):
     day: str  # Lunes, Martes, etc.
+    week: Optional[int] = 1  # 1-4
     meals: List[MealSlotCreate]
 
 class WeeklyMenuCompleteCreate(BaseModel):
@@ -1263,6 +1370,45 @@ def check_profile_complete(user: UserDB) -> bool:
         return False
     return True
 
+def calcular_edad_detallada(fecha_nacimiento: Optional[date]) -> str:
+    """
+    Calcula la edad en años y días.
+    """
+    if not fecha_nacimiento:
+        return "Edad no registrada"
+    
+    hoy = datetime.now().date()
+    
+    # Calcular años
+    años = hoy.year - fecha_nacimiento.year
+    if (hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day):
+        años -= 1
+        
+    # Calcular días desde el último cumpleaños
+    # Primero buscamos el cumpleaños más reciente
+    try:
+        ultimo_cumple = date(hoy.year, fecha_nacimiento.month, fecha_nacimiento.day)
+        if ultimo_cumple > hoy:
+             ultimo_cumple = date(hoy.year - 1, fecha_nacimiento.month, fecha_nacimiento.day)
+    except ValueError:
+        # Manejo especial para años bisiestos (29 feb)
+        ultimo_cumple = date(hoy.year, 3, 1) if hoy.month >= 3 else date(hoy.year - 1, 3, 1)
+        
+    dias = (hoy - ultimo_cumple).days
+    
+    parts = []
+    if años == 1:
+        parts.append("1 año")
+    elif años > 1:
+        parts.append(f"{años} años")
+        
+    if dias == 1:
+        parts.append("1 día")
+    elif dias > 0 or not parts:
+        parts.append(f"{dias} días")
+        
+    return ", ".join(parts)
+
 def calcular_progreso(peso_actual: Optional[float], peso_objetivo: Optional[float], peso_inicial: Optional[float] = None) -> int:
     """Calcula el progreso del paciente basado en peso actual vs objetivo, usando el inicial como base"""
     if peso_actual is None or peso_objetivo is None:
@@ -1313,6 +1459,7 @@ def get_patients(db: Session = Depends(get_db)):
     results = []
     for p in patients:
         progreso_calc = calcular_progreso(p.peso_actual, p.peso_objetivo, p.peso_inicial)
+        edad_form = calcular_edad_detallada(p.fecha_nacimiento)
         
         # Obtener próxima cita del plan asignado (si existe)
         proxima_cita = "Sin programar"
@@ -1330,6 +1477,8 @@ def get_patients(db: Session = Depends(get_db)):
             "apellidos": p.apellidos,
             "email": p.email,
             "telefono": p.telefono,
+            "fecha_nacimiento": p.fecha_nacimiento.strftime("%Y-%m-%d") if p.fecha_nacimiento else None,
+            "genero": p.genero,
             "foto_perfil": p.foto_perfil,
             "status": p.status or "activo",  # Asegurar que siempre tenga valor
             "role": p.role,
@@ -1337,7 +1486,11 @@ def get_patients(db: Session = Depends(get_db)):
             "peso_objetivo": p.peso_objetivo,
             "nivel_actividad": p.nivel_actividad,
             "progreso": progreso_calc,
-            "proxima_cita": proxima_cita
+            "proxima_cita": proxima_cita,
+            "altura": p.altura,
+            "edad_formateada": edad_form,
+            "evaluacion_nutricional": p.evaluacion_nutricional,
+            "frecuencia_consumo": p.frecuencia_consumo
         })
     
     return results
@@ -1386,7 +1539,9 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
         objetivos_salud=patient_data.objetivos_salud,
         condiciones_medicas=patient_data.condiciones_medicas,
         alimentos_disgusto=patient_data.alimentos_disgusto,
-        antecedentes_familiares=patient_data.antecedentes_familiares
+        antecedentes_familiares=patient_data.antecedentes_familiares,
+        evaluacion_nutricional=patient_data.evaluacion_nutricional,
+        frecuencia_consumo=patient_data.frecuencia_consumo
     )
     
     try:
@@ -1394,12 +1549,16 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
         db.commit()
         db.refresh(new_patient)
         
+        edad_form = calcular_edad_detallada(new_patient.fecha_nacimiento)
+
         return {
             "id": new_patient.id,
             "nombres": new_patient.nombres,
             "apellidos": new_patient.apellidos,
             "email": new_patient.email,
             "telefono": new_patient.telefono,
+            "fecha_nacimiento": new_patient.fecha_nacimiento.strftime("%Y-%m-%d") if new_patient.fecha_nacimiento else None,
+            "genero": new_patient.genero,
             "tipo_documento": new_patient.tipo_documento,
             "numero_documento": new_patient.numero_documento,
             "foto_perfil": new_patient.foto_perfil,
@@ -1409,7 +1568,11 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
             "peso_objetivo": new_patient.peso_objetivo,
             "nivel_actividad": new_patient.nivel_actividad,
             "progreso": 0,
-            "proxima_cita": "Sin programar"
+            "proxima_cita": "Sin programar",
+            "altura": new_patient.altura,
+            "edad_formateada": edad_form,
+            "evaluacion_nutricional": new_patient.evaluacion_nutricional,
+            "frecuencia_consumo": new_patient.frecuencia_consumo
         }
     except Exception as e:
         db.rollback()
@@ -1433,12 +1596,16 @@ def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
     if active_plan and active_plan.start_date:
         proxima_cita = active_plan.start_date
     
+    edad_form = calcular_edad_detallada(patient.fecha_nacimiento)
+
     return {
         "id": patient.id,
         "nombres": patient.nombres,
         "apellidos": patient.apellidos,
         "email": patient.email,
         "telefono": patient.telefono,
+        "fecha_nacimiento": patient.fecha_nacimiento.strftime("%Y-%m-%d") if patient.fecha_nacimiento else None,
+        "genero": patient.genero,
         "tipo_documento": patient.tipo_documento,
         "numero_documento": patient.numero_documento,
         "foto_perfil": patient.foto_perfil,
@@ -1448,7 +1615,11 @@ def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
         "peso_objetivo": patient.peso_objetivo,
         "nivel_actividad": patient.nivel_actividad,
         "progreso": progreso_calc,
-        "proxima_cita": proxima_cita
+        "proxima_cita": proxima_cita,
+        "altura": patient.altura,
+        "edad_formateada": edad_form,
+        "evaluacion_nutricional": patient.evaluacion_nutricional,
+        "frecuencia_consumo": patient.frecuencia_consumo
     }
 
 @app.put("/api/patients/{patient_id}", response_model=PatientResponse)
@@ -1477,6 +1648,8 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
     patient.condiciones_medicas = patient_data.condiciones_medicas
     patient.alimentos_disgusto = patient_data.alimentos_disgusto
     patient.antecedentes_familiares = patient_data.antecedentes_familiares
+    patient.evaluacion_nutricional = patient_data.evaluacion_nutricional
+    patient.frecuencia_consumo = patient_data.frecuencia_consumo
     
     if patient_data.fecha_nacimiento:
         try:
@@ -1492,12 +1665,16 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
     
     progreso_calc = calcular_progreso(patient.peso_actual, patient.peso_objetivo, patient.peso_inicial)
     
+    edad_form = calcular_edad_detallada(patient.fecha_nacimiento)
+
     return {
         "id": patient.id,
         "nombres": patient.nombres,
         "apellidos": patient.apellidos,
         "email": patient.email,
         "telefono": patient.telefono,
+        "fecha_nacimiento": patient.fecha_nacimiento.strftime("%Y-%m-%d") if patient.fecha_nacimiento else None,
+        "genero": patient.genero,
         "tipo_documento": patient.tipo_documento,
         "numero_documento": patient.numero_documento,
         "foto_perfil": patient.foto_perfil,
@@ -1507,7 +1684,11 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
         "peso_objetivo": patient.peso_objetivo,
         "nivel_actividad": patient.nivel_actividad,
         "progreso": progreso_calc,
-        "proxima_cita": "Sin programar"
+        "proxima_cita": "Sin programar",
+        "altura": patient.altura,
+        "edad_formateada": edad_form,
+        "evaluacion_nutricional": patient.evaluacion_nutricional,
+        "frecuencia_consumo": patient.frecuencia_consumo
     }
 
 @app.delete("/api/patients/{patient_id}")
@@ -1520,6 +1701,75 @@ def delete_patient(patient_id: int, db: Session = Depends(get_db)):
     db.delete(patient)
     db.commit()
     return {"success": True, "message": "Paciente eliminado correctamente"}
+
+# ==================== ENDPOINTS RECORDATORIO 24 HORAS ====================
+
+@app.post("/api/patients/{patient_id}/recalls", response_model=RecallResponse)
+def create_patient_recall(patient_id: int, recall_data: RecallCreate, db: Session = Depends(get_db)):
+    """Crear un nuevo recordatorio de 24 horas para un paciente"""
+    patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    recall_date = datetime.now().date()
+    if recall_data.date:
+        try:
+            recall_date = datetime.strptime(recall_data.date, "%Y-%m-%d").date()
+        except:
+            pass
+
+    new_recall = Recordatorio24hDB(
+        patient_id=patient_id,
+        date=recall_date,
+        desayuno=recall_data.desayuno,
+        media_manana=recall_data.media_manana,
+        almuerzo=recall_data.almuerzo,
+        media_tarde=recall_data.media_tarde,
+        cena=recall_data.cena,
+        snack_nocturno=recall_data.snack_nocturno,
+        observaciones=recall_data.observaciones
+    )
+    
+    db.add(new_recall)
+    db.commit()
+    db.refresh(new_recall)
+    
+    # Asegurar que la fecha sea string para el response
+    response_dict = {
+        "id": new_recall.id,
+        "patient_id": new_recall.patient_id,
+        "date": str(new_recall.date) if new_recall.date else None,
+        "desayuno": new_recall.desayuno,
+        "media_manana": new_recall.media_manana,
+        "almuerzo": new_recall.almuerzo,
+        "media_tarde": new_recall.media_tarde,
+        "cena": new_recall.cena,
+        "snack_nocturno": new_recall.snack_nocturno,
+        "observaciones": new_recall.observaciones
+    }
+    return response_dict
+
+@app.get("/api/patients/{patient_id}/recalls", response_model=List[RecallResponse])
+def get_patient_recalls(patient_id: int, db: Session = Depends(get_db)):
+    """Obtener el historial de recordatorios de 24 horas de un paciente"""
+    recalls = db.query(Recordatorio24hDB).filter(Recordatorio24hDB.patient_id == patient_id).order_by(Recordatorio24hDB.date.desc()).all()
+    
+    # Convertir fechas a string
+    results = []
+    for r in recalls:
+        results.append({
+            "id": r.id,
+            "patient_id": r.patient_id,
+            "date": str(r.date) if r.date else None,
+            "desayuno": r.desayuno,
+            "media_manana": r.media_manana,
+            "almuerzo": r.almuerzo,
+            "media_tarde": r.media_tarde,
+            "cena": r.cena,
+            "snack_nocturno": r.snack_nocturno,
+            "observaciones": r.observaciones
+        })
+    return results
 
 @app.get("/api/patients/stats")
 def get_patient_stats(db: Session = Depends(get_db)):
@@ -1546,25 +1796,13 @@ async def upload_photo(email: str, file: UploadFile = File(...), db: Session = D
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
-    user.foto_perfil = f"http://localhost:8000/uploads/{file_name}"
+    user.foto_perfil = f"{BASE_URL}/uploads/{file_name}"
     db.commit()
 
     return {"success": True, "foto_url": user.foto_perfil}
 
-@app.get("/api/profile/{email}")
-def get_user_profile(email: str, db: Session = Depends(get_db)):
-    user = db.query(UserDB).filter(UserDB.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return {
-        "id": user.id,
-        "email": user.email,
-        "nombres": user.nombres,
-        "apellidos": user.apellidos,
-        "role": user.role,
-        "foto_perfil": user.foto_perfil,
-        "telefono": user.telefono
-    }
+
+@app.post("/api/register")
 
 @app.post("/api/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -1592,6 +1830,7 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
     is_complete = check_profile_complete(user)
     
     token = jwt.encode({
+        "sub": user.email,
         "id": user.id, 
         "role": user.role,
         "profile_complete": is_complete
@@ -1604,7 +1843,14 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
         "user": {
             "id": user.id,
             "name": f"{user.nombres} {user.apellidos}",
+<<<<<<< HEAD
             "role": user.role
+=======
+            "role": user.role,
+            "altura": user.altura,
+            "peso_actual": user.peso_actual,
+            "avatar": user.foto_perfil
+>>>>>>> 0a998de141157deef767b39ad403d0e8eb2668a3
         }
     }
 
@@ -1911,7 +2157,15 @@ def get_profile(email: str, db: Session = Depends(get_db)):
     user = db.query(UserDB).filter(UserDB.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return user
+    
+    # Convertir a dict para agregar edad_formateada
+    user_data = {c.name: getattr(user, c.name) for c in user.__table__.columns}
+    # Asegurar que fechas sean string
+    if user.fecha_nacimiento:
+        user_data["fecha_nacimiento"] = user.fecha_nacimiento.strftime("%Y-%m-%d")
+    
+    user_data["edad_formateada"] = calcular_edad_detallada(user.fecha_nacimiento)
+    return user_data
 
 @app.put("/api/profile/update")
 def update_profile(data: ProfileUpdateSchema, db: Session = Depends(get_db)):
@@ -1949,6 +2203,13 @@ def update_profile(data: ProfileUpdateSchema, db: Session = Depends(get_db)):
 @app.get("/api/recipes", response_model=List[RecipeResponse])
 def get_recipes(db: Session = Depends(get_db)):
     return db.query(RecipeDB).all()
+
+@app.get("/api/recipes/{recipe_id}", response_model=RecipeResponse)
+def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    return recipe
 
 @app.post("/api/recipes", response_model=RecipeResponse)
 async def create_recipe(
@@ -2108,7 +2369,7 @@ def get_meal_plans(db: Session = Depends(get_db)):
             PatientMealPlanDB.status == "active"
         ).count()
         
-        results.append({
+        plan_dict = {
             "id": plan.id,
             "name": plan.name,
             "description": plan.description,
@@ -2123,14 +2384,38 @@ def get_meal_plans(db: Session = Depends(get_db)):
             "is_active": plan.is_active,
             "created_at": plan.created_at,
             "patients": patient_count
-        })
+        }
+        
+        # Incluir las fases si existen
+        if plan.fase_1:
+            plan_dict["fase_1"] = plan.fase_1
+        if plan.fase_2:
+            plan_dict["fase_2"] = plan.fase_2
+        if plan.fase_3:
+            plan_dict["fase_3"] = plan.fase_3
+        if plan.fase_4:
+            plan_dict["fase_4"] = plan.fase_4
+        
+        results.append(plan_dict)
     
     return results
 
 @app.post("/api/meal-plans", response_model=MealPlanResponse)
 def create_meal_plan(plan: MealPlanCreate, db: Session = Depends(get_db)):
+    plan_data = plan.model_dump()
+    
+    # Extraer las fases del plan_data
+    fase_1 = plan_data.pop("fase_1", None)
+    fase_2 = plan_data.pop("fase_2", None)
+    fase_3 = plan_data.pop("fase_3", None)
+    fase_4 = plan_data.pop("fase_4", None)
+    
     new_plan = MealPlanDB(
-        **plan.model_dump(),
+        **plan_data,
+        fase_1=fase_1,
+        fase_2=fase_2,
+        fase_3=fase_3,
+        fase_4=fase_4,
         created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
     db.add(new_plan)
@@ -2166,11 +2451,23 @@ def get_meal_plan(plan_id: int, db: Session = Depends(get_db)):
             "has_menu": True
         }
     
-    return {
+    result = {
         **plan.__dict__,
         "patients": patient_count,
         "menu": menu_info
     }
+    
+    # Incluir las fases en la respuesta
+    if plan.fase_1:
+        result["fase_1"] = plan.fase_1
+    if plan.fase_2:
+        result["fase_2"] = plan.fase_2
+    if plan.fase_3:
+        result["fase_3"] = plan.fase_3
+    if plan.fase_4:
+        result["fase_4"] = plan.fase_4
+    
+    return result
 @app.get("/api/weekly-menus/by-plan/{plan_id}")
 def get_menu_by_plan(plan_id: int, db: Session = Depends(get_db)):
     """
@@ -2195,36 +2492,65 @@ def get_menu_by_plan(plan_id: int, db: Session = Depends(get_db)):
     }
     
     week_data = []
-    for day_key, day_name in days_map.items():
-        day_meals = getattr(weekly_menu, day_key, {})
-        
-        # Asegurarse de que day_meals sea un dict
-        if isinstance(day_meals, str):
-            import json
-            day_meals = json.loads(day_meals)
-        
-        # Convertir diccionario de comidas a lista para el frontend
-        meals_list = []
-        if isinstance(day_meals, dict):
-            # Si tiene la estructura "meals": [...] (formato nuevo admin)
-            if "meals" in day_meals and isinstance(day_meals["meals"], list):
-                meals_list = day_meals["meals"]
-            else:
-                # Estructura antigua clave-valor
-                for m_type, m_data in day_meals.items():
-                    if isinstance(m_data, dict):
-                        m_data["type"] = m_type
-                        meals_list.append(m_data)
-
-        week_data.append({
-            "day": day_name,
-            "meals": meals_list
-        })
+    
+    # Intentar detectar el formato de las 4 semanas
+    monday_data = weekly_menu.monday
+    if isinstance(monday_data, str):
+        try: monday_data = json.loads(monday_data)
+        except: monday_data = {}
+    
+    is_4_week = isinstance(monday_data, list)
+    
+    if is_4_week:
+        # Estructura de 4 semanas
+        for week_num in range(1, 5):
+            idx = week_num - 1
+            for day_key, day_name in days_map.items():
+                day_col = getattr(weekly_menu, day_key, [])
+                if isinstance(day_col, str):
+                    try: day_col = json.loads(day_col)
+                    except: day_col = []
+                
+                meals_list = []
+                if isinstance(day_col, list) and len(day_col) > idx:
+                    week_content = day_col[idx]
+                    if isinstance(week_content, dict) and "meals" in week_content:
+                        meals_list = week_content["meals"]
+                
+                week_data.append({
+                    "day": day_name,
+                    "week": week_num,
+                    "meals": meals_list
+                })
+    else:
+        # Estructura antigua (una sola semana)
+        for day_key, day_name in days_map.items():
+            day_val = getattr(weekly_menu, day_key, {})
+            if isinstance(day_val, str):
+                try: day_val = json.loads(day_val)
+                except: day_val = {}
+            
+            meals_list = []
+            if isinstance(day_val, dict):
+                if "meals" in day_val and isinstance(day_val["meals"], list):
+                    meals_list = day_val["meals"]
+                else:
+                    for m_type, m_data in day_val.items():
+                        if isinstance(m_data, dict):
+                            m_data["type"] = m_type
+                            meals_list.append(m_data)
+            
+            week_data.append({
+                "day": day_name,
+                "week": 1,
+                "meals": meals_list
+            })
     
     return {
         "id": weekly_menu.id,
         "meal_plan_id": weekly_menu.meal_plan_id,
         "week_number": weekly_menu.week_number,
+        "is_4_week": is_4_week,
         "week": week_data
     }
 
@@ -2235,8 +2561,26 @@ def update_meal_plan(plan_id: int, plan_data: MealPlanCreate, db: Session = Depe
     if not plan:
         raise HTTPException(status_code=404, detail="Plan no encontrado")
     
-    for key, value in plan_data.model_dump().items():
+    # Extraer las fases del plan_data
+    plan_dict = plan_data.model_dump()
+    fase_1 = plan_dict.pop("fase_1", None)
+    fase_2 = plan_dict.pop("fase_2", None)
+    fase_3 = plan_dict.pop("fase_3", None)
+    fase_4 = plan_dict.pop("fase_4", None)
+    
+    # Actualizar campos normales
+    for key, value in plan_dict.items():
         setattr(plan, key, value)
+    
+    # Actualizar fases si se proporcionan
+    if fase_1 is not None:
+        plan.fase_1 = fase_1
+    if fase_2 is not None:
+        plan.fase_2 = fase_2
+    if fase_3 is not None:
+        plan.fase_3 = fase_3
+    if fase_4 is not None:
+        plan.fase_4 = fase_4
     
     db.commit()
     db.refresh(plan)
@@ -2700,12 +3044,12 @@ def get_meal_plan_stats(db: Session = Depends(get_db)):
     
     popular_plans = db.query(
         MealPlanDB.name,
-        db.func.count(PatientMealPlanDB.id).label("count")
+        func.count(PatientMealPlanDB.id).label("count")
     ).join(
         PatientMealPlanDB, MealPlanDB.id == PatientMealPlanDB.meal_plan_id
     ).filter(
         PatientMealPlanDB.status == "active"
-    ).group_by(MealPlanDB.name).order_by(db.func.count(PatientMealPlanDB.id).desc()).limit(5).all()
+    ).group_by(MealPlanDB.name).order_by(func.count(PatientMealPlanDB.id).desc()).limit(5).all()
     
     return {
         "total_plans": total_plans,
@@ -3131,7 +3475,7 @@ def get_initial_weight(patient_id: int, db: Session) -> Optional[float]:
     """Obtiene el peso inicial del paciente (primera medición)"""
     first_metric = db.query(ProgressMetricDB).filter(
         ProgressMetricDB.patient_id == patient_id
-    ).order_by(ProgressMetricDB.date.asc()).first()
+    ).order_by(ProgressMetricDB.date.asc(), ProgressMetricDB.id.asc()).first()
     
     if first_metric:
         return first_metric.weight
@@ -3182,10 +3526,10 @@ def get_patients_progress(
         # Obtener métricas del paciente
         metrics = db.query(ProgressMetricDB).filter(
             ProgressMetricDB.patient_id == patient.id
-        ).order_by(ProgressMetricDB.date.desc()).all()
+        ).order_by(ProgressMetricDB.date.desc(), ProgressMetricDB.id.desc()).all()
         
-        # Calcular valores
-        current_weight = metrics[0].weight if metrics else (patient.peso_actual or 0)
+        # Calcular valores (priorizar peso_actual del perfil)
+        current_weight = patient.peso_actual or (metrics[0].weight if metrics else 0)
         initial_weight = get_initial_weight(patient.id, db) or current_weight
         goal_weight = patient.peso_objetivo or current_weight
         
@@ -3245,7 +3589,7 @@ def get_patient_progress_details(patient_id: int, db: Session = Depends(get_db))
     # Obtener métricas
     metrics = db.query(ProgressMetricDB).filter(
         ProgressMetricDB.patient_id == patient_id
-    ).order_by(ProgressMetricDB.date.asc()).all()
+    ).order_by(ProgressMetricDB.date.asc(), ProgressMetricDB.id.asc()).all()
     
     metrics_data = [
         {
@@ -3295,8 +3639,8 @@ def get_patient_progress_details(patient_id: int, db: Session = Depends(get_db))
         for n in notes
     ]
     
-    # Calcular valores
-    current_weight = metrics[-1].weight if metrics else (patient.peso_actual or 0)
+    # Calcular valores (priorizar peso_actual del perfil como fuente de verdad)
+    current_weight = patient.peso_actual or (metrics[-1].weight if metrics else 0)
     initial_weight = get_initial_weight(patient_id, db) or current_weight
     goal_weight = patient.peso_objetivo or current_weight
     
@@ -3337,42 +3681,8 @@ def create_progress_metric(metric_data: ProgressMetricCreate, db: Session = Depe
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido")
     
-    # Verificar si ya existe una métrica para ese día
-    existing_metric = db.query(ProgressMetricDB).filter(
-        ProgressMetricDB.patient_id == metric_data.patient_id,
-        ProgressMetricDB.date == metric_date
-    ).first()
     
-    if existing_metric:
-        # Actualizar la métrica existente
-        existing_metric.weight = metric_data.weight
-        existing_metric.body_fat = metric_data.body_fat
-        existing_metric.muscle = metric_data.muscle
-        existing_metric.water = metric_data.water
-        existing_metric.waist = metric_data.waist
-        existing_metric.hip = metric_data.hip
-        existing_metric.chest = metric_data.chest
-        existing_metric.arm = metric_data.arm
-        existing_metric.notes = metric_data.notes
-        db.commit()
-        db.refresh(existing_metric)
-        
-        return {
-            "id": existing_metric.id,
-            "patient_id": existing_metric.patient_id,
-            "date": existing_metric.date.strftime("%Y-%m-%d"),
-            "weight": existing_metric.weight,
-            "body_fat": existing_metric.body_fat,
-            "muscle": existing_metric.muscle,
-            "water": existing_metric.water,
-            "waist": existing_metric.waist,
-            "hip": existing_metric.hip,
-            "chest": existing_metric.chest,
-            "arm": existing_metric.arm,
-            "notes": existing_metric.notes
-        }
-    
-    # Crear nueva métrica
+    # Crear nueva métrica (siempre, para historial detallado)
     new_metric = ProgressMetricDB(
         patient_id=metric_data.patient_id,
         date=metric_date,
@@ -3442,7 +3752,7 @@ def update_progress_metric(metric_id: int, metric_data: ProgressMetricCreate, db
     # Si es la métrica más reciente, actualizar el peso actual del paciente
     latest_metric = db.query(ProgressMetricDB).filter(
         ProgressMetricDB.patient_id == metric.patient_id
-    ).order_by(ProgressMetricDB.date.desc()).first()
+    ).order_by(ProgressMetricDB.date.desc(), ProgressMetricDB.id.desc()).first()
     
     if latest_metric and latest_metric.id == metric.id:
         patient = db.query(UserDB).filter(UserDB.id == metric.patient_id).first()
@@ -3876,7 +4186,7 @@ def get_weekly_overview(db: Session = Depends(get_db)):
         # Nuevos pacientes del día
         new_patients = db.query(UserDB).filter(
             UserDB.role == "patient",
-            db.func.date(UserDB.created_at) == day
+            func.date(UserDB.created_at) == day
         ).count()
         
         # Métricas registradas del día
@@ -3905,7 +4215,7 @@ def get_top_plans(limit: int = 5, db: Session = Depends(get_db)):
         MealPlanDB.name,
         MealPlanDB.category,
         MealPlanDB.color,
-        db.func.count(PatientMealPlanDB.id).label("patient_count")
+        func.count(PatientMealPlanDB.id).label("patient_count")
     ).join(
         PatientMealPlanDB,
         MealPlanDB.id == PatientMealPlanDB.meal_plan_id
@@ -3914,7 +4224,7 @@ def get_top_plans(limit: int = 5, db: Session = Depends(get_db)):
     ).group_by(
         MealPlanDB.id
     ).order_by(
-        db.func.count(PatientMealPlanDB.id).desc()
+        func.count(PatientMealPlanDB.id).desc()
     ).limit(limit).all()
     
     results = []
@@ -3995,7 +4305,7 @@ def get_patient_status_distribution(db: Session = Depends(get_db)):
     """
     status_counts = db.query(
         UserDB.status,
-        db.func.count(UserDB.id).label("count")
+        func.count(UserDB.id).label("count")
     ).filter(
         UserDB.role == "patient"
     ).group_by(UserDB.status).all()
@@ -4024,7 +4334,7 @@ def get_appointments_by_type(db: Session = Depends(get_db)):
     
     type_counts = db.query(
         AppointmentDB.type,
-        db.func.count(AppointmentDB.id).label("count")
+        func.count(AppointmentDB.id).label("count")
     ).filter(
         AppointmentDB.date >= week_start,
         AppointmentDB.date <= week_end
@@ -4521,12 +4831,13 @@ def get_patient_dashboard_summary(patient_id: int, db: Session = Depends(get_db)
     progress_info = None
     if recent_metric:
         initial_weight = get_initial_weight(patient_id, db)
+        current_weight = patient.peso_actual or recent_metric.weight
         progress_info = {
-            "current_weight": recent_metric.weight,
+            "current_weight": current_weight,
             "initial_weight": initial_weight,
             "goal_weight": patient.peso_objetivo,
             "last_update": recent_metric.date.strftime("%Y-%m-%d"),
-            "progress_percentage": calcular_progreso(recent_metric.weight, patient.peso_objetivo)
+            "progress_percentage": calcular_progreso(current_weight, patient.peso_objetivo, patient.peso_inicial or initial_weight)
         }
     
     return {
@@ -4992,6 +5303,360 @@ def get_complete_settings(user_id: int, db: Session = Depends(get_db)):
             "timeFormat": appearance.time_format if appearance else "24h"
         }
     }
+<<<<<<< HEAD
+=======
+
+# ==================== ENDPOINTS DE CONFIGURACIÓN PARA PACIENTES ====================
+
+# Modelos de base de datos para configuración de pacientes
+class PatientNotificationSettingsDB(Base):
+    __tablename__ = "patient_notification_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    
+    email_reminders = Column(Integer, default=1)
+    push_meals = Column(Integer, default=1)
+    push_appointments = Column(Integer, default=1)
+    sms_reminders = Column(Integer, default=0)
+    weekly_report = Column(Integer, default=1)
+    tips = Column(Integer, default=1)
+    
+    user = relationship("UserDB", foreign_keys=[user_id])
+
+class PatientAppearanceSettingsDB(Base):
+    __tablename__ = "patient_appearance_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    
+    theme = Column(String(20), default="light")
+    language = Column(String(10), default="es")
+    units = Column(String(20), default="metric")
+    date_format = Column(String(20), default="dd-mm-yyyy")
+    
+    user = relationship("UserDB", foreign_keys=[user_id])
+
+# Modelo para configuración del sistema (superadmin)
+class SystemSettingsDB(Base):
+    __tablename__ = "system_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    
+    site_name = Column(String(100), default="NutriData")
+    support_email = Column(String(100), default="soporte@nutridata.com")
+    max_users_per_org = Column(Integer, default=100)
+    max_patients_per_nutritionist = Column(Integer, default=50)
+    enable_registration = Column(Integer, default=1)
+    require_email_verification = Column(Integer, default=1)
+    enable_two_factor = Column(Integer, default=0)
+    maintenance_mode = Column(Integer, default=0)
+    email_notifications = Column(Integer, default=1)
+    slack_notifications = Column(Integer, default=0)
+    updated_at = Column(String(50))
+
+# Crear las tablas
+Base.metadata.create_all(bind=engine)
+
+# Esquemas Pydantic para pacientes
+class PatientNotificationSettingsUpdate(BaseModel):
+    emailReminders: bool
+    pushMeals: bool
+    pushAppointments: bool
+    smsReminders: bool
+    weeklyReport: bool
+    tips: bool
+
+class PatientAppearanceSettingsUpdate(BaseModel):
+    theme: str
+    language: str
+    units: str
+    dateFormat: str
+
+# Esquemas para superadmin
+class SystemSettingsUpdate(BaseModel):
+    siteName: str
+    supportEmail: str
+    maxUsersPerOrg: int
+    maxPatientsPerNutritionist: int
+    enableRegistration: bool
+    requireEmailVerification: bool
+    enableTwoFactor: bool
+    maintenanceMode: bool
+    emailNotifications: bool
+    slackNotifications: bool
+
+@app.get("/api/patient/settings/{user_id}")
+def get_patient_settings(user_id: int, db: Session = Depends(get_db)):
+    """Obtener toda la configuración del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    # Obtener o crear notificaciones
+    notifications = db.query(PatientNotificationSettingsDB).filter(
+        PatientNotificationSettingsDB.user_id == user_id
+    ).first()
+    
+    if not notifications:
+        notifications = PatientNotificationSettingsDB(
+            user_id=user_id,
+            email_reminders=1,
+            push_meals=1,
+            push_appointments=1,
+            sms_reminders=0,
+            weekly_report=1,
+            tips=1
+        )
+        db.add(notifications)
+        db.commit()
+        db.refresh(notifications)
+    
+    # Obtener o crear apariencia
+    appearance = db.query(PatientAppearanceSettingsDB).filter(
+        PatientAppearanceSettingsDB.user_id == user_id
+    ).first()
+    
+    if not appearance:
+        appearance = PatientAppearanceSettingsDB(
+            user_id=user_id,
+            theme="light",
+            language="es",
+            units="metric",
+            date_format="dd-mm-yyyy"
+        )
+        db.add(appearance)
+        db.commit()
+        db.refresh(appearance)
+    
+    return {
+        "profile": {
+            "id": user.id,
+            "name": f"{user.nombres} {user.apellidos}",
+            "email": user.email,
+            "phone": user.telefono,
+            "avatar": user.foto_perfil
+        },
+        "notifications": {
+            "emailReminders": bool(notifications.email_reminders),
+            "pushMeals": bool(notifications.push_meals),
+            "pushAppointments": bool(notifications.push_appointments),
+            "smsReminders": bool(notifications.sms_reminders),
+            "weeklyReport": bool(notifications.weekly_report),
+            "tips": bool(notifications.tips)
+        },
+        "appearance": {
+            "theme": appearance.theme,
+            "language": appearance.language,
+            "units": appearance.units,
+            "dateFormat": appearance.date_format
+        }
+    }
+
+@app.put("/api/patient/notifications/{user_id}")
+def update_patient_notifications(
+    user_id: int,
+    settings_data: PatientNotificationSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración de notificaciones del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    settings = db.query(PatientNotificationSettingsDB).filter(
+        PatientNotificationSettingsDB.user_id == user_id
+    ).first()
+    
+    if not settings:
+        settings = PatientNotificationSettingsDB(user_id=user_id)
+        db.add(settings)
+    
+    settings.email_reminders = int(settings_data.emailReminders)
+    settings.push_meals = int(settings_data.pushMeals)
+    settings.push_appointments = int(settings_data.pushAppointments)
+    settings.sms_reminders = int(settings_data.smsReminders)
+    settings.weekly_report = int(settings_data.weeklyReport)
+    settings.tips = int(settings_data.tips)
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Preferencias de notificaciones guardadas"
+    }
+
+@app.put("/api/patient/appearance/{user_id}")
+def update_patient_appearance(
+    user_id: int,
+    settings_data: PatientAppearanceSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración de apariencia del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    settings = db.query(PatientAppearanceSettingsDB).filter(
+        PatientAppearanceSettingsDB.user_id == user_id
+    ).first()
+    
+    if not settings:
+        settings = PatientAppearanceSettingsDB(user_id=user_id)
+        db.add(settings)
+    
+    settings.theme = settings_data.theme
+    settings.language = settings_data.language
+    settings.units = settings_data.units
+    settings.date_format = settings_data.dateFormat
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Preferencias de apariencia guardadas"
+    }
+
+@app.post("/api/patient/profile/{user_id}/change-password")
+def change_patient_password(
+    user_id: int,
+    password_data: PasswordChangeSchema,
+    db: Session = Depends(get_db)
+):
+    """Cambiar contraseña del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    # Verificar contraseña actual
+    if not pwd_context.verify(password_data.current_password, user.password):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+    
+    # Verificar que las contraseñas nuevas coincidan
+    if password_data.new_password != password_data.confirm_password:
+        raise HTTPException(status_code=400, detail="Las contraseñas no coinciden")
+    
+    # Validar longitud de nueva contraseña
+    if len(password_data.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 6 caracteres"
+        )
+    
+    # Actualizar contraseña
+    user.password = pwd_context.hash(password_data.new_password)
+    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Contraseña actualizada correctamente"
+    }
+
+# ==================== ENDPOINTS DE CONFIGURACIÓN PARA SUPERADMIN ====================
+
+@app.get("/api/superadmin/settings/{user_id}")
+def get_system_settings(user_id: int, db: Session = Depends(get_db)):
+    """Obtener configuración del sistema (solo superadmin)"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "superadmin"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Obtener o crear configuración del sistema
+    settings = db.query(SystemSettingsDB).first()
+    
+    if not settings:
+        settings = SystemSettingsDB(
+            site_name="NutriData",
+            support_email="soporte@nutridata.com",
+            max_users_per_org=100,
+            max_patients_per_nutritionist=50,
+            enable_registration=1,
+            require_email_verification=1,
+            enable_two_factor=0,
+            maintenance_mode=0,
+            email_notifications=1,
+            slack_notifications=0,
+            updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    
+    return {
+        "siteName": settings.site_name,
+        "supportEmail": settings.support_email,
+        "maxUsersPerOrg": settings.max_users_per_org,
+        "maxPatientsPerNutritionist": settings.max_patients_per_nutritionist,
+        "enableRegistration": bool(settings.enable_registration),
+        "requireEmailVerification": bool(settings.require_email_verification),
+        "enableTwoFactor": bool(settings.enable_two_factor),
+        "maintenanceMode": bool(settings.maintenance_mode),
+        "emailNotifications": bool(settings.email_notifications),
+        "slackNotifications": bool(settings.slack_notifications)
+    }
+
+@app.put("/api/superadmin/settings/{user_id}")
+def update_system_settings(
+    user_id: int,
+    settings_data: SystemSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración del sistema (solo superadmin)"""
+    user = db.query(UserDB).filter(
+        UserDB.id == user_id,
+        UserDB.role == "superadmin"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    settings = db.query(SystemSettingsDB).first()
+    
+    if not settings:
+        settings = SystemSettingsDB()
+        db.add(settings)
+    
+    settings.site_name = settings_data.siteName
+    settings.support_email = settings_data.supportEmail
+    settings.max_users_per_org = settings_data.maxUsersPerOrg
+    settings.max_patients_per_nutritionist = settings_data.maxPatientsPerNutritionist
+    settings.enable_registration = int(settings_data.enableRegistration)
+    settings.require_email_verification = int(settings_data.requireEmailVerification)
+    settings.enable_two_factor = int(settings_data.enableTwoFactor)
+    settings.maintenance_mode = int(settings_data.maintenanceMode)
+    settings.email_notifications = int(settings_data.emailNotifications)
+    settings.slack_notifications = int(settings_data.slackNotifications)
+    settings.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Configuración del sistema actualizada"
+    }
+
+# ==================== ENDPOINTS ADICIONALES PARA PORTAL DEL PACIENTE ====================
+# Agregar estos endpoints al archivo main.py existente
+>>>>>>> 0a998de141157deef767b39ad403d0e8eb2668a3
 
 
 
@@ -5426,7 +6091,7 @@ def get_patient_dashboard(patient_id: int, db: Session = Depends(get_db)):
     # 4. Progreso reciente
     recent_metrics = db.query(ProgressMetricDB).filter(
         ProgressMetricDB.patient_id == patient_id
-    ).order_by(ProgressMetricDB.date.desc()).limit(7).all()
+    ).order_by(ProgressMetricDB.date.desc(), ProgressMetricDB.id.desc()).limit(7).all()
     
     progress_data = None
     if recent_metrics:
@@ -5450,7 +6115,7 @@ def get_patient_dashboard(patient_id: int, db: Session = Depends(get_db)):
         progress_percentage = min(100, max(0, progress_percentage))
         
         progress_data = {
-            "current_weight": current_metric.weight,
+            "current_weight": patient.peso_actual or current_metric.weight,
             "initial_weight": initial_weight,
             "goal_weight": goal_weight,
             "last_update": current_metric.date.strftime("%Y-%m-%d"),
@@ -5657,7 +6322,7 @@ def get_week_meals(patient_id: int, week_offset: int = 0, db: Session = Depends(
     }
 
 @app.post("/api/patient/{patient_id}/meals/{meal_id}/complete")
-def complete_meal(patient_id: int, meal_id: str, db: Session = Depends(get_db)):
+def complete_meal_legacy_1(patient_id: int, meal_id: str, db: Session = Depends(get_db)):
     """
     Marcar una comida como completada
     Nota: Necesitarías crear una tabla meal_tracking para esto
@@ -5690,7 +6355,7 @@ def get_patient_own_progress(patient_id: int, db: Session = Depends(get_db)):
     # Obtener todas las métricas
     all_metrics = db.query(ProgressMetricDB).filter(
         ProgressMetricDB.patient_id == patient_id
-    ).order_by(ProgressMetricDB.date.asc()).all()
+    ).order_by(ProgressMetricDB.date.asc(), ProgressMetricDB.id.asc()).all()
     
     if not all_metrics:
         return {
@@ -5706,11 +6371,14 @@ def get_patient_own_progress(patient_id: int, db: Session = Depends(get_db)):
     # Calcular progreso hacia la meta basándose en peso_inicial del usuario si existe
     baseline_weight = patient.peso_inicial if patient.peso_inicial is not None else initial_weight
     
+    # Peso para resúmenes (priorizar peso_actual del perfil)
+    summary_weight = patient.peso_actual or current_metric.weight
+    
     # Calcular cambios (siempre contra el inicial absoluto)
-    weight_change = current_metric.weight - initial_weight
+    weight_change = summary_weight - initial_weight
     
     # Calcular progreso hacia la meta
-    progress_percentage = calcular_progreso(current_metric.weight, goal_weight, baseline_weight)
+    progress_percentage = calcular_progreso(summary_weight, goal_weight, baseline_weight)
     
     # Preparar datos para gráficos
     chart_data = {
@@ -5760,12 +6428,13 @@ def get_patient_own_progress(patient_id: int, db: Session = Depends(get_db)):
     return {
         "has_data": True,
         "summary": {
-            "current_weight": current_metric.weight,
+            "current_weight": patient.peso_actual or current_metric.weight,
             "initial_weight": initial_weight,
             "goal_weight": goal_weight,
             "weight_change": round(weight_change, 1),
             "progress_percentage": progress_percentage,
             "trend": trend,
+            "edad_formateada": calcular_edad_detallada(patient.fecha_nacimiento),
             "last_update": current_metric.date.strftime("%d %b %Y")
         },
         "body_composition": {
@@ -5805,37 +6474,8 @@ def add_progress_metric_patient(
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido")
     
-    # Verificar si ya existe una métrica para ese día
-    existing = db.query(ProgressMetricDB).filter(
-        ProgressMetricDB.patient_id == patient_id,
-        ProgressMetricDB.date == metric_date
-    ).first()
     
-    if existing:
-        # Actualizar la existente
-        existing.weight = metric_data.weight
-        existing.body_fat = metric_data.body_fat
-        existing.muscle = metric_data.muscle
-        existing.water = metric_data.water
-        existing.waist = metric_data.waist
-        existing.hip = metric_data.hip
-        existing.chest = metric_data.chest
-        existing.arm = metric_data.arm
-        existing.notes = metric_data.notes
-        db.commit()
-        db.refresh(existing)
-        
-        return {
-            "success": True,
-            "message": "Métrica actualizada correctamente",
-            "metric": {
-                "id": existing.id,
-                "date": existing.date.strftime("%Y-%m-%d"),
-                "weight": existing.weight
-            }
-        }
-    
-    # Crear nueva métrica
+    # Crear nueva métrica (siempre, para historial detallado)
     new_metric = ProgressMetricDB(
         patient_id=patient_id,
         date=metric_date,
@@ -5858,6 +6498,10 @@ def add_progress_metric_patient(
     
     db.commit()
     db.refresh(new_metric)
+    
+    # RE-SINCRO: Asegurar que el peso actual del paciente esté actualizado tras agregar métrica (vista paciente)
+    patient.peso_actual = metric_data.weight
+    db.commit()
     
     return {
         "success": True,
@@ -5919,6 +6563,7 @@ def get_patient_complete_profile(patient_id: int, db: Session = Depends(get_db))
             "email": patient.email,
             "telefono": patient.telefono,
             "fecha_nacimiento": patient.fecha_nacimiento.strftime("%Y-%m-%d") if patient.fecha_nacimiento else None,
+            "edad_formateada": calcular_edad_detallada(patient.fecha_nacimiento),
             "genero": patient.genero,
             "direccion": patient.direccion,
             "foto_perfil": patient.foto_perfil
@@ -5944,6 +6589,55 @@ def get_patient_complete_profile(patient_id: int, db: Session = Depends(get_db))
             "tracking_days": total_metrics,
             "achievements": achievements_count
         }
+    }
+
+@app.post("/api/patient/{patient_id}/upload-avatar")
+async def upload_patient_avatar(
+    patient_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Subir foto de perfil del paciente"""
+    user = db.query(UserDB).filter(
+        UserDB.id == patient_id,
+        UserDB.role == "patient"
+    ).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    
+    # Validar tipo de archivo
+    allowed_extensions = ["jpg", "jpeg", "png", "gif"]
+    file_extension = file.filename.split(".")[-1].lower()
+    
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail="Formato de archivo no válido. Use JPG, PNG o GIF"
+        )
+    
+    # Validar tamaño (máximo 2MB)
+    contents = await file.read()
+    if len(contents) > 2 * 1024 * 1024:  # 2MB
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo es demasiado grande. Máximo 2MB"
+        )
+    
+    # Guardar archivo
+    file_name = f"patient_{patient_id}_avatar.{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, file_name)
+    
+    with open(file_path, "wb") as buffer:
+        buffer.write(contents)
+    
+    # Actualizar URL de foto
+    user.foto_perfil = f"{BASE_URL}/uploads/{file_name}"
+    db.commit()
+    
+    return {
+        "success": True,
+        "foto_url": user.foto_perfil
     }
 
 @app.put("/api/patient/{patient_id}/profile/update")
@@ -6164,6 +6858,9 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
     
     return {
         "stats": {
+            "altura": patient.altura,
+            "peso_actual": patient.peso_actual,
+            "edad_formateada": calcular_edad_detallada(patient.fecha_nacimiento),
             "calories": {
                 "consumed": total_calories_consumed,
                 "target": total_calories_target,
@@ -6195,6 +6892,160 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
 
 # ==================== FUNCIONES AUXILIARES ====================
 
+def get_custom_portions_for_day(week_idx: int, day_name: str, plan_metadata: Dict) -> Dict:
+    """
+    Obtener mapeo de {comida_tipo: {ingrediente: gramos}} de fase_4
+    """
+    if not plan_metadata or not isinstance(plan_metadata, dict):
+        return {}
+    
+    fase_4 = plan_metadata.get("fase_4")
+    if not fase_4 or not isinstance(fase_4, dict):
+        return {}
+        
+    ingredientes_f4 = fase_4.get("ingredientes_f4")
+    if not ingredientes_f4 or not isinstance(ingredientes_f4, dict):
+        return {}
+        
+    day_mapping = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
+        "lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3, "viernes": 4, "sabado": 5, "domingo": 6
+    }
+    
+    base_day_idx = day_mapping.get(day_name.lower(), 0)
+    global_day_idx = ((week_idx - 1) * 7) + base_day_idx
+    
+    return ingredientes_f4.get(str(global_day_idx)) or ingredientes_f4.get(global_day_idx) or {}
+
+def apply_custom_ingredients(day_meals: List[Dict], week_idx: int, day_name: str, plan_metadata: Dict):
+    """
+    Sobrescribir los ingredientes de las comidas con los valores personalizados de fase_4
+    """
+    if not plan_metadata or not isinstance(plan_metadata, dict):
+        return day_meals
+    
+    fase_4 = plan_metadata.get("fase_4")
+    if not fase_4 or not isinstance(fase_4, dict):
+        return day_meals
+        
+    ingredientes_f4 = fase_4.get("ingredientes_f4")
+    if not ingredientes_f4 or not isinstance(ingredientes_f4, dict):
+        return day_meals
+        
+    # Calcular el índice del día global (0-27)
+    # the frontend uses indices 0-27 for ingredientes_f4
+    day_mapping = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
+        "lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3, "viernes": 4, "sabado": 5, "domingo": 6
+    }
+    
+    base_day_idx = day_mapping.get(day_name.lower(), 0)
+    global_day_idx = ((week_idx - 1) * 7) + base_day_idx
+    
+    # Obtener personalizaciones para este día
+    # Note: Keys in JSON might be strings
+    day_custom = ingredientes_f4.get(str(global_day_idx)) or ingredientes_f4.get(global_day_idx)
+    if not day_custom:
+        return day_meals
+        
+    for meal_idx, meal in enumerate(day_meals):
+        # Intentar obtener por Tipo (nuevo) o por Índice (retrocompatibilidad)
+        meal_type = meal.get("meal_type") or meal.get("type") or meal.get("id")
+        meal_custom = None
+        
+        if meal_type:
+            meal_type_str = str(meal_type).lower()
+            # Mapeo de búsqueda bidireccional ES/EN
+            key_aliases = {
+                "breakfast": ["breakfast", "desayuno"],
+                "desayuno": ["breakfast", "desayuno"],
+                "morning_snack": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+                "snack_am": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+                "media_manana": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+                "lunch": ["lunch", "comida", "almuerzo_principal"],
+                "comida": ["lunch", "comida", "almuerzo_principal"],
+                "afternoon_snack": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+                "snack_pm": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+                "media_tarde": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+                "dinner": ["dinner", "cena"],
+                "cena": ["dinner", "cena"]
+            }
+            
+            search_keys = key_aliases.get(meal_type_str, [meal_type_str])
+            for sk in search_keys:
+                meal_custom = day_custom.get(sk)
+                if meal_custom:
+                    break
+            
+        if not meal_custom:
+            meal_custom = day_custom.get(str(meal_idx)) or day_custom.get(meal_idx)
+            
+        if meal_custom:
+            # 1. Hidratar la lista de ingredientes (AHORA COMO OBJETOS para MyPlan.tsx)
+            current_ingredients = meal.get("ingredients") or []
+            new_ingredients = []
+            
+            # Mergear gramos personalizados en la lista existente
+            for ing in current_ingredients:
+                # Si ya es un objeto, extraer nombre
+                if isinstance(ing, dict):
+                    ing_base = ing.get("name", "")
+                else:
+                    # Extraer solo el nombre base si ya tiene ":" (evitar duplicados de "ing: 50g: 50g")
+                    ing_base = str(ing).split(":")[0].strip()
+                
+                grams = None
+                # Buscar coincidencia insensible a mayúsculas
+                for custom_name, custom_grams in meal_custom.items():
+                    if str(ing_base).lower() == str(custom_name).lower():
+                        grams = custom_grams
+                        break
+                
+                if grams and str(grams).strip() != "":
+                    # Asegurar formato "Xg"
+                    portion_str = str(grams)
+                    if not any(unit in portion_str.lower() for unit in ["g", "gr", "oz", "ml", "und", "unid"]):
+                        portion_str = f"{portion_str}g"
+                    new_ingredients.append({"name": ing_base, "portion": portion_str})
+                else:
+                    # Si no tiene gramos, enviar solo el nombre (o vacío, para ocultar badge)
+                    new_ingredients.append({"name": ing_base, "portion": ""})
+            
+            # Agregar ingredientes extra de fase 4 que no estaban en la receta
+            for custom_name, custom_grams in meal_custom.items():
+                already_in = False
+                for existing in new_ingredients:
+                    if str(custom_name).lower() == str(existing.get("name", "")).lower():
+                        already_in = True
+                        break
+                
+                if not already_in and custom_grams and str(custom_grams).strip() != "":
+                    portion_str = str(custom_grams)
+                    if not any(unit in portion_str.lower() for unit in ["g", "gr", "oz", "ml", "und", "unid"]):
+                        portion_str = f"{portion_str}g"
+                    new_ingredients.append({"name": custom_name, "portion": portion_str})
+            
+            if new_ingredients:
+                meal["ingredients"] = new_ingredients
+
+            # 2. Actualizar objetos estructurados (para Dashboard y Seguimiento)
+            if "foods" in meal and isinstance(meal["foods"], list):
+                for food in meal["foods"]:
+                    food_name = food.get("name")
+                    if food_name:
+                        grams = None
+                        for custom_name, custom_grams in meal_custom.items():
+                            if str(food_name).lower() == str(custom_name).lower():
+                                grams = custom_grams
+                                break
+                        
+                        if grams and str(grams).strip() != "":
+                            food["portion"] = f"{grams}g"
+                            if "portion_size" in food:
+                                food["portion_size"] = f"{grams}g"
+                
+    return day_meals
+
 def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -> List[Dict]:
     """
     Obtener las comidas del día actual del paciente desde su plan
@@ -6216,6 +7067,13 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
     ).first()
     
     if not weekly_menu:
+        # Fallback a semana 1 si no hay menú específico para esta semana
+        weekly_menu = db.query(WeeklyMenuDB).filter(
+            WeeklyMenuDB.meal_plan_id == plan.id,
+            WeeklyMenuDB.week_number == 1
+        ).first()
+    
+    if not weekly_menu:
         return []
     
     # Determinar el día de la semana
@@ -6233,6 +7091,16 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
             day_menu = {}
     else:
         day_menu = day_raw
+
+    # NUEVO: Si los datos vienen como una lista (posiblemente de semanas)
+    if isinstance(day_menu, list):
+        idx = (active_plan.current_week - 1) if active_plan else 0
+        if len(day_menu) > idx:
+            day_menu = day_menu[idx]
+        elif len(day_menu) > 0:
+            day_menu = day_menu[0]
+        else:
+            day_menu = {}
 
     # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
     if isinstance(day_menu, dict) and "meals" in day_menu and isinstance(day_menu["meals"], list):
@@ -6328,6 +7196,20 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
                 0
             )
             
+            # Fallback para ingredientes e instrucciones si no están en el JSON (retrocompatibilidad)
+            ingredients = meal_data.get("ingredients") or []
+            instructions = meal_data.get("instructions") or []
+            image = meal_data.get("image")
+            
+            recipe_id = meal_data.get("recipe_id")
+            if (not ingredients or not instructions) and recipe_id:
+                from sqlalchemy import text
+                recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+                if recipe:
+                    if not ingredients: ingredients = recipe.ingredients
+                    if not instructions: instructions = recipe.instructions
+                    if not image: image = recipe.image
+
             result.append({
                 "meal_type": meal_info["id"],
                 "name": meal_info["name"],
@@ -6337,8 +7219,19 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
                 "description": str(description),
                 "protein": int(protein) if protein else 0,
                 "carbs": int(carbs) if carbs else 0,
-                "fat": int(fat) if fat else 0
+                "fat": int(fat) if fat else 0,
+                "ingredients": list(ingredients) if isinstance(ingredients, list) else [],
+                "instructions": list(instructions) if isinstance(instructions, list) else [],
+                "image": image,
+                "type": meal_info["id"] # Alias for consistency
             })
+    
+    # Aplicar ingredientes personalizados si existen en fase_4
+    plan_metadata = {"fase_4": plan.fase_4 if plan else {}}
+    week_num = active_plan.current_week if active_plan else 1
+    
+    # Hidratar con porciones (actualiza ingredients y foods in-place)
+    apply_custom_ingredients(result, week_num, day_name, plan_metadata)
     
     return result
 
@@ -6411,7 +7304,7 @@ def add_water_glass(
     }
 
 @app.post("/api/patient/{patient_id}/meals/complete")
-def complete_meal(
+def complete_meal_legacy_2(
     patient_id: int,
     meal_data: MealTrackingUpdate,
     db: Session = Depends(get_db)
@@ -6443,7 +7336,7 @@ def complete_meal(
     return {"success": True}
 
 @app.post("/api/patient/{patient_id}/meals/uncomplete")
-def uncomplete_meal(
+def uncomplete_meal_legacy(
     patient_id: int,
     meal_data: MealTrackingUpdate,
     db: Session = Depends(get_db)
@@ -6526,24 +7419,28 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
             "message": "No tienes un plan activo asignado"
         }
     
-    plan = db.query(MealPlanDB).filter(MealPlanDB.id == active_assignment.meal_plan_id).first()
-    weekly_menu = db.query(WeeklyMenuDB).filter(
-        WeeklyMenuDB.meal_plan_id == plan.id,
-        WeeklyMenuDB.week_number == active_assignment.current_week
-    ).first()
+    full_plan_by_week = {}
     
-    # Obtener nutricionista
+    plan = db.query(MealPlanDB).filter(MealPlanDB.id == active_assignment.meal_plan_id).first()
+    
+    # Obtener nutricionista (needed for doctor_name used later)
     nutritionist = db.query(UserDB).filter(UserDB.role == "admin").first()
     doctor_name = f"{nutritionist.nombres} {nutritionist.apellidos}" if nutritionist else "Nutricionista"
     
-    if not weekly_menu:
-        return {
+    # Obtener TODOS los menús semanales del plan
+    all_weekly_menus = db.query(WeeklyMenuDB).filter(
+        WeeklyMenuDB.meal_plan_id == plan.id
+    ).all()
+    
+    # Si no hay menús (caso raro), retornar vacío
+    if not all_weekly_menus:
+         return {
             "has_plan": True,
             "plan_name": plan.name,
             "doctor": doctor_name,
             "message": "Tu nutricionista aún no ha cargado el menú para esta semana."
         }
-    
+
     day_map = {
         "monday": "lunes",
         "tuesday": "martes",
@@ -6553,7 +7450,7 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
         "saturday": "sabado",
         "sunday": "domingo"
     }
-    
+
     meal_structure = [
         {"id": "breakfast", "name": "Desayuno", "time": "8:00 AM"},
         {"id": "morning_snack", "name": "Snack AM", "time": "10:30 AM"},
@@ -6561,7 +7458,7 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
         {"id": "afternoon_snack", "name": "Snack PM", "time": "4:00 PM"},
         {"id": "dinner", "name": "Cena", "time": "7:30 PM"},
     ]
-    
+
     # Mapeo de búsqueda para llaves en diferentes idiomas/formatos
     key_mapping = {
         "breakfast": ["breakfast", "desayuno"],
@@ -6570,91 +7467,147 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
         "afternoon_snack": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
         "dinner": ["dinner", "cena"]
     }
-    
-    full_plan = {}
-    for db_day, display_day in day_map.items():
-        day_raw = getattr(weekly_menu, db_day, {})
-        if day_raw is None:
-            day_raw = {}
-        # A veces SQLAlchemy/MySQL devuelve el JSON como string, nos aseguramos de que sea dict
-        if isinstance(day_raw, str):
-            try:
-                day_data = json.loads(day_raw)
-            except:
-                day_data = {}
-        else:
-            day_data = day_raw
-            
-        # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
-        # Lo convertimos a un diccionario para que la lógica de búsqueda funcione
-        if isinstance(day_data, dict) and "meals" in day_data and isinstance(day_data["meals"], list):
-            new_day_data = {}
-            for m in day_data["meals"]:
-                if isinstance(m, dict) and "type" in m:
-                    # Guardamos todo el objeto de la comida
-                    new_day_data[m["type"]] = m
-            day_data = new_day_data
 
-        day_meals = []
-        for ms in meal_structure:
-            # Buscar en todas las posibles llaves para este tipo de comida
-            meal_data = None
-            possible_keys = key_mapping.get(ms["id"], [ms["id"]])
-            
-            for pk in possible_keys:
-                if pk in day_data:
-                    meal_data = day_data[pk]
-                    break
-            
-            if meal_data:
-                # Si es un string, lo convertimos en la estructura esperada
-                if isinstance(meal_data, str):
-                    try:
-                        extracted_data = json.loads(meal_data)
-                        if not isinstance(extracted_data, dict):
-                            extracted_data = {"receta": str(extracted_data)}
-                    except:
-                        extracted_data = {"receta": meal_data}
-                else:
-                    extracted_data = meal_data
-
-                # Intentar obtener información de la receta si existe (formato Admin Panel)
-                food_name = extracted_data.get("receta") or extracted_data.get("name") or extracted_data.get("recipe_name") or "No asignado"
-                
-                day_meals.append({
-                    "meal": ms["name"],
-                    "food": food_name,
-                    "calories": extracted_data.get("calorias") or extracted_data.get("calories") or 0,
-                    "time": extracted_data.get("time") or ms["time"]
-                })
-        full_plan[display_day] = day_meals
+    # Procesar cada semana
+    for menu_item in all_weekly_menus:
+        week_num = menu_item.week_number or 1 # Default a 1 si es null
+        week_days_data = {}
         
-    # Manejar start_date si es string
-    display_start_date = "Pendiente"
-    if active_assignment.start_date:
-        if isinstance(active_assignment.start_date, (datetime, date)):
-            display_start_date = active_assignment.start_date.strftime("%d %b %Y")
-        else:
-            # Es un string, intentar parsear si tiene formato ISO o similar
-            try:
-                dt = datetime.fromisoformat(active_assignment.start_date.split(' ')[0])
-                display_start_date = dt.strftime("%d %b %Y")
-            except:
-                display_start_date = active_assignment.start_date
+        for db_day, display_day in day_map.items():
+            day_raw = getattr(menu_item, db_day, {})
+            if day_raw is None:
+                day_raw = {}
+                
+            # Parsear si es string (puede ser simple o doble encoding)
+            if isinstance(day_raw, str):
+                try:
+                    day_raw = json.loads(day_raw)
+                except:
+                    day_raw = {}
+                    
+            # Si sigue siendo string (doble encoding), intentar de nuevo
+            if isinstance(day_raw, str):
+                try:
+                    day_raw = json.loads(day_raw)
+                except:
+                    day_raw = {}
 
+            day_data = day_raw
+                
+            # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
+            # Primero ver si es una lista de semanas (nueva estructura)
+            if isinstance(day_data, list):
+                # Es una lista de semanas, necesitamos la semana actual
+                # menu_item.week_number ya nos dice qué semana es este registro (1, 2, 3 o 4)
+                # Pero la columna puede tener TODAS las semanas si se guardó mal, o solo una
+                
+                # En el nuevo modelo, cada WeeklyMenuDB es una semana específica (1..4)
+                # Pero la columna JSON podría tener la lista completa de 4 semanas si viene del create
+                
+                # Vamos a asumir que si es lista, intentamos sacar el índice correspondiente
+                idx = (menu_item.week_number - 1) if menu_item.week_number else 0
+                if len(day_data) > idx:
+                    day_data = day_data[idx]
+                elif len(day_data) > 0:
+                    day_data = day_data[0] # Fallback
+                else:
+                    day_data = {}
+
+            if isinstance(day_data, dict) and "meals" in day_data and isinstance(day_data["meals"], list):
+                new_day_data = {}
+                for m in day_data["meals"]:
+                    if isinstance(m, dict) and "type" in m:
+                        # Guardamos todo el objeto de la comida
+                        new_day_data[m["type"]] = m
+                day_data = new_day_data
+    
+            day_meals = []
+            for ms in meal_structure:
+                meal_data = None
+                possible_keys = key_mapping.get(ms["id"], [ms["id"]])
+                
+                for pk in possible_keys:
+                    if pk in day_data:
+                        meal_data = day_data[pk]
+                        break
+                
+                # Procesar datos de la comida (igual que antes)
+                if meal_data:
+                    if isinstance(meal_data, str):
+                        try:
+                            extracted_data = json.loads(meal_data)
+                            if not isinstance(extracted_data, dict):
+                                extracted_data = {"receta": str(extracted_data)}
+                        except:
+                            extracted_data = {"receta": meal_data}
+                    else:
+                        extracted_data = meal_data
+    
+                    food_name = extracted_data.get("receta") or extracted_data.get("name") or extracted_data.get("recipe_name") or "No asignado"
+                    ingredients = extracted_data.get("ingredients") or []
+                    instructions = extracted_data.get("instructions") or []
+                    image = extracted_data.get("image")
+                    
+                    recipe_id = extracted_data.get("recipe_id") or extracted_data.get("id")
+                    if (not ingredients or not instructions) and recipe_id:
+                        recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+                        if recipe:
+                            if not ingredients: ingredients = recipe.ingredients
+                            if not instructions: instructions = recipe.instructions
+                            if not image: image = recipe.image
+    
+                    day_meals.append({
+                        "meal": ms["name"],
+                        "food": food_name,
+                        "calories": extracted_data.get("calorias") or extracted_data.get("calories") or 0,
+                        "time": extracted_data.get("time") or ms["time"],
+                        "ingredients": ingredients,
+                        "instructions": instructions,
+                        "image": image,
+                        "type": ms["id"]
+                    })
+            
+            week_days_data[display_day] = day_meals
+            
+        full_plan_by_week[week_num] = week_days_data
+
+    # Asegurar que siempre haya 4 semanas. Si hay menos, repetir las existentes en ciclo.
+    if full_plan_by_week:
+        available_weeks = sorted(full_plan_by_week.keys())
+        for w in range(1, 5):
+            if w not in full_plan_by_week:
+                # Usar módulo para ciclar entre las semanas disponibles
+                source_week = available_weeks[(w - 1) % len(available_weeks)]
+                # IMPORTANTE: Usar deepcopy para evitar que cambios en una semana afecten a otras
+                full_plan_by_week[w] = copy.deepcopy(full_plan_by_week[source_week])
+    
+    # Aplicar ingredientes personalizados de fase_4 a todas las semanas y días
+    plan_metadata = {"fase_4": plan.fase_4 if plan else {}}
+    for w_idx, week_data in full_plan_by_week.items():
+        for display_day, meals in week_data.items():
+            # week_data[display_day] es una lista de comidas que se modifica in-place
+            apply_custom_ingredients(meals, w_idx, display_day, plan_metadata)
+
+    # Mantener compatibilidad con frontend actual enviando la semana actual en 'week_plan'
+    current_week_data = full_plan_by_week.get(active_assignment.current_week, {})
+    if not current_week_data and 1 in full_plan_by_week:
+         current_week_data = full_plan_by_week[1]
+    
     return {
         "has_plan": True,
         "plan_name": plan.name,
         "doctor": doctor_name,
-        "start_date": display_start_date,
-        "duration": f"{plan.duration}",
+        "start_date": active_assignment.start_date,
+        "duration": plan.duration,
+        "current_week": active_assignment.current_week,
         "stats": {
             "calories": {"target": plan.calories},
-            "protein": {"target": plan.protein_target or 0},
-            "carbs": {"target": plan.carbs_target or 0},
-            "fat": {"target": plan.fat_target or 0}
+            "protein": {"target": int(plan.calories * (plan.protein_target or 20) / 100 / 4)},
+            "carbs": {"target": int(plan.calories * (plan.carbs_target or 50) / 100 / 4)},
+            "fat": {"target": int(plan.calories * (plan.fat_target or 30) / 100 / 9)}
         },
-        "week_plan": full_plan
+        "week_plan": current_week_data, # Legacy support
+        "all_weeks": full_plan_by_week # New full data
     }
 
 @app.get("/api/patient/{patient_id}/meals/today/detailed")
@@ -6692,6 +7645,13 @@ def get_patient_meals_detailed(patient_id: int, db: Session = Depends(get_db)):
         WeeklyMenuDB.meal_plan_id == plan.id,
         WeeklyMenuDB.week_number == active_plan.current_week
     ).first()
+    
+    if not weekly_menu:
+        # Fallback a semana 1 si no hay menú específico para esta semana
+        weekly_menu = db.query(WeeklyMenuDB).filter(
+            WeeklyMenuDB.meal_plan_id == plan.id,
+            WeeklyMenuDB.week_number == 1
+        ).first()
     
     if not weekly_menu:
         return {
@@ -6737,6 +7697,16 @@ def get_patient_meals_detailed(patient_id: int, db: Session = Depends(get_db)):
         "dinner": ["dinner", "cena"]
     }
     
+    # NUEVO: Si los datos vienen como una lista (posiblemente de semanas)
+    if isinstance(day_menu, list):
+        idx = (active_plan.current_week - 1) if active_plan else 0
+        if len(day_menu) > idx:
+            day_menu = day_menu[idx]
+        elif len(day_menu) > 0:
+            day_menu = day_menu[0]
+        else:
+            day_menu = {}
+
     # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
     # y day_menu contiene esa lista, necesitamos transformarla primero o buscar en ella
     if isinstance(day_menu, dict) and "meals" in day_menu and isinstance(day_menu["meals"], list):
@@ -6815,7 +7785,7 @@ def get_patient_meals_detailed(patient_id: int, db: Session = Depends(get_db)):
         
         meals_response.append({
             "id": meal_info["id"],
-            "name": meal_info["name"],
+            "name": meal_info["name"], # "Desayuno"
             "icon": meal_info["icon"],
             "time": meal_info["time"],
             "completed": (meal_tracking.completed == 1) if meal_tracking else False,
@@ -6823,8 +7793,20 @@ def get_patient_meals_detailed(patient_id: int, db: Session = Depends(get_db)):
             "total_calories": meal_totals["calories"],
             "total_protein": meal_totals["protein"],
             "total_carbs": meal_totals["carbs"],
-            "total_fat": meal_totals["fat"]
+            "total_fat": meal_totals["fat"],
+            "type": meal_info["id"], # Necesario para consistencia
+            # Campos adicionales para el modal del Dashboard
+            "description": meal_data.get("receta") or meal_data.get("name") or meal_info["name"],
+            "ingredients": [f"{f['name']}: {f['portion']}" if f.get('portion') else f['name'] for f in food_items],
+            "instructions": meal_data.get("instructions") or []
         })
+    
+    # Aplicar ingredientes y porciones personalizadas de fase_4
+    plan_metadata = {"fase_4": plan.fase_4 if plan else {}}
+    week_num = active_plan.current_week if active_plan else 1
+    
+    # Hidratar lista de comidas (actualiza ingredients y foods.portion in-place)
+    apply_custom_ingredients(meals_response, week_num, day_name, plan_metadata)
     
     # Calcular totales objetivos del plan
     target_protein = plan.protein_target or 0
@@ -6938,6 +7920,16 @@ def initialize_single_meal_from_plan(patient_id: int, date: datetime.date, meal_
     else:
         day_menu = day_raw
 
+    # NUEVO: Si los datos vienen como una lista (posiblemente de semanas)
+    if isinstance(day_menu, list):
+        idx = (active_plan.current_week - 1) if active_plan else 0
+        if len(day_menu) > idx:
+            day_menu = day_menu[idx]
+        elif len(day_menu) > 0:
+            day_menu = day_menu[0]
+        else:
+            day_menu = {}
+
     # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
     if isinstance(day_menu, dict) and "meals" in day_menu and isinstance(day_menu["meals"], list):
         new_day_menu = {}
@@ -6948,10 +7940,17 @@ def initialize_single_meal_from_plan(patient_id: int, date: datetime.date, meal_
         
     key_mapping = {
         "breakfast": ["breakfast", "desayuno"],
+        "desayuno": ["breakfast", "desayuno"],
         "morning_snack": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
-        "lunch": ["lunch", "comida"],
+        "snack_am": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+        "media_manana": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+        "lunch": ["lunch", "comida", "almuerzo_principal"],
+        "comida": ["lunch", "comida", "almuerzo_principal"],
         "afternoon_snack": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
-        "dinner": ["dinner", "cena"]
+        "snack_pm": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+        "media_tarde": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+        "dinner": ["dinner", "cena"],
+        "cena": ["dinner", "cena"]
     }
     
     meal_data = None
@@ -6986,12 +7985,40 @@ def initialize_single_meal_from_plan(patient_id: int, date: datetime.date, meal_
         db.add(tracking)
         db.flush()
         
+        # Obtener personalizaciones de porciones (gramos)
+        plan = db.query(MealPlanDB).filter(MealPlanDB.id == active_plan.meal_plan_id).first()
+        plan_metadata = {"fase_4": plan.fase_4 if plan else {}}
+        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        day_name = day_names[date.weekday()]
+        custom_portions = get_custom_portions_for_day(active_plan.current_week, day_name, plan_metadata)
+        
+        # Retro-compatibilidad: Encontrar el índice de esta comida en la lista del plan
+        # para que coincida con la lógica de Card 0, 1...
+        meal_idx = 0
+        found_idx = -1
+        day_names_en = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        day_name_en = day_names_en[date.weekday()]
+        day_r = getattr(weekly_menu, day_name_en, {})
+        # ... logic skipped here since we iterate in the same order as get_patient_today_meals
+        
+        # MEJOR: Intentar por TIPO y si no, por ÍNDICE sugerido
+        meal_custom = custom_portions.get(str(meal_type)) or custom_portions.get(meal_type)
+        # Nota: En initialize_single_meal_from_plan no tenemos el idx fácil, usaremos type mayormente
+
         foods = generate_default_foods_for_meal(meal_type, meal_data)
         for i, food in enumerate(foods):
+            food_name = food["name"]
+            # Si hay una porción personalizada en fase_4, usarla
+            final_portion = food["portion"]
+            if meal_custom and food_name in meal_custom:
+                grams = meal_custom[food_name]
+                if grams and str(grams).strip() != "":
+                    final_portion = f"{grams}g"
+
             db.add(MealFoodItemDB(
                 meal_tracking_id=tracking.id,
-                name=food["name"],
-                portion_size=food["portion"],
+                name=food_name,
+                portion_size=final_portion,
                 calories=food["calories"],
                 protein=food["protein"],
                 carbs=food["carbs"],
@@ -7023,15 +8050,16 @@ def _internal_initialize_meals(patient_id: int, meal_date: date, db: Session, ac
     else:
         day_menu = day_raw
 
-    # Mapeo de búsqueda para llaves en diferentes idiomas/formatos
-    key_mapping = {
-        "breakfast": ["breakfast", "desayuno"],
-        "morning_snack": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
-        "lunch": ["lunch", "comida"],
-        "afternoon_snack": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
-        "dinner": ["dinner", "cena"]
-    }
-    
+    # NUEVO: Si los datos vienen como una lista (posiblemente de semanas)
+    if isinstance(day_menu, list):
+        idx = (active_plan.current_week - 1) if active_plan else 0
+        if len(day_menu) > idx:
+            day_menu = day_menu[idx]
+        elif len(day_menu) > 0:
+            day_menu = day_menu[0]
+        else:
+            day_menu = {}
+
     # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
     if isinstance(day_menu, dict) and "meals" in day_menu and isinstance(day_menu["meals"], list):
         new_day_menu = {}
@@ -7047,6 +8075,22 @@ def _internal_initialize_meals(patient_id: int, meal_date: date, db: Session, ac
         {"id": "afternoon_snack", "name": "Snack PM"},
         {"id": "dinner", "name": "Cena"},
     ]
+    
+    # Mapeo de búsqueda para llaves en diferentes idiomas/formatos
+    key_mapping = {
+        "breakfast": ["breakfast", "desayuno"],
+        "desayuno": ["breakfast", "desayuno"],
+        "morning_snack": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+        "snack_am": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+        "media_manana": ["morning_snack", "snack_am", "media_manana", "merienda_manana", "almuerzo"],
+        "lunch": ["lunch", "comida", "almuerzo_principal"],
+        "comida": ["lunch", "comida", "almuerzo_principal"],
+        "afternoon_snack": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+        "snack_pm": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+        "media_tarde": ["afternoon_snack", "snack_pm", "media_tarde", "merienda_tarde", "merienda"],
+        "dinner": ["dinner", "cena"],
+        "cena": ["dinner", "cena"]
+    }
     
     for meal_info in meal_structure:
         # Buscar la comida usando el mapeo de llaves
@@ -7080,13 +8124,38 @@ def _internal_initialize_meals(patient_id: int, meal_date: date, db: Session, ac
         db.add(meal_tracking)
         db.flush()
         
+        # Obtener personalizaciones de porciones para este día/comida
+        plan_metadata = {"fase_4": active_plan.meal_plan.fase_4 if active_plan and active_plan.meal_plan else {}}
+        custom_portions = get_custom_portions_for_day(active_plan.current_week, day_name, plan_metadata)
+        
+        # Intentar por tipo (ej. "breakfast") o por el índice real de card
+        meal_custom = custom_portions.get(str(meal_info["id"])) or custom_portions.get(meal_info["id"])
+        if not meal_custom:
+            # Fallback al índice en el que estamos procesando (asumiendo orden estándar)
+            # Contar cuántas comidas hemos procesado hasta ahora para este día
+            current_meal_count = db.query(MealTrackingDB).filter(
+                MealTrackingDB.patient_id == patient_id,
+                MealTrackingDB.date == meal_date
+            ).count()
+            meal_custom = custom_portions.get(str(current_meal_count)) or custom_portions.get(current_meal_count) or {}
+        else:
+             meal_custom = meal_custom or {}
+
         # Agregar alimentos basados en el plan
         foods = generate_default_foods_for_meal(meal_info["id"], meal_data)
         for idx, food in enumerate(foods):
+            food_name = food["name"]
+            # Si hay una porción personalizada en fase_4, usarla
+            final_portion = food.get("portion") or food.get("portion_size") or "1 porción"
+            if food_name in meal_custom:
+                grams = meal_custom[food_name]
+                if grams and str(grams).strip() != "":
+                    final_portion = f"{grams}g"
+
             food_item = MealFoodItemDB(
                 meal_tracking_id=meal_tracking.id,
-                name=food["name"],
-                portion_size=food.get("portion") or food.get("portion_size") or "1 porción",
+                name=food_name,
+                portion_size=final_portion,
                 calories=food["calories"],
                 protein=food.get("protein") or 0,
                 carbs=food.get("carbs") or 0,
@@ -7166,13 +8235,14 @@ def toggle_food_item(
         "meal_completed": all_checked
     }
 
-@app.post("/api/patient/{patient_id}/meal-log/complete")
-def complete_meal(
+@app.post("/api/tracking/meal-toggle/{patient_id}/{action}")
+def toggle_meal_status(
     patient_id: int,
+    action: str, # complete or uncomplete
     data: MealLogRequest,
     db: Session = Depends(get_db)
 ):
-    """Marcar una comida completa y todos sus alimentos como chequeados"""
+    """Marcar/desmarcar una comida completa de forma unificada"""
     meal_date = datetime.strptime(data.date, "%Y-%m-%d").date()
     
     meal_tracking = db.query(MealTrackingDB).filter(
@@ -7181,54 +8251,39 @@ def complete_meal(
         MealTrackingDB.meal_type == data.meal_type
     ).first()
     
-    if not meal_tracking:
-        # Intentar inicializar si falta
-        meal_tracking = initialize_single_meal_from_plan(patient_id, meal_date, data.meal_type, db)
+    if action == "complete":
+        if not meal_tracking:
+            meal_tracking = initialize_single_meal_from_plan(patient_id, meal_date, data.meal_type, db)
+            
+        if not meal_tracking:
+            raise HTTPException(status_code=404, detail="Comida no encontrada")
         
-    if not meal_tracking:
-        raise HTTPException(status_code=404, detail="Comida no encontrada")
-    
-    # Marcar comida como completada
-    meal_tracking.completed = 1
-    meal_tracking.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Marcar todos los alimentos como chequeados
-    db.query(MealFoodItemDB).filter(
-        MealFoodItemDB.meal_tracking_id == meal_tracking.id
-    ).update({"checked": 1})
-    
-    db.commit()
-    return {"success": True, "message": "Comida completada"}
-
-@app.post("/api/patient/{patient_id}/meal-log/uncomplete")
-def uncomplete_meal(
-    patient_id: int,
-    data: MealLogRequest,
-    db: Session = Depends(get_db)
-):
-    """Desmarcar una comida y todos sus alimentos"""
-    meal_date = datetime.strptime(data.date, "%Y-%m-%d").date()
-    
-    meal_tracking = db.query(MealTrackingDB).filter(
-        MealTrackingDB.patient_id == patient_id,
-        MealTrackingDB.date == meal_date,
-        MealTrackingDB.meal_type == data.meal_type
-    ).first()
-    
-    if not meal_tracking:
+        meal_tracking.completed = 1
+        meal_tracking.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        db.query(MealFoodItemDB).filter(
+            MealFoodItemDB.meal_tracking_id == meal_tracking.id
+        ).update({"checked": 1})
+        
+        db.commit()
+        return {"success": True, "message": "Comida completada"}
+        
+    elif action == "uncomplete":
+        if not meal_tracking:
+            return {"success": True, "message": "Comida desmarcada"}
+        
+        meal_tracking.completed = 0
+        meal_tracking.completed_at = None
+        
+        db.query(MealFoodItemDB).filter(
+            MealFoodItemDB.meal_tracking_id == meal_tracking.id
+        ).update({"checked": 0})
+        
+        db.commit()
         return {"success": True, "message": "Comida desmarcada"}
     
-    # Desmarcar comida
-    meal_tracking.completed = 0
-    meal_tracking.completed_at = None
-    
-    # Desmarcar todos los alimentos
-    db.query(MealFoodItemDB).filter(
-        MealFoodItemDB.meal_tracking_id == meal_tracking.id
-    ).update({"checked": 0})
-    
-    db.commit()
-    return {"success": True, "message": "Comida desmarcada"}
+    else:
+        raise HTTPException(status_code=400, detail="Acción no válida")
 
 @app.post("/api/patient/{patient_id}/meals/food/add")
 def add_food_to_meal(
@@ -7459,12 +8514,62 @@ def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
     }
     
     week_data = []
-    for day_key, day_name in days_map.items():
-        day_meals = getattr(menu, day_key, {})
-        week_data.append({
-            "day": day_name,
-            "meals": day_meals.get("meals", []) if isinstance(day_meals, dict) else []
-        })
+    
+    # Detectar si es estructura antigua (dict) o nueva (list)
+    # Detectar si es estructura antigua (dict) o nueva (list)
+    # Primero intentar parsear si es string
+    monday_data = menu.monday
+    if isinstance(monday_data, str):
+        try:
+            monday_data = json.loads(monday_data)
+        except:
+            monday_data = {}
+            
+    is_new_structure = isinstance(monday_data, list)
+    
+    if is_new_structure:
+        # Estructura nueva: listas de 4 semanas
+        for week_num in range(1, 5):
+            idx = week_num - 1
+            for day_key, day_name in days_map.items():
+                day_col = getattr(menu, day_key, [])
+                
+                # Parsear si es string
+                if isinstance(day_col, str):
+                    try:
+                        day_col = json.loads(day_col)
+                    except:
+                        day_col = []
+
+                # Asegurar que existe data para esa semana
+                day_meals = {}
+                if isinstance(day_col, list) and len(day_col) > idx:
+                    day_meals = day_col[idx]
+                elif isinstance(day_col, dict): 
+                    # Fallback por si acaso
+                    day_meals = day_col
+                
+                week_data.append({
+                    "day": day_name,
+                    "week": week_num,
+                    "meals": day_meals.get("meals", []) if isinstance(day_meals, dict) else []
+                })
+    else:
+        # Estructura antigua: un solo dict por día
+        for day_key, day_name in days_map.items():
+            day_meals = getattr(menu, day_key, {})
+            # Parsear si es string
+            if isinstance(day_meals, str):
+                try:
+                    day_meals = json.loads(day_meals)
+                except:
+                    day_meals = {}
+
+            week_data.append({
+                "day": day_name,
+                "week": 1,
+                "meals": day_meals.get("meals", []) if isinstance(day_meals, dict) else []
+            })
     
     return {
         "id": menu.id,
@@ -7543,11 +8648,23 @@ def create_weekly_menu(
     }
     
     # Preparar datos de la semana
-    week_dict = {}
+    # Inicializar estructura de listas para 4 semanas
+    week_dict = {
+        "monday": [{}, {}, {}, {}],
+        "tuesday": [{}, {}, {}, {}],
+        "wednesday": [{}, {}, {}, {}],
+        "thursday": [{}, {}, {}, {}],
+        "friday": [{}, {}, {}, {}],
+        "saturday": [{}, {}, {}, {}],
+        "sunday": [{}, {}, {}, {}]
+    }
+    
     for day_data in menu_data.week:
         day_key = days_map.get(day_data.day)
-        if day_key:
-            week_dict[day_key] = {
+        week_idx = (day_data.week - 1) if day_data.week else 0
+        
+        if day_key and 0 <= week_idx < 4:
+            week_dict[day_key][week_idx] = {
                 "meals": [meal.model_dump() for meal in day_data.meals]
             }
     
@@ -7629,12 +8746,28 @@ def update_weekly_menu(
             "Domingo": "sunday"
         }
         
+        # Inicializar si no existen como listas
+        for dk in days_map.values():
+            curr = getattr(menu, dk)
+            if not isinstance(curr, list):
+                setattr(menu, dk, [curr or {}, {}, {}, {}])
+
         for day_data in menu_data.week:
             day_key = days_map.get(day_data.day)
-            if day_key:
-                setattr(menu, day_key, {
+            week_idx = (day_data.week - 1) if day_data.week else 0
+            
+            if day_key and 0 <= week_idx < 4:
+                # Obtener lista actual
+                current_list = getattr(menu, day_key)
+                # Asegurar longitud
+                while len(current_list) < 4:
+                    current_list.append({})
+                    
+                current_list[week_idx] = {
                     "meals": [meal.model_dump() for meal in day_data.meals]
-                })
+                }
+                # SQLAlchemy necesita detectar cambio en JSON
+                flag_modified(menu, day_key)
         
         # Recalcular totales
         totals = calculate_weekly_totals([
@@ -7795,6 +8928,38 @@ def assign_weekly_menu(
             db.add(temp_plan)
             db.flush()
             
+            # --- POPULAR WEEKLY MENUS FOR 4 WEEKS ---
+            wk_days_map = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+            
+            for wk_num in range(1, 5):
+                idx = wk_num - 1
+                week_data_db = {}
+                
+                for d_key in wk_days_map:
+                    d_col = getattr(menu, d_key, [])
+                    d_data = {}
+                    
+                    if isinstance(d_col, list) and len(d_col) > idx:
+                        d_data = d_col[idx]
+                    elif isinstance(d_col, dict) and wk_num == 1:
+                        d_data = d_col
+                    
+                    week_data_db[d_key] = d_data
+                
+                new_weekly_menu = WeeklyMenuDB(
+                    meal_plan_id=temp_plan.id,
+                    week_number=wk_num,
+                    monday=week_data_db["monday"],
+                    tuesday=week_data_db["tuesday"],
+                    wednesday=week_data_db["wednesday"],
+                    thursday=week_data_db["thursday"],
+                    friday=week_data_db["friday"],
+                    saturday=week_data_db["saturday"],
+                    sunday=week_data_db["sunday"],
+                    created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+                db.add(new_weekly_menu)
+            
             # Crear la asignación
             assignment = PatientMealPlanDB(
                 patient_id=patient.id,
@@ -7806,6 +8971,59 @@ def assign_weekly_menu(
                 notes=assignment_data.notes
             )
             db.add(assignment)
+            db.flush() # Para tener el ID
+            
+            # --- GENERAR COMIDAS PARA LAS 4 SEMANAS ---
+            start_date_obj = datetime.strptime(assignment_data.start_date, "%Y-%m-%d").date()
+            
+            # Iterar 28 días (4 semanas)
+            for day_offset in range(28):
+                current_date = start_date_obj + timedelta(days=day_offset)
+                current_week_num = (day_offset // 7) + 1
+                weekday_idx = day_offset % 7 # 0=Monday
+                
+                # Mapear índice a key del modelo
+                day_keys = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+                day_key = day_keys[weekday_idx]
+                
+                # Obtener datos del día específico y semana específica
+                day_col_data = getattr(menu, day_key, [])
+                day_meals_data = {}
+                
+                if isinstance(day_col_data, list) and len(day_col_data) >= current_week_num:
+                    day_meals_data = day_col_data[current_week_num - 1] # Index es week-1
+                elif isinstance(day_col_data, dict) and current_week_num == 1:
+                    # Soporte legacy
+                    day_meals_data = day_col_data
+                
+                # Crear asignación diaria si hay comidas
+                meals_list = day_meals_data.get("meals", [])
+                if meals_list:
+                    daily_assignment = DailyMealAssignmentDB(
+                        patient_meal_plan_id=assignment.id,
+                        date=current_date,
+                        status="pending"
+                    )
+                    
+                    # Rellenar comidas
+                    for meal in meals_list:
+                        m_type = meal.get("type", "").lower()
+                        if "desayuno" in m_type:
+                            daily_assignment.breakfast = meal
+                        elif "almuerzo" in m_type:
+                            daily_assignment.lunch = meal
+                        elif "cena" in m_type:
+                            daily_assignment.dinner = meal
+                        elif "merienda" in m_type or "snack" in m_type:
+                            # Simple lógica para asignar snacks a slots disponibles
+                            if not daily_assignment.morning_snack:
+                                daily_assignment.morning_snack = meal
+                            elif not daily_assignment.afternoon_snack:
+                                daily_assignment.afternoon_snack = meal
+                            else:
+                                daily_assignment.evening_snack = meal
+
+                    db.add(daily_assignment)
             
             assigned_count += 1
             
@@ -8868,292 +10086,6 @@ def superadmin_bulk_user_action(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error en acción en lote: {str(e)}")
         
-# ==================== Endpoints for Progress ====================
-
-@app.get("/api/progress/patients")
-def get_progress_patients(
-    trend: Optional[str] = "all",
-    search: Optional[str] = "",
-    db: Session = Depends(get_db)
-):
-    """Obtener lista de pacientes con resumen de progreso"""
-    patients = db.query(UserDB).filter(UserDB.role == "patient").all()
-    
-    results = []
-    for p in patients:
-        # Filtrar por búsqueda si existe
-        if search and search.lower() not in (p.nombres + " " + p.apellidos).lower():
-            continue
-            
-        # Calcular progreso
-        metrics = db.query(ProgressMetricDB).filter(
-            ProgressMetricDB.patient_id == p.id
-        ).order_by(ProgressMetricDB.date.asc()).all()
-        
-        current_weight = metrics[-1].weight if metrics else p.peso_actual or 0
-        initial_weight = metrics[0].weight if metrics else p.peso_actual or 0
-        goal_weight = p.peso_objetivo or 0
-        
-        # Calcular tendencia
-        trend_val = "stable"
-        if len(metrics) >= 2:
-            last = metrics[-1].weight
-            prev = metrics[-2].weight
-            if last < prev:
-                trend_val = "down"
-            elif last > prev:
-                trend_val = "up"
-                
-        # Filtrar por tendencia
-        if trend != "all" and trend != trend_val:
-            continue
-            
-        # Calcular adherencia (simulada o basada en asignaciones)
-        has_active_plan = db.query(PatientMealPlanDB).filter(
-            PatientMealPlanDB.patient_id == p.id,
-            PatientMealPlanDB.status == "active"
-        ).first() is not None
-        
-        results.append({
-            "id": p.id,
-            "name": f"{p.nombres} {p.apellidos}",
-            "avatar": p.foto_perfil,
-            "plan": "Plan Activo" if has_active_plan else "Sin Plan",
-            "start_date": p.created_at.strftime("%Y-%m-%d"),
-            "current_weight": current_weight,
-            "initial_weight": initial_weight,
-            "goal_weight": goal_weight,
-            "weekly_adherence": 85 if has_active_plan else 0, 
-            "trend": trend_val,
-            "last_update": metrics[-1].date.strftime("%Y-%m-%d") if metrics else p.created_at.strftime("%Y-%m-%d"),
-            "progress_percentage": min(100, max(0, int((initial_weight - current_weight) / (initial_weight - goal_weight) * 100))) if (initial_weight != goal_weight and initial_weight is not None and goal_weight is not None) else 0
-        })
-        
-    return results
-
-@app.get("/api/progress/stats")
-def get_progress_stats(db: Session = Depends(get_db)):
-    total_patients = db.query(UserDB).filter(UserDB.role == "patient").count()
-    
-    # Calcular peso total perdido
-    all_patients = db.query(UserDB).filter(UserDB.role == "patient").all()
-    total_lost = 0
-    on_track = 0
-    
-    for p in all_patients:
-        metrics = db.query(PatientMetricDB).filter(PatientMetricDB.patient_id == p.id).order_by(PatientMetricDB.date).all()
-        if metrics and len(metrics) > 1:
-            diff = metrics[0].weight - metrics[-1].weight
-            if diff > 0:
-                total_lost += diff
-                
-        # Simple lógica para "on track": si tiene plan activo
-        has_plan = db.query(PatientMealPlanDB).filter(PatientMealPlanDB.patient_id == p.id, PatientMealPlanDB.status == "active").first()
-        if has_plan:
-            on_track += 1
-
-    return {
-        "total_patients": total_patients,
-        "avg_adherence": 78,
-        "patients_on_track": on_track,
-        "total_weight_lost": round(total_lost, 1)
-    }
-
-@app.get("/api/progress/patients/{patient_id}")
-def get_patient_progress_detail(patient_id: int, db: Session = Depends(get_db)):
-    patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
-        
-    metrics = db.query(PatientMetricDB).filter(PatientMetricDB.patient_id == patient_id).order_by(PatientMetricDB.date).all()
-    achievements = db.query(PatientAchievementDB).filter(PatientAchievementDB.patient_id == patient_id).all()
-    notes = db.query(PatientNoteDB).filter(PatientNoteDB.patient_id == patient_id).order_by(PatientNoteDB.created_at.desc()).all()
-    
-    # active plan
-    active_plan = db.query(PatientMealPlanDB).join(MealPlanDB).filter(
-        PatientMealPlanDB.patient_id == patient_id, 
-        PatientMealPlanDB.status == "active"
-    ).first()
-    
-    plan_name = "Sin Plan"
-    if active_plan:
-         plan_db = db.query(MealPlanDB).filter(MealPlanDB.id == active_plan.meal_plan_id).first()
-         if plan_db:
-             plan_name = plan_db.name
-
-    current_weight = metrics[-1].weight if metrics else patient.peso_actual or 0
-    initial_weight = metrics[0].weight if metrics else patient.peso_actual or 0
-    goal_weight = patient.peso_objetivo or 0
-    
-    # Calcular tendencia
-    trend_val = "stable"
-    if len(metrics) >= 2:
-        last = metrics[-1].weight
-        prev = metrics[-2].weight
-        if last < prev:
-            trend_val = "down"
-        elif last > prev:
-            trend_val = "up"
-            
-    # Calcular porcentaje de progreso
-    baseline_weight = patient.peso_inicial if patient.peso_inicial is not None else initial_weight
-    progress_pct = calcular_progreso(current_weight, goal_weight, baseline_weight)
-        
-    last_update_date = metrics[-1].date if metrics else patient.created_at
-
-    return {
-        "id": patient.id,
-        "name": f"{patient.nombres} {patient.apellidos}",
-        "avatar": patient.foto_perfil,
-        "plan": plan_name,
-        "start_date": patient.created_at.strftime("%Y-%m-%d"),
-        "current_weight": current_weight,
-        "initial_weight": initial_weight,
-        "goal_weight": goal_weight,
-        "weekly_adherence": 85 if active_plan else 0,
-        "trend": trend_val,
-        "last_update": last_update_date.strftime("%Y-%m-%d"),
-        "progress_percentage": progress_pct,
-        "metrics": [{
-            "date": m.date.strftime("%Y-%m-%d"),
-            "weight": m.weight,
-            "bodyFat": m.body_fat,
-            "muscle": m.muscle,
-            "water": m.water,
-            "notes": m.notes
-        } for m in metrics],
-        "metricsHistory": [{
-            "id": m.id,
-            "date": m.date.strftime("%Y-%m-%d"),
-            "weight": m.weight,
-            "body_fat": m.body_fat,
-            "muscle_mass": m.muscle,
-            "water_percentage": m.water,
-            "notes": m.notes
-        } for m in metrics],
-        "achievements": [a.title for a in achievements],
-        "achievementsList": [{
-            "id": a.id,
-            "title": a.title,
-            "description": a.description,
-            "date": a.achieved_date.strftime("%Y-%m-%d")
-        } for a in achievements],
-        "notes": [n.note for n in notes],
-        "notesList": [{
-            "id": n.id,
-            "content": n.note,
-            "date": n.created_at.strftime("%Y-%m-%d")
-        } for n in notes]
-    }
-
-@app.post("/api/progress/metrics")
-def add_patient_metric(metric: MetricCreate, db: Session = Depends(get_db)):
-    # Actualizar peso actual del paciente
-    patient = db.query(UserDB).filter(UserDB.id == metric.patient_id).first()
-    if not patient:
-         raise HTTPException(status_code=404, detail="Paciente no encontrado")
-         
-    patient.peso_actual = metric.weight
-    db.add(patient) # Update user weight
-    
-    new_metric = PatientMetricDB(
-        patient_id=metric.patient_id,
-        date=datetime.strptime(metric.date, "%Y-%m-%d").date(),
-        weight=metric.weight,
-        body_fat=metric.body_fat,
-        muscle=metric.muscle,
-        water=metric.water,
-        notes=metric.notes
-    )
-    db.add(new_metric)
-    db.commit()
-    return {"success": True}
-
-@app.post("/api/progress/achievements")
-def add_patient_achievement(achievement: AchievementCreate, db: Session = Depends(get_db)):
-    new_ach = PatientAchievementDB(
-        patient_id=achievement.patient_id,
-        title=achievement.title,
-        description=achievement.description,
-        icon=achievement.icon,
-        achieved_date=datetime.strptime(achievement.achieved_date, "%Y-%m-%d").date()
-    )
-    db.add(new_ach)
-    db.commit()
-    return {"success": True}
-
-@app.post("/api/progress/notes")
-def add_patient_note(note: NutritionistNoteCreate, db: Session = Depends(get_db)):
-    new_note = NutritionistNoteDB(
-        patient_id=note.patient_id,
-        created_by=note.created_by,
-        note=note.note,
-        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    )
-    db.add(new_note)
-    db.commit()
-    return {"success": True}
-
-@app.delete("/api/progress/metrics/{metric_id}")
-def delete_patient_metric(metric_id: int, db: Session = Depends(get_db)):
-    metric = db.query(ProgressMetricDB).filter(ProgressMetricDB.id == metric_id).first()
-    if not metric:
-        raise HTTPException(status_code=404, detail="Métrica no encontrada")
-    
-    db.delete(metric)
-    db.commit()
-    return {"success": True}
-
-@app.delete("/api/progress/achievements/{achievement_id}")
-def delete_patient_achievement(achievement_id: int, db: Session = Depends(get_db)):
-    achievement = db.query(AchievementDB).filter(AchievementDB.id == achievement_id).first()
-    if not achievement:
-        raise HTTPException(status_code=404, detail="Logro no encontrado")
-        
-    db.delete(achievement)
-    db.commit()
-    return {"success": True}
-
-@app.put("/api/progress/achievements/{achievement_id}")
-def update_patient_achievement(achievement_id: int, achievement_data: AchievementCreate, db: Session = Depends(get_db)):
-    achievement = db.query(AchievementDB).filter(AchievementDB.id == achievement_id).first()
-    if not achievement:
-        raise HTTPException(status_code=404, detail="Logro no encontrado")
-    
-    achievement.title = achievement_data.title
-    achievement.description = achievement_data.description
-    try:
-        achievement.achieved_date = datetime.strptime(achievement_data.achieved_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Formato de fecha inválido")
-        
-    db.commit()
-    return {"success": True}
-
-@app.delete("/api/progress/notes/{note_id}")
-def delete_patient_note(note_id: int, db: Session = Depends(get_db)):
-    note = db.query(NutritionistNoteDB).filter(NutritionistNoteDB.id == note_id).first()
-    if not note:
-        raise HTTPException(status_code=404, detail="Nota no encontrada")
-        
-    db.delete(note)
-    db.commit()
-    return {"success": True}
-
-@app.put("/api/progress/notes/{note_id}")
-def update_patient_note(note_id: int, note_data: NutritionistNoteCreate, db: Session = Depends(get_db)):
-    note = db.query(NutritionistNoteDB).filter(NutritionistNoteDB.id == note_id).first()
-    if not note:
-        raise HTTPException(status_code=404, detail="Nota no encontrada")
-    
-    note.note = note_data.note
-    db.commit()
-    return {"success": True}
-
-
-
-
-# ... (Existing code) ...
 
 # ==================== Endpoints for Notifications ====================
 @app.get("/api/notifications")
@@ -9274,6 +10206,12 @@ def get_conversations(
                 ((MessageDB.sender_id == current_user.id) & (MessageDB.receiver_id == admin.id)) |
                 ((MessageDB.sender_id == admin.id) & (MessageDB.receiver_id == current_user.id))
             ).order_by(MessageDB.timestamp.desc()).first()
+
+             unread = db.query(MessageDB).filter(
+                MessageDB.sender_id == admin.id,
+                MessageDB.receiver_id == current_user.id,
+                MessageDB.read == False
+             ).count()
              
              conversations.append({
                 "id": admin.id,
@@ -9281,7 +10219,8 @@ def get_conversations(
                 "patientAvatar": admin.foto_perfil,
                 "lastMessage": last_msg.content if last_msg else "Consultar al especialista",
                 "lastMessageTime": last_msg.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if last_msg else "",
-                "unreadCount": 0
+                "unreadCount": unread,
+                "isOnline": False
              })
              
     return conversations

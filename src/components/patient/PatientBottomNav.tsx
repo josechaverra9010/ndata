@@ -1,13 +1,12 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, Utensils, Calendar, TrendingUp, User } from "lucide-react";
+import { Home, Utensils, Calendar, TrendingUp, User, ChefHat } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { to: "/paciente", icon: Home, label: "Inicio" },
-  { to: "/paciente/comidas", icon: Utensils, label: "Comidas" },
-  { to: "/paciente/citas", icon: Calendar, label: "Citas" },
-  { to: "/paciente/progreso", icon: TrendingUp, label: "Progreso" },
-  { to: "/paciente/perfil", icon: User, label: "Perfil" },
+  { to: "/patient", icon: Home, label: "Inicio" },
+  { to: "/patient/recipes", icon: ChefHat, label: "Recetas" },
+  { to: "/patient/appointments", icon: Calendar, label: "Citas" },
+  { to: "/patient/progress", icon: TrendingUp, label: "Progreso" },
 ];
 
 export function PatientBottomNav() {
@@ -24,8 +23,8 @@ export function PatientBottomNav() {
               to={item.to}
               className={cn(
                 "flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors",
-                isActive 
-                  ? "text-primary" 
+                isActive
+                  ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

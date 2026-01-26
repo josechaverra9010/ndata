@@ -36,13 +36,16 @@ export function UserDropdown() {
   const userName = user?.name || "Usuario";
   // Assuming role map or just text
   const userRole = user?.role === 'superadmin' ? 'Super Administrador' : user?.role === 'admin' ? 'Nutricionista' : 'Paciente';
+  
+  // Obtener avatar del usuario (puede venir como avatar o foto_perfil)
+  const userAvatar = user?.avatar || (user as any)?.foto_perfil || "";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-3 rounded-full bg-muted/50 py-1.5 pl-1.5 pr-3 transition-colors hover:bg-muted">
           <Avatar className="h-8 w-8 border-2 border-primary/20">
-            <AvatarImage src={user?.avatar || ""} />
+            <AvatarImage src={userAvatar} />
             <AvatarFallback className="bg-primary text-primary-foreground text-sm">
               {userName.substring(0, 2).toUpperCase()}
             </AvatarFallback>

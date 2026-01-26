@@ -20,7 +20,7 @@ import { useTheme } from "@/hooks/use-theme";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Pacientes", path: "/patients" },
-  { icon: Apple, label: "Planes Nutricionales", path: "/meal-plans" },
+  // { icon: Apple, label: "Planes Nutricionales", path: "/meal-plans" },
   { icon: ChefHat, label: "Recetas", path: "/recipes" },
   { icon: ChevronFirst, label: "Menú semanal", path: "/weekly-menus" },
   { icon: Calendar, label: "Consultas", path: "/appointments" },

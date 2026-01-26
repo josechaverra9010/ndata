@@ -24,6 +24,7 @@ interface ProgressData {
     weight_change: number;
     progress_percentage: number;
     trend: string;
+    edad_formateada?: string;
     last_update: string;
   };
   body_composition: {
@@ -175,13 +176,8 @@ export default function PatientProgress() {
           <Scale className="h-16 w-16 text-muted-foreground/30" />
           <div className="text-center">
             <h2 className="text-xl font-bold">Aún no hay datos de progreso</h2>
-            <p className="text-muted-foreground mt-2">Registra tu primera medición para empezar el seguimiento.</p>
+            <p className="text-muted-foreground mt-2">Tu nutricionista registrará tus mediciones durante las consultas.</p>
           </div>
-          <Button onClick={() => setIsAddModalOpen(true)} className="gradient-primary shadow-glow">
-            <Plus className="h-4 w-4 mr-2" />
-            Registrar mi primer peso
-          </Button>
-          {renderAddModal()}
         </div>
       </PatientLayout>
     );
@@ -327,16 +323,16 @@ export default function PatientProgress() {
   return (
     <PatientLayout>
       <div className="space-y-4 lg:space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl lg:text-3xl font-bold text-foreground">Mi Progreso</h1>
-            <p className="text-sm lg:text-base text-muted-foreground mt-1">Tu evolución detallada</p>
+        <div>
+          <h1 className="text-xl lg:text-3xl font-bold text-foreground">Mi Progreso</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm lg:text-base text-muted-foreground">Tu evolución detallada</p>
+            {summary.edad_formateada && (
+              <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold">
+                {summary.edad_formateada}
+              </Badge>
+            )}
           </div>
-          <Button onClick={() => setIsAddModalOpen(true)} className="gradient-primary shadow-glow h-10 px-4">
-            <Plus className="h-4 w-4 mr-2" />
-            <span className="hidden sm:inline">Añadir Registro</span>
-            <span className="sm:hidden">Añadir</span>
-          </Button>
         </div>
 
         {/* Overview Cards */}
@@ -512,8 +508,7 @@ export default function PatientProgress() {
             </CardContent>
           </Card>
         </div>
-        {renderAddModal()}
       </div>
-    </PatientLayout>
+    </PatientLayout >
   );
 }

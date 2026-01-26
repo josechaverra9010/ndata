@@ -247,6 +247,12 @@ const AdminSettings = () => {
 
       if (data.success) {
         setProfile({ ...profile, avatar: data.avatar_url });
+        // Actualizar el contexto de autenticación
+        if (user) {
+          const updatedUser = { ...user, avatar: data.avatar_url };
+          localStorage.setItem("userData", JSON.stringify(updatedUser));
+          window.dispatchEvent(new Event("userUpdated"));
+        }
         toast.success("Foto actualizada correctamente");
       }
     } catch (error: any) {
