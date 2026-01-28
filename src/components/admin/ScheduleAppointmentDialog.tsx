@@ -221,7 +221,6 @@ export function ScheduleAppointmentDialog({
                         <Label htmlFor="notes">Notas (opcional)</Label>
                         <Textarea
                             id="notes"
-                            placeholder="Motivo de la consulta, observaciones especiales..."
                             value={formData.notes}
                             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                             disabled={loading}

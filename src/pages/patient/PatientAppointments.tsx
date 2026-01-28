@@ -420,7 +420,6 @@ export default function PatientAppointments() {
                   <Label htmlFor="notes">Notas (opcional)</Label>
                   <Textarea
                     id="notes"
-                    placeholder="Describe el motivo de tu consulta..."
                     value={newAppointment.notes}
                     onChange={(e) => setNewAppointment({ ...newAppointment, notes: e.target.value })}
                     rows={3}

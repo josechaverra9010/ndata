@@ -134,7 +134,6 @@ const ResetPassword = () => {
                             <Input
                                 id="newPassword"
                                 type={showPassword ? "text" : "password"}
-                                placeholder="••••••••"
                                 value={formData.newPassword}
                                 onChange={(e) =>
                                     setFormData({ ...formData, newPassword: e.target.value })
@@ -165,7 +164,6 @@ const ResetPassword = () => {
                             <Input
                                 id="confirmPassword"
                                 type={showConfirmPassword ? "text" : "password"}
-                                placeholder="••••••••"
                                 value={formData.confirmPassword}
                                 onChange={(e) =>
                                     setFormData({ ...formData, confirmPassword: e.target.value })

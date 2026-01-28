@@ -201,7 +201,6 @@ const Auth = () => {
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="doctor@NutriData.com"
                   value={formData.email}
                   onChange={handleInputChange}
                   className="pl-11 h-12 bg-muted/50 border-border focus-visible:ring-primary/20"
@@ -235,7 +234,6 @@ const Auth = () => {
                         <Input
                           id="reset-email"
                           type="email"
-                          placeholder="doctor@nutridata.com"
                           value={resetEmail}
                           onChange={(e) => setResetEmail(e.target.value)}
                           required
@@ -264,7 +262,6 @@ const Auth = () => {
                   id="password"
                   name="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
                   value={formData.password}
                   onChange={handleInputChange}
                   className="pl-11 pr-11 h-12 bg-muted/50 border-border focus-visible:ring-primary/20"

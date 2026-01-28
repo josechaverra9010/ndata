@@ -4,10 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Search, 
-  Plus, 
-  MoreVertical, 
+import {
+  Search,
+  Plus,
+  MoreVertical,
   Building2,
   Users,
   UserCog,
@@ -46,7 +46,7 @@ export default function SuperadminOrganizations() {
   const [organizations, setOrganizations] = useState<Organization[]>(mockOrganizations);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredOrganizations = organizations.filter(org => 
+  const filteredOrganizations = organizations.filter(org =>
     org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     org.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -129,7 +129,6 @@ export default function SuperadminOrganizations() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar organizaciones..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -194,7 +193,7 @@ export default function SuperadminOrganizations() {
                         <Edit className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         onClick={() => handleDelete(org.id)}
                         className="text-destructive"
                       >

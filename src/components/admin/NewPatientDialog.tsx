@@ -329,7 +329,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   </Label>
                   <Input
                     id="nombres"
-                    placeholder="Juan Carlos"
                     value={formData.nombres}
                     onChange={(e) => handleChange("nombres", e.target.value)}
                     className={errors.nombres ? "border-destructive" : ""}
@@ -346,7 +345,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   </Label>
                   <Input
                     id="apellidos"
-                    placeholder="Pérez García"
                     value={formData.apellidos}
                     onChange={(e) => handleChange("apellidos", e.target.value)}
                     className={errors.apellidos ? "border-destructive" : ""}
@@ -366,7 +364,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   <Input
                     id="email"
                     type="email"
-                    placeholder="juan.perez@email.com"
                     value={formData.email}
                     onChange={(e) => handleChange("email", e.target.value)}
                     className={errors.email ? "border-destructive" : ""}
@@ -382,7 +379,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   <Input
                     id="telefono"
                     type="tel"
-                    placeholder="+57 300 123 4567"
                     value={formData.telefono}
                     onChange={(e) => handleChange("telefono", e.target.value)}
                     disabled={loading}
@@ -433,7 +429,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="direccion">Dirección</Label>
                 <Input
                   id="direccion"
-                  placeholder="Calle 123 # 45-67, Apartamento 101"
                   value={formData.direccion}
                   onChange={(e) => handleChange("direccion", e.target.value)}
                   disabled={loading}
@@ -464,7 +459,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                   <Label htmlFor="numero_documento">Número de Documento</Label>
                   <Input
                     id="numero_documento"
-                    placeholder="123456789"
                     value={formData.numero_documento}
                     onChange={(e) => handleChange("numero_documento", e.target.value)}
                     disabled={loading}
@@ -477,7 +471,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Input
                   id="password"
                   type="password"
-                  placeholder="********"
                   value={formData.password}
                   onChange={(e) => handleChange("password", e.target.value)}
                   disabled={loading}
@@ -497,7 +490,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     id="altura"
                     type="number"
                     step="0.1"
-                    placeholder="175"
                     value={formData.altura}
                     onChange={(e) => handleChange("altura", e.target.value)}
                     disabled={loading}
@@ -509,7 +501,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     id="peso_actual"
                     type="number"
                     step="0.1"
-                    placeholder="80"
                     value={formData.peso_actual}
                     onChange={(e) => handleChange("peso_actual", e.target.value)}
                     disabled={loading}
@@ -521,7 +512,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     id="peso_objetivo"
                     type="number"
                     step="0.1"
-                    placeholder="75"
                     value={formData.peso_objetivo}
                     onChange={(e) => handleChange("peso_objetivo", e.target.value)}
                     disabled={loading}
@@ -533,7 +523,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     id="imc"
                     value={imc}
                     readOnly
-                    placeholder="24.5"
                     className="bg-muted font-bold"
                   />
                 </div>
@@ -564,7 +553,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     id="pal_factor"
                     type="number"
                     step="0.001"
-                    placeholder="1.55"
                     value={formData.pal_factor}
                     onChange={(e) => handleChange("pal_factor", e.target.value)}
                     disabled={loading}
@@ -580,7 +568,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="preferencias">Preferencias Alimentarias (Separadas por comas)</Label>
                 <Input
                   id="preferencias"
-                  placeholder="Pollo, Verduras, Arroz, Pasta"
                   value={formData.preferencias}
                   onChange={(e) => handleChange("preferencias", e.target.value)}
                   disabled={loading}
@@ -591,7 +578,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="alimentos_disgusto">Rechazos alimentarios</Label>
                 <Textarea
                   id="alimentos_disgusto"
-                  placeholder="Cebolla, Brócoli, Pescado..."
                   value={formData.alimentos_disgusto}
                   onChange={(e) => handleChange("alimentos_disgusto", e.target.value)}
                   disabled={loading}
@@ -606,7 +592,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="alergias">Alergias (Separadas por comas)</Label>
                 <Input
                   id="alergias"
-                  placeholder="Maní, Lactosa, Mariscos..."
                   value={formData.alergias}
                   onChange={(e) => handleChange("alergias", e.target.value)}
                   disabled={loading}
@@ -617,7 +602,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="condiciones_medicas">Condiciones Médicas</Label>
                 <Textarea
                   id="condiciones_medicas"
-                  placeholder="Diabetes tipo 2, Hipertensión..."
                   value={formData.condiciones_medicas}
                   onChange={(e) => handleChange("condiciones_medicas", e.target.value)}
                   disabled={loading}
@@ -629,7 +613,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="antecedentes_familiares">Antecedentes Familiares</Label>
                 <Textarea
                   id="antecedentes_familiares"
-                  placeholder="Padre con hipertensión, Madre con diabetes..."
                   value={formData.antecedentes_familiares}
                   onChange={(e) => handleChange("antecedentes_familiares", e.target.value)}
                   disabled={loading}
@@ -641,7 +624,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="objetivos_salud">Objetivos de Salud</Label>
                 <Textarea
                   id="objetivos_salud"
-                  placeholder="Bajar de peso, mejorar resistencia, controlar azúcar..."
                   value={formData.objetivos_salud}
                   onChange={(e) => handleChange("objetivos_salud", e.target.value)}
                   disabled={loading}
@@ -663,7 +645,6 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <Label htmlFor="evaluacion_nutricional">Evaluación Nutricional Detallada</Label>
                 <Textarea
                   id="evaluacion_nutricional"
-                  placeholder="Realiza aquí la evaluación nutricional detallada del paciente..."
                   value={formData.evaluacion_nutricional}
                   onChange={(e) => handleChange("evaluacion_nutricional", e.target.value)}
                   disabled={loading}

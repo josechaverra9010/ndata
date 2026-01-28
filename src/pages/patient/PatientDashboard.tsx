@@ -452,51 +452,134 @@ export default function PatientDashboard() {
           </Card>
         </div>
 
-        {/* Quick Actions Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Button
-            variant="outline"
-            className="h-auto flex-col py-4 gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/40 transition-all"
-            onClick={() => navigate('/patient/my-plan')}
-          >
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-              <ChefHat className="h-5 w-5" />
-            </div>
-            <span className="text-xs font-semibold">Ver Mi Plan</span>
-          </Button>
+        {/* Charts Grid - 50/50 Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+          {/* Weekly Progress Chart */}
+          <Card className="border-border shadow-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <TrendingUp className="h-5 w-5 text-primary" />
+                Progreso Semanal
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {week_progress.map((day, index) => {
+                  const percentage = day.completed ? 100 : 0;
+                  return (
+                    <div key={index} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-foreground">{day.day}</span>
+                        <span className="text-muted-foreground text-xs">{day.date}</span>
+                      </div>
+                      <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full transition-all duration-500 ${day.completed
+                            ? 'bg-gradient-to-r from-primary to-primary/80'
+                            : 'bg-muted-foreground/20'
+                            }`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
-          <Button
-            variant="outline"
-            className="h-auto flex-col py-4 gap-2 border-accent/20 hover:bg-accent/5 hover:border-accent/40 transition-all"
-            onClick={() => navigate('/patient/recipes')}
-          >
-            <div className="h-10 w-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
-              <Utensils className="h-5 w-5" />
-            </div>
-            <span className="text-xs font-semibold">Mis Recetas</span>
-          </Button>
+          {/* Macronutrient Distribution Chart */}
+          <Card className="border-border shadow-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <Activity className="h-5 w-5 text-primary" />
+                Distribución de Macronutrientes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Proteínas */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-blue-500" />
+                      <span className="font-medium text-foreground">Proteínas</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground font-semibold">
+                        {(dashboardData?.stats as any)?.macronutrients?.protein_percentage || 30}%
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(dashboardData?.stats as any)?.macronutrients?.protein_grams || 0}g)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
+                      style={{ width: `${(dashboardData?.stats as any)?.macronutrients?.protein_percentage || 30}%` }}
+                    />
+                  </div>
+                </div>
 
-          <Button
-            variant="outline"
-            className="h-auto flex-col py-4 gap-2 border-info/20 hover:bg-info/5 hover:border-info/40 transition-all"
-            onClick={() => navigate('/patient/profile?tab=recordatorio')}
-          >
-            <div className="h-10 w-10 rounded-full bg-info/10 flex items-center justify-center text-info">
-              <ClipboardList className="h-5 w-5" />
-            </div>
-            <span className="text-xs font-semibold">Registrar Ingesta</span>
-          </Button>
+                {/* Carbohidratos */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-amber-500" />
+                      <span className="font-medium text-foreground">Carbohidratos</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground font-semibold">
+                        {(dashboardData?.stats as any)?.macronutrients?.carbs_percentage || 45}%
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(dashboardData?.stats as any)?.macronutrients?.carbs_grams || 0}g)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-500"
+                      style={{ width: `${(dashboardData?.stats as any)?.macronutrients?.carbs_percentage || 45}%` }}
+                    />
+                  </div>
+                </div>
 
-          <Button
-            variant="outline"
-            className="h-auto flex-col py-4 gap-2 border-success/20 hover:bg-success/5 hover:border-success/40 transition-all"
-            onClick={() => setIsWeightDialogOpen(true)}
-          >
-            <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center text-success">
-              <Activity className="h-5 w-5" />
-            </div>
-            <span className="text-xs font-semibold">Actualizar Peso</span>
-          </Button>
+                {/* Grasas */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-emerald-500" />
+                      <span className="font-medium text-foreground">Grasas</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground font-semibold">
+                        {(dashboardData?.stats as any)?.macronutrients?.fat_percentage || 25}%
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(dashboardData?.stats as any)?.macronutrients?.fat_grams || 0}g)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                      style={{ width: `${(dashboardData?.stats as any)?.macronutrients?.fat_percentage || 25}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Summary */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Meta diaria de calorías</span>
+                    <span className="font-semibold text-foreground">{stats.calories.target} kcal</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -701,7 +784,6 @@ export default function PatientDashboard() {
                 id="weight"
                 type="number"
                 step="0.1"
-                placeholder="0.0"
                 className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                 value={newWeight}
                 onChange={(e) => setNewWeight(e.target.value)}

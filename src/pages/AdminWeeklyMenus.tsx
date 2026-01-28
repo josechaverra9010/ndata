@@ -592,7 +592,6 @@ const AdminWeeklyMenus = () => {
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
-                            placeholder="Buscar menús..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-10"
@@ -807,7 +806,6 @@ const AdminWeeklyMenus = () => {
                                         <Input
                                             value={menuForm.name}
                                             onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
-                                            placeholder="Ej: Menú Equilibrado Semanal"
                                         />
                                     </div>
                                     <div>
@@ -815,7 +813,6 @@ const AdminWeeklyMenus = () => {
                                         <Textarea
                                             value={menuForm.description}
                                             onChange={(e) => setMenuForm({ ...menuForm, description: e.target.value })}
-                                            placeholder="Describe el menú..."
                                             rows={3}
                                         />
                                     </div>

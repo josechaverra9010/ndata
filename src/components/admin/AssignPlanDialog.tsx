@@ -205,7 +205,6 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Buscar paciente por nombre o email..."
                 className="pl-10"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -325,7 +324,6 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
             </Label>
             <Textarea
               id="notes"
-              placeholder="Agrega cualquier observación o recomendación especial para este paciente..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}

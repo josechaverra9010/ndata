@@ -270,7 +270,6 @@ const Patients = () => {
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nombre, email..."
               className="pl-10 bg-card border-border"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -413,14 +412,14 @@ const Patients = () => {
                           <Plus className="mr-2 h-4 w-4" />
                           Crear plan nutricional
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => {
+                        {/*<DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
                           setSelectedPatient(patient);
                           setAssignOpen(true);
                         }}>
                           <Plus className="mr-2 h-4 w-4" />
                           Crear y asignar plan
-                        </DropdownMenuItem>
+                        </DropdownMenuItem>*/}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           onClick={(e) => handleDeleteClick(patient)}

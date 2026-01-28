@@ -20,12 +20,13 @@ import { useTheme } from "@/hooks/use-theme";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Pacientes", path: "/patients" },
-  // { icon: Apple, label: "Planes Nutricionales", path: "/meal-plans" },
+  { icon: Apple, label: "Planes Nutricionales", path: "/meal-plans" },
   { icon: ChefHat, label: "Recetas", path: "/recipes" },
   { icon: ChevronFirst, label: "Menú semanal", path: "/weekly-menus" },
-  { icon: Calendar, label: "Consultas", path: "/appointments" },
+  { icon: Calendar, label: "Citas", path: "/appointments" },
   { icon: TrendingUp, label: "Progreso", path: "/progress" },
   { icon: MessageSquare, label: "Mensajes", path: "/messages" },
+  { icon: MessageSquare, label: "Soporte", path: "/support" },
 ];
 
 const bottomMenuItems = [

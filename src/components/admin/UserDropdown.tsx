@@ -36,7 +36,7 @@ export function UserDropdown() {
   const userName = user?.name || "Usuario";
   // Assuming role map or just text
   const userRole = user?.role === 'superadmin' ? 'Super Administrador' : user?.role === 'admin' ? 'Nutricionista' : 'Paciente';
-  
+
   // Obtener avatar del usuario (puede venir como avatar o foto_perfil)
   const userAvatar = user?.avatar || (user as any)?.foto_perfil || "";
 
@@ -60,10 +60,10 @@ export function UserDropdown() {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleProfile} className="cursor-pointer">
+        {/*<DropdownMenuItem onClick={handleProfile} className="cursor-pointer">
           <User className="mr-2 h-4 w-4" />
           Mi Perfil
-        </DropdownMenuItem>
+        </DropdownMenuItem>*/}
         <DropdownMenuItem onClick={handleSettings} className="cursor-pointer">
           <Settings className="mr-2 h-4 w-4" />
           Configuración

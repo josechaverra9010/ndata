@@ -580,7 +580,6 @@ const AdminProgress = () => {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar paciente..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -1238,7 +1237,6 @@ const AdminProgress = () => {
                   id="metric-weight"
                   type="number"
                   step="0.1"
-                  placeholder="75.5"
                   value={metricForm.weight}
                   onChange={(e) => setMetricForm({ ...metricForm, weight: e.target.value })}
                 />
@@ -1250,7 +1248,6 @@ const AdminProgress = () => {
                     id="metric-fat"
                     type="number"
                     step="0.1"
-                    placeholder="25"
                     value={metricForm.body_fat}
                     onChange={(e) => setMetricForm({ ...metricForm, body_fat: e.target.value })}
                   />
@@ -1261,7 +1258,6 @@ const AdminProgress = () => {
                     id="metric-muscle"
                     type="number"
                     step="0.1"
-                    placeholder="35"
                     value={metricForm.muscle}
                     onChange={(e) => setMetricForm({ ...metricForm, muscle: e.target.value })}
                   />
@@ -1272,7 +1268,6 @@ const AdminProgress = () => {
                     id="metric-water"
                     type="number"
                     step="0.1"
-                    placeholder="55"
                     value={metricForm.water}
                     onChange={(e) => setMetricForm({ ...metricForm, water: e.target.value })}
                   />
@@ -1282,7 +1277,6 @@ const AdminProgress = () => {
                 <Label htmlFor="metric-notes">Notas</Label>
                 <Textarea
                   id="metric-notes"
-                  placeholder="Observaciones adicionales..."
                   value={metricForm.notes}
                   onChange={(e) => setMetricForm({ ...metricForm, notes: e.target.value })}
                 />
@@ -1301,7 +1295,6 @@ const AdminProgress = () => {
                     id="metric-waist"
                     type="number"
                     step="0.1"
-                    placeholder="0"
                     value={metricForm.waist}
                     onChange={(e) => setMetricForm({ ...metricForm, waist: e.target.value })}
                   />
@@ -1312,7 +1305,6 @@ const AdminProgress = () => {
                     id="metric-hip"
                     type="number"
                     step="0.1"
-                    placeholder="0"
                     value={metricForm.hip}
                     onChange={(e) => setMetricForm({ ...metricForm, hip: e.target.value })}
                   />
@@ -1323,7 +1315,6 @@ const AdminProgress = () => {
                     id="metric-chest"
                     type="number"
                     step="0.1"
-                    placeholder="0"
                     value={metricForm.chest}
                     onChange={(e) => setMetricForm({ ...metricForm, chest: e.target.value })}
                   />
@@ -1334,7 +1325,6 @@ const AdminProgress = () => {
                     id="metric-arm"
                     type="number"
                     step="0.1"
-                    placeholder="0"
                     value={metricForm.arm}
                     onChange={(e) => setMetricForm({ ...metricForm, arm: e.target.value })}
                   />
@@ -1364,7 +1354,6 @@ const AdminProgress = () => {
                 <Label htmlFor="achievement-title">Título *</Label>
                 <Input
                   id="achievement-title"
-                  placeholder="Primera semana completada"
                   value={achievementForm.title}
                   onChange={(e) => setAchievementForm({ ...achievementForm, title: e.target.value })}
                 />
@@ -1373,7 +1362,6 @@ const AdminProgress = () => {
                 <Label htmlFor="achievement-description">Descripción</Label>
                 <Textarea
                   id="achievement-description"
-                  placeholder="Detalles del logro alcanzado..."
                   value={achievementForm.description}
                   onChange={(e) => setAchievementForm({ ...achievementForm, description: e.target.value })}
                 />
@@ -1410,7 +1398,6 @@ const AdminProgress = () => {
                 <Label htmlFor="note-content">Nota *</Label>
                 <Textarea
                   id="note-content"
-                  placeholder="Escribe tus observaciones sobre el paciente..."
                   rows={5}
                   value={noteForm.note}
                   onChange={(e) => setNoteForm({ note: e.target.value })}

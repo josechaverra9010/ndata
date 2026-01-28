@@ -112,7 +112,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
               <Label htmlFor="name">Nombre del Plan *</Label>
               <Input
                 id="name"
-                placeholder="Ej: Plan Pérdida de Peso"
                 value={formData.name}
                 onChange={(e) => handleChange("name", e.target.value)}
                 required
@@ -123,7 +122,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
               <Label htmlFor="description">Descripción *</Label>
               <Textarea
                 id="description"
-                placeholder="Describe brevemente los objetivos y características del plan"
                 value={formData.description}
                 onChange={(e) => handleChange("description", e.target.value)}
                 rows={3}
@@ -172,7 +170,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
                 <Input
                   id="calories"
                   type="number"
-                  placeholder="1800"
                   value={formData.calories}
                   onChange={(e) => handleChange("calories", e.target.value)}
                   required
@@ -185,7 +182,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
                 <Label htmlFor="duration">Duración *</Label>
                 <Input
                   id="duration"
-                  placeholder="Ej: 12 semanas o Continuo"
                   value={formData.duration}
                   onChange={(e) => handleChange("duration", e.target.value)}
                   required
@@ -205,7 +201,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
                 <Input
                   id="protein"
                   type="number"
-                  placeholder="120"
                   value={formData.protein_target}
                   onChange={(e) => handleChange("protein_target", e.target.value)}
                   min="0"
@@ -217,7 +212,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
                 <Input
                   id="carbs"
                   type="number"
-                  placeholder="200"
                   value={formData.carbs_target}
                   onChange={(e) => handleChange("carbs_target", e.target.value)}
                   min="0"
@@ -229,7 +223,6 @@ export function NewPlanDialog({ open, onOpenChange, onCreatePlan }: NewPlanDialo
                 <Input
                   id="fat"
                   type="number"
-                  placeholder="50"
                   value={formData.fat_target}
                   onChange={(e) => handleChange("fat_target", e.target.value)}
                   min="0"

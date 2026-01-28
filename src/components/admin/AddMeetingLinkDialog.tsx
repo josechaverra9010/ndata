@@ -85,7 +85,6 @@ export function AddMeetingLinkDialog({
                         <Label htmlFor="link">URL de la reunión</Label>
                         <Input
                             id="link"
-                            placeholder="https://meet.google.com/..."
                             value={link}
                             onChange={(e) => setLink(e.target.value)}
                             disabled={loading}

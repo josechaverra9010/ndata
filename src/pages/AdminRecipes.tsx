@@ -299,7 +299,6 @@ export default function AdminRecipes() {
                       id="name"
                       name="name"
                       required
-                      placeholder="Ej: Ensalada César"
                       defaultValue={editingRecipe?.name}
                     />
                   </div>
@@ -308,7 +307,6 @@ export default function AdminRecipes() {
                     <Textarea
                       id="description"
                       name="description"
-                      placeholder="Breve descripción de la receta"
                       defaultValue={editingRecipe?.description}
                       rows={3}
                     />
@@ -348,7 +346,6 @@ export default function AdminRecipes() {
                     id="ingredients"
                     name="ingredients"
                     rows={5}
-                    placeholder="200g de pollo&#10;1 cebolla&#10;2 tomates"
                     defaultValue={editingRecipe?.ingredients.join("\n")}
                     required
                   />
@@ -360,7 +357,6 @@ export default function AdminRecipes() {
                     id="instructions"
                     name="instructions"
                     rows={5}
-                    placeholder="Precalentar el horno a 180°C&#10;Cortar las verduras&#10;Mezclar los ingredientes"
                     defaultValue={editingRecipe?.instructions.join("\n")}
                     required
                   />
@@ -371,7 +367,6 @@ export default function AdminRecipes() {
                   <Input
                     id="tags"
                     name="tags"
-                    placeholder="Vegetariano, Bajo en carbohidratos, Rápido"
                     defaultValue={editingRecipe?.tags.join(", ")}
                   />
                 </div>
@@ -416,7 +411,6 @@ export default function AdminRecipes() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar recetas..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
