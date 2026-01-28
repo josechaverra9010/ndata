@@ -44,13 +44,23 @@ class Base(DeclarativeBase):
 
 # Seguridad
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SECRET_KEY = os.getenv("SECRET_KEY", "TU_LLAVE_SECRETA_SUPER_SEGURA")
+
+# SECRET_KEY debe estar en variables de entorno en producción
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # Solo para desarrollo - CAMBIAR en producción
+    import warnings
+    warnings.warn("Using default SECRET_KEY - NOT SECURE FOR PRODUCTION!", UserWarning)
+    SECRET_KEY = "DEVELOPMENT_KEY_CHANGE_IN_PRODUCTION"
+
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # Crear carpeta para fotos si no existe
 UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None)
 
 # URL base para las fotos (usar variable de entorno o localhost por defecto)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
@@ -75,9 +85,27 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],  # Métodos específicos
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],  # Headers específicos
+    max_age=3600,  # Cache de preflight requests
 )
+
+# Middleware de seguridad para agregar headers HTTP seguros
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    # Prevenir MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Prevenir clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+    # Protección XSS (legacy, pero útil para navegadores antiguos)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # Forzar HTTPS en producción (comentar en desarrollo local)
+    if os.getenv("ENVIRONMENT") == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Content Security Policy básica
+    response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
+    return response
 
 def get_db():
     db = SessionLocal()
@@ -87,7 +115,113 @@ def get_db():
         db.close()
 
 # Montar la carpeta para que las fotos sean accesibles vía URL
+# Montar la carpeta para que las fotos sean accesibles vía URL
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# ==================== FUNCIONES DE SEGURIDAD ====================
+
+import html
+import re
+
+def sanitize_string(text: str, max_length: int = 1000) -> str:
+    """
+    Sanitizar texto para prevenir XSS y otros ataques de inyección
+    """
+    if not text:
+        return ""
+    
+    # Limitar longitud
+    text = str(text)[:max_length]
+    
+    # Escapar HTML
+    text = html.escape(text)
+    
+    # Remover caracteres potencialmente peligrosos
+    text = re.sub(r'[<>]', '', text)
+    
+    return text.strip()
+
+def get_absolute_url(relative_path: Optional[str]) -> Optional[str]:
+    """
+    Convertir ruta relativa a URL absoluta usando BASE_URL
+    """
+    if not relative_path:
+        return None
+    
+    # Si ya es una URL completa, devolverla tal cual
+    if relative_path.startswith(('http://', 'https://')):
+        return relative_path
+    
+    # Si es una ruta relativa, agregar BASE_URL
+    # Asegurar que no haya doble slash
+    base = BASE_URL.rstrip('/')
+    path = relative_path if relative_path.startswith('/') else f'/{relative_path}'
+    return f"{base}{path}"
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitizar nombres de archivo para prevenir path traversal
+    """
+    if not filename:
+        return "unnamed"
+    
+    # Remover path separators y caracteres peligrosos
+    filename = os.path.basename(filename)
+    filename = re.sub(r'[^\w\s.-]', '', filename)
+    filename = re.sub(r'\.\.+', '.', filename)  # Prevenir ../ attacks
+    
+    return filename[:255]  # Limitar longitud
+
+# Configuración de validación de archivos
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+async def validate_upload_file(file: UploadFile, allowed_extensions: set = ALLOWED_IMAGE_EXTENSIONS) -> UploadFile:
+    """
+    Validar archivo subido para prevenir ataques
+    """
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No se proporcionó archivo")
+    
+    # Validar extensión
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de archivo no permitido. Permitidos: {', '.join(allowed_extensions)}"
+        )
+    
+    # Leer contenido para validar tamaño
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE / 1024 / 1024}MB"
+        )
+    
+    # Volver al inicio del archivo para que pueda ser leído nuevamente
+    await file.seek(0)
+    
+    return file
+
+def validate_password_strength(password: str) -> bool:
+    """
+    Validar que la contraseña cumple requisitos mínimos de seguridad
+    """
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
+    
+    if not re.search(r'[A-Z]', password):
+        raise HTTPException(status_code=400, detail="La contraseña debe contener al menos una mayúscula")
+    
+    if not re.search(r'[a-z]', password):
+        raise HTTPException(status_code=400, detail="La contraseña debe contener al menos una minúscula")
+    
+    if not re.search(r'\d', password):
+        raise HTTPException(status_code=400, detail="La contraseña debe contener al menos un número")
+    
+    return True
+
 
 # ==================== FUNCIÓN DE ENVÍO DE EMAIL ====================
 
@@ -800,7 +934,7 @@ def login(request: LoginSchema, db: Session = Depends(get_db)):
             "role": user.role,
             "altura": user.altura,
             "peso_actual": user.peso_actual,
-            "avatar": user.foto_perfil
+            "avatar": get_absolute_url(user.foto_perfil)
         },
         "profile_complete": True
     }
@@ -1252,6 +1386,36 @@ class WeeklyMenuCompleteDB(Base):
     is_active = Column(Integer, default=1)
     created_at = Column(String(50))
     updated_at = Column(String(50))
+
+# ==================== SUPPORT TICKET MODEL ====================
+
+class SupportTicketDB(Base):
+    __tablename__ = "support_tickets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    category = Column(String(50), nullable=False)  # technical, nutrition, billing, other
+    subject = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    status = Column(String(20), default="open")  # open, in_progress, resolved, closed
+    priority = Column(String(20), default="normal")  # low, normal, high
+    admin_response = Column(Text, nullable=True)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # quien respondió
+    created_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    resolved_at = Column(String(50), nullable=True)
+
+class FAQDB(Base):
+    __tablename__ = "faqs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String(50), nullable=False)  # nutrition, app_usage, plans, billing, general
+    question = Column(String(500), nullable=False)
+    answer = Column(Text, nullable=False)
+    order = Column(Integer, default=0)  # para ordenar las FAQs
+    is_active = Column(Boolean, default=True)
+    created_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -2014,7 +2178,7 @@ def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
         results.append({
             "id": p.id,
             "name": f"{p.nombres} {p.apellidos}",
-            "avatar": p.foto_perfil,
+            "avatar": get_absolute_url(p.foto_perfil),
             "email": p.email,
             "plan": plan_name,
             "status": p.status,
@@ -2037,7 +2201,7 @@ def get_upcoming_appointments(limit: int = 5, db: Session = Depends(get_db)):
     results = []
     for appt in appointments:
         patient = db.query(UserDB).filter(UserDB.id == appt.patient_id).first()
-        avatar = patient.foto_perfil if patient else None
+        avatar = get_absolute_url(patient.foto_perfil) if patient else None
         
         # Formatear fecha para label (ej: "Hoy", "Mañana" o "12 Oct")
         date_obj = appt.date # es date object
@@ -6470,6 +6634,41 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
         AppointmentDB.status != "cancelada"
     ).order_by(AppointmentDB.date.asc(), AppointmentDB.time.asc()).first()
     
+    # 6. Calcular distribución de macronutrientes del plan activo
+    macronutrients = {
+        "protein_percentage": 30,
+        "carbs_percentage": 45,
+        "fat_percentage": 25,
+        "protein_grams": 0,
+        "carbs_grams": 0,
+        "fat_grams": 0
+    }
+    
+    # Obtener plan activo del paciente
+    active_plan_assignment = db.query(PatientMealPlanDB).filter(
+        PatientMealPlanDB.patient_id == patient_id,
+        PatientMealPlanDB.status == "active"
+    ).first()
+    
+    if active_plan_assignment:
+        # Buscar el plan nutricional
+        plan = db.query(MealPlanDB).filter(
+            MealPlanDB.id == active_plan_assignment.meal_plan_id
+        ).first()
+        
+        if plan:
+            # Calcular gramos basados en calorías totales
+            # 1g proteína = 4 kcal, 1g carbohidratos = 4 kcal, 1g grasa = 9 kcal
+            total_calories = plan.calories or total_calories_target or 2000
+            
+            protein_calories = total_calories * (macronutrients["protein_percentage"] / 100)
+            carbs_calories = total_calories * (macronutrients["carbs_percentage"] / 100)
+            fat_calories = total_calories * (macronutrients["fat_percentage"] / 100)
+            
+            macronutrients["protein_grams"] = round(protein_calories / 4, 1)
+            macronutrients["carbs_grams"] = round(carbs_calories / 4, 1)
+            macronutrients["fat_grams"] = round(fat_calories / 9, 1)
+    
     next_appointment_data = None
     if next_appointment:
         # Intentar obtener el nombre real del nutricionista (admin)
@@ -6528,7 +6727,8 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
                 "percentage": weekly_adherence,
                 "change": adherence_change,
                 "trend": "up" if adherence_change > 0 else "down" if adherence_change < 0 else "stable"
-            }
+            },
+            "macronutrients": macronutrients
         },
         "today_meals": today_meals,
         "week_progress": week_progress,
@@ -7813,6 +8013,62 @@ def _internal_initialize_meals(patient_id: int, meal_date: date, db: Session, ac
     
     db.commit()
     return True
+
+@app.get("/api/dashboard/top-patients-progress")
+def get_top_patients_progress(limit: int = 3, db: Session = Depends(get_db)):
+    """
+    Obtener los pacientes con mejor progreso para el dashboard del admin
+    """
+    # Obtener todos los pacientes activos
+    patients = db.query(UserDB).filter(UserDB.role == "patient").all()
+    
+    patient_progress_list = []
+    
+    for patient in patients:
+        # Obtener plan activo
+        active_plan = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.patient_id == patient.id,
+            PatientMealPlanDB.status == "active"
+        ).first()
+        
+        if not active_plan:
+            continue
+        
+        # Obtener plan nutricional
+        meal_plan = db.query(MealPlanDB).filter(
+            MealPlanDB.id == active_plan.meal_plan_id
+        ).first()
+        
+        # Calcular progreso
+        peso_inicial = patient.peso_inicial or patient.peso_actual
+        peso_actual = patient.peso_actual
+        peso_objetivo = patient.peso_objetivo
+        
+        if not peso_inicial or not peso_actual or not peso_objetivo:
+            continue
+        
+        # Calcular cambio de peso y porcentaje de meta
+        peso_cambio = peso_inicial - peso_actual
+        meta_total = abs(peso_inicial - peso_objetivo)
+        progreso_porcentaje = int((abs(peso_cambio) / meta_total * 100)) if meta_total > 0 else 0
+        
+        # Limitar a 100%
+        progreso_porcentaje = min(progreso_porcentaje, 100)
+        
+        patient_progress_list.append({
+            "id": patient.id,
+            "name": f"{patient.nombres} {patient.apellidos}",
+            "plan_name": meal_plan.name if meal_plan else "Plan Nutricional",
+            "weight_change": round(peso_cambio, 1),
+            "progress_percentage": progreso_porcentaje,
+            "avatar": get_absolute_url(patient.foto_perfil)
+        })
+    
+    # Ordenar por progreso descendente y tomar los top N
+    patient_progress_list.sort(key=lambda x: x["progress_percentage"], reverse=True)
+    top_patients = patient_progress_list[:limit]
+    
+    return top_patients
 
 # ==================== ENDPOINTS DE ACCIONES ====================
 
@@ -9955,9 +10211,102 @@ def debug_patient_plan(patient_id: int, db: Session = Depends(get_db)):
             "thursday": weekly_menu.thursday,
             "friday": weekly_menu.friday,
             "saturday": weekly_menu.saturday,
-            "sunday": weekly_menu.sunday
         }
     }
+
+
+# ==================== SUPPORT & HELP ENDPOINTS ====================
+
+@app.post("/api/support/ticket")
+def create_support_ticket(patient_id: int, category: str, subject: str, message: str, priority: str = "normal", db: Session = Depends(get_db)):
+    patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    new_ticket = SupportTicketDB(patient_id=patient_id, category=category, subject=subject, message=message, priority=priority, status="open")
+    db.add(new_ticket)
+    db.commit()
+    db.refresh(new_ticket)
+    return {"success": True, "message": "Ticket creado exitosamente", "ticket_id": new_ticket.id}
+
+@app.get("/api/patient/{patient_id}/support/tickets")
+def get_patient_tickets(patient_id: int, db: Session = Depends(get_db)):
+    tickets = db.query(SupportTicketDB).filter(SupportTicketDB.patient_id == patient_id).order_by(SupportTicketDB.created_at.desc()).all()
+    return [{"id": t.id, "category": t.category, "subject": t.subject, "message": t.message, "status": t.status, "priority": t.priority, "admin_response": t.admin_response, "created_at": t.created_at, "updated_at": t.updated_at, "resolved_at": t.resolved_at} for t in tickets]
+
+@app.get("/api/support/tickets")
+def get_all_tickets(status: str = None, category: str = None, priority: str = None, db: Session = Depends(get_db)):
+    query = db.query(SupportTicketDB)
+    if status:
+        query = query.filter(SupportTicketDB.status == status)
+    if category:
+        query = query.filter(SupportTicketDB.category == category)
+    if priority:
+        query = query.filter(SupportTicketDB.priority == priority)
+    tickets = query.order_by(SupportTicketDB.created_at.desc()).all()
+    result = []
+    for t in tickets:
+        patient = db.query(UserDB).filter(UserDB.id == t.patient_id).first()
+        result.append({"id": t.id, "patient_id": t.patient_id, "patient_name": f"{patient.nombres} {patient.apellidos}" if patient else "Desconocido", "patient_email": patient.email if patient else "", "category": t.category, "subject": t.subject, "message": t.message, "status": t.status, "priority": t.priority, "admin_response": t.admin_response, "created_at": t.created_at, "updated_at": t.updated_at, "resolved_at": t.resolved_at})
+    return result
+
+@app.put("/api/support/ticket/{ticket_id}")
+def update_support_ticket(ticket_id: int, status: str = None, admin_response: str = None, admin_id: int = None, priority: str = None, db: Session = Depends(get_db)):
+    ticket = db.query(SupportTicketDB).filter(SupportTicketDB.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    if status:
+        ticket.status = status
+        if status in ["resolved", "closed"]:
+            ticket.resolved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if admin_response:
+        ticket.admin_response = admin_response
+    if admin_id:
+        ticket.admin_id = admin_id
+    if priority:
+        ticket.priority = priority
+    ticket.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    return {"success": True, "message": "Ticket actualizado exitosamente"}
+
+@app.get("/api/support/faqs")
+def get_faqs(category: str = None, db: Session = Depends(get_db)):
+    query = db.query(FAQDB).filter(FAQDB.is_active == True)
+    if category:
+        query = query.filter(FAQDB.category == category)
+    faqs = query.order_by(FAQDB.order.asc(), FAQDB.id.asc()).all()
+    return [{"id": f.id, "category": f.category, "question": f.question, "answer": f.answer, "order": f.order} for f in faqs]
+
+@app.post("/api/support/faq")
+def create_faq(category: str, question: str, answer: str, order: int = 0, db: Session = Depends(get_db)):
+    new_faq = FAQDB(category=category, question=question, answer=answer, order=order)
+    db.add(new_faq)
+    db.commit()
+    db.refresh(new_faq)
+    return {"success": True, "message": "FAQ creada exitosamente", "faq_id": new_faq.id}
+
+@app.put("/api/support/faq/{faq_id}")
+def update_faq(faq_id: int, category: str = None, question: str = None, answer: str = None, order: int = None, is_active: bool = None, db: Session = Depends(get_db)):
+    faq = db.query(FAQDB).filter(FAQDB.id == faq_id).first()
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ no encontrada")
+    if category is not None: faq.category = category
+    if question is not None: faq.question = question
+    if answer is not None: faq.answer = answer
+    if order is not None: faq.order = order
+    if is_active is not None: faq.is_active = is_active
+    faq.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    return {"success": True, "message": "FAQ actualizada exitosamente"}
+
+@app.delete("/api/support/faq/{faq_id}")
+def delete_faq(faq_id: int, db: Session = Depends(get_db)):
+    faq = db.query(FAQDB).filter(FAQDB.id == faq_id).first()
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ no encontrada")
+    faq.is_active = False
+    faq.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    return {"success": True, "message": "FAQ eliminada exitosamente"}
 
 
 if __name__ == "__main__":

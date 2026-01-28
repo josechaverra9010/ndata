@@ -201,7 +201,6 @@ export function AssignPlanToPatientDialog({
                         <Label htmlFor="notes">Notas (Opcional)</Label>
                         <Textarea
                             id="notes"
-                            placeholder="Instrucciones especiales..."
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             rows={3}

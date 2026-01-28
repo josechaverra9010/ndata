@@ -171,7 +171,6 @@ export default function PatientMessages() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -270,7 +269,6 @@ export default function PatientMessages() {
                       <Image className="h-4 w-4 lg:h-5 lg:w-5" />
                     </Button>
                     <Input
-                      placeholder="Escribe un mensaje..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}

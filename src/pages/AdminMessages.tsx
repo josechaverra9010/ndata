@@ -318,7 +318,6 @@ export default function AdminMessages() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
@@ -498,7 +497,6 @@ export default function AdminMessages() {
                       <ImageIcon className="h-5 w-5" />
                     </Button>
                     <Input
-                      placeholder="Escribe un mensaje..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyPress={handleKeyPress}

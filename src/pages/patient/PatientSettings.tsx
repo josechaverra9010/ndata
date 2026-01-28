@@ -439,7 +439,6 @@ export default function PatientSettings() {
                         <Input
                           id="currentPassword"
                           type={showPassword ? "text" : "password"}
-                          placeholder="••••••••"
                           value={passwordData.currentPassword}
                           onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
                         />
@@ -457,7 +456,6 @@ export default function PatientSettings() {
                       <Input
                         id="newPassword"
                         type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
                         value={passwordData.newPassword}
                         onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                       />
@@ -467,7 +465,6 @@ export default function PatientSettings() {
                       <Input
                         id="confirmPassword"
                         type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
                         value={passwordData.confirmPassword}
                         onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                       />

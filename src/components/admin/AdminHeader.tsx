@@ -29,7 +29,6 @@ export function AdminHeader() {
         <div className="relative hidden w-64 sm:block lg:w-96">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar pacientes, planes..."
             className="pl-10 bg-muted/50 border-0 focus-visible:ring-primary/20"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

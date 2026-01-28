@@ -284,7 +284,6 @@ export default function SuperadminUsers() {
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por nombre o email..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -407,7 +406,6 @@ export default function SuperadminUsers() {
               <Input
                 value={newUser.name}
                 onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                placeholder="Juan Pérez"
               />
             </div>
             <div className="space-y-2">
@@ -416,7 +414,6 @@ export default function SuperadminUsers() {
                 type="email"
                 value={newUser.email}
                 onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                placeholder="juan@email.com"
               />
             </div>
             <div className="space-y-2">
@@ -424,7 +421,6 @@ export default function SuperadminUsers() {
               <Input
                 value={newUser.phone}
                 onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
-                placeholder="3001234567"
               />
             </div>
             <div className="space-y-2">
@@ -433,7 +429,6 @@ export default function SuperadminUsers() {
                 type="password"
                 value={newUser.password}
                 onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                placeholder="Dejar vacío para generar automáticamente"
               />
             </div>
             <div className="space-y-2">

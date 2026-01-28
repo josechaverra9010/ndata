@@ -171,7 +171,6 @@ export function Recordatorio24hForm({ patientId, onSuccess, onCancel }: Recordat
                             <Label htmlFor="observaciones">Observaciones Adicionales</Label>
                             <Textarea
                                 id="observaciones"
-                                placeholder="Notas adicionales sobre la ingesta, hidratación, etc."
                                 value={formData.observaciones}
                                 onChange={(e) => handleChange("observaciones", e.target.value)}
                                 rows={3}

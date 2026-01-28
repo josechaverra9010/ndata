@@ -376,7 +376,6 @@ export default function PatientMeals() {
             <div className="relative flex-1 sm:w-48 lg:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Buscar..."
                 className="pl-10 text-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -612,7 +611,6 @@ export default function PatientMeals() {
                 <Label htmlFor="name">Nombre del alimento</Label>
                 <Input
                   id="name"
-                  placeholder="Ej: Huevo cocido"
                   value={newFood.name}
                   onChange={(e) => setNewFood({ ...newFood, name: e.target.value })}
                 />
@@ -621,7 +619,6 @@ export default function PatientMeals() {
                 <Label htmlFor="portion">Porción / Cantidad</Label>
                 <Input
                   id="portion"
-                  placeholder="Ej: 2 unidades"
                   value={newFood.portion_size}
                   onChange={(e) => setNewFood({ ...newFood, portion_size: e.target.value })}
                 />

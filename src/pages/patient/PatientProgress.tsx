@@ -206,7 +206,6 @@ export default function PatientProgress() {
                 <Label>Peso (kg) *</Label>
                 <Input
                   type="number"
-                  placeholder="0.0"
                   value={metricForm.weight}
                   onChange={(e) => setMetricForm({ ...metricForm, weight: e.target.value })}
                 />
@@ -218,7 +217,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Grasa %</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.body_fat}
                   onChange={(e) => setMetricForm({ ...metricForm, body_fat: e.target.value })}
                 />
@@ -227,7 +225,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Músculo %</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.muscle}
                   onChange={(e) => setMetricForm({ ...metricForm, muscle: e.target.value })}
                 />
@@ -236,7 +233,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Agua %</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.water}
                   onChange={(e) => setMetricForm({ ...metricForm, water: e.target.value })}
                 />
@@ -254,7 +250,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Cintura</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.waist}
                   onChange={(e) => setMetricForm({ ...metricForm, waist: e.target.value })}
                 />
@@ -263,7 +258,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Cadera</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.hip}
                   onChange={(e) => setMetricForm({ ...metricForm, hip: e.target.value })}
                 />
@@ -272,7 +266,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Pecho</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.chest}
                   onChange={(e) => setMetricForm({ ...metricForm, chest: e.target.value })}
                 />
@@ -281,7 +274,6 @@ export default function PatientProgress() {
                 <Label className="text-xs">Brazo</Label>
                 <Input
                   type="number"
-                  placeholder="0"
                   value={metricForm.arm}
                   onChange={(e) => setMetricForm({ ...metricForm, arm: e.target.value })}
                 />
@@ -291,7 +283,6 @@ export default function PatientProgress() {
             <div className="space-y-2">
               <Label>Notas</Label>
               <Textarea
-                placeholder="¿Cómo te sentiste hoy?"
                 value={metricForm.notes}
                 onChange={(e) => setMetricForm({ ...metricForm, notes: e.target.value })}
               />

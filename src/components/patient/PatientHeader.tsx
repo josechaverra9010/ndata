@@ -240,10 +240,10 @@ export function PatientHeader() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/paciente/perfil')}>
+            {/*<DropdownMenuItem onClick={() => navigate('/paciente/perfil')}>
               <User className="mr-2 h-4 w-4" />
               <span>Mi Perfil</span>
-            </DropdownMenuItem>
+            </DropdownMenuItem>*/}
             <DropdownMenuItem onClick={() => navigate('/paciente/configuracion')}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Configuración</span>

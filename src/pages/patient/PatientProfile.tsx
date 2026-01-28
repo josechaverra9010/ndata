@@ -226,10 +226,10 @@ export default function PatientProfile() {
     <PatientLayout>
       <div className="space-y-4 lg:space-y-6 animate-fade-in">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+          {/*<div>
             <h1 className="text-xl lg:text-3xl font-bold text-foreground">Mi Perfil</h1>
             <p className="text-sm lg:text-base text-muted-foreground mt-1">Gestiona tu información personal y completa tus evaluaciones</p>
-          </div>
+          </div>*/}
           <Button onClick={handleSave} disabled={loading} className="gap-2 w-full sm:w-auto gradient-primary">
             <Save className="h-4 w-4" />
             {loading ? "Guardando..." : "Guardar Perfil"}
@@ -332,7 +332,7 @@ export default function PatientProfile() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="direccion">Dirección</Label>
-                    <Input id="direccion" value={formData.direccion} onChange={handleInputChange} placeholder="Calle, Barrio, Ciudad" />
+                    <Input id="direccion" value={formData.direccion} onChange={handleInputChange} />
                   </div>
                 </CardContent>
               </Card>
@@ -394,11 +394,11 @@ export default function PatientProfile() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="objetivos_salud">Tus Objetivos Principales</Label>
-                    <Textarea id="objetivos_salud" value={formData.objetivos_salud} onChange={handleInputChange} rows={3} placeholder="¿Qué esperas lograr con tu plan nutricional?" />
+                    <Textarea id="objetivos_salud" value={formData.objetivos_salud} onChange={handleInputChange} rows={3} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="condiciones_medicas">Condiciones o Diagnósticos Médicos</Label>
-                    <Textarea id="condiciones_medicas" value={formData.condiciones_medicas} onChange={handleInputChange} rows={3} placeholder="Diabetes, Hipertensión, etc." />
+                    <Textarea id="condiciones_medicas" value={formData.condiciones_medicas} onChange={handleInputChange} rows={3} />
                   </div>
                 </CardContent>
               </Card>

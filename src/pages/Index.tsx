@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { RecentPatients } from "@/components/admin/RecentPatients";
 import { UpcomingAppointments } from "@/components/admin/UpcomingAppointments";
 import { NutritionChart } from "@/components/admin/NutritionChart";
-import { QuickActions } from "@/components/admin/QuickActions";
 import { Users, Apple, Calendar, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -65,6 +64,7 @@ const Index = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
+  const [topPatients, setTopPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,16 +73,18 @@ const Index = () => {
       try {
         console.log('🔄 Iniciando fetch de datos del dashboard...');
 
-        // Fetch stats, pacientes y citas en paralelo
-        const [statsResponse, patientsResponse, appointmentsResponse] = await Promise.all([
+        // Fetch stats, pacientes, citas y top progress en paralelo
+        const [statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse] = await Promise.all([
           fetch(`${API_URL}/dashboard/stats`),
           fetch(`${API_URL}/dashboard/recent-patients?limit=5`),
-          fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`)
+          fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`),
+          fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`)
         ]);
 
         console.log('📊 Stats response status:', statsResponse.status);
         console.log('👥 Patients response status:', patientsResponse.status);
         console.log('📅 Appointments response status:', appointmentsResponse.status);
+        console.log('🏆 Top patients response status:', topPatientsResponse.status);
 
         if (!statsResponse.ok) {
           throw new Error(`Error al cargar las estadísticas: ${statsResponse.status}`);
@@ -93,22 +95,26 @@ const Index = () => {
         if (!appointmentsResponse.ok) {
           throw new Error(`Error al cargar citas: ${appointmentsResponse.status}`);
         }
+        if (!topPatientsResponse.ok) {
+          throw new Error(`Error al cargar top pacientes: ${topPatientsResponse.status}`);
+        }
 
-        const [statsData, patientsData, appointmentsData] = await Promise.all([
+        const [statsData, patientsData, appointmentsData, topPatientsData] = await Promise.all([
           statsResponse.json(),
           patientsResponse.json(),
-          appointmentsResponse.json()
+          appointmentsResponse.json(),
+          topPatientsResponse.json()
         ]);
 
         console.log('✅ Stats data:', statsData);
         console.log('✅ Patients data:', patientsData);
         console.log('✅ Appointments data:', appointmentsData);
-        console.log('📝 Número de pacientes recibidos:', patientsData.length);
-        console.log('📝 Número de citas recibidas:', appointmentsData.length);
+        console.log('✅ Top patients data:', topPatientsData);
 
         setStats(statsData);
         setRecentPatients(patientsData);
         setUpcomingAppointments(appointmentsData);
+        setTopPatients(topPatientsData);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Error desconocido";
         console.error('❌ Error fetching dashboard data:', errorMessage);
@@ -130,7 +136,8 @@ const Index = () => {
     console.log('  - Stats:', stats);
     console.log('  - Patients count:', recentPatients.length);
     console.log('  - Appointments count:', upcomingAppointments.length);
-  }, [loading, error, stats, recentPatients, upcomingAppointments]);
+    console.log('  - Top patients count:', topPatients.length);
+  }, [loading, error, stats, recentPatients, upcomingAppointments, topPatients]);
 
   // Mostrar estado de carga
   if (loading) {
@@ -213,15 +220,80 @@ const Index = () => {
           />
         </div>
 
-        {/* Main content grid */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Chart - 2 columns */}
-          <div className="lg:col-span-2">
-            <NutritionChart />
-          </div>
-          {/* Quick Actions - 1 column */}
-          <div>
-            <QuickActions />
+        {/* Main content grid - Two Charts 50/50 */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Nutrition Chart */}
+          <NutritionChart />
+
+          {/* Patient Progress Chart */}
+          <div className="rounded-lg border border-border bg-card shadow-card">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  Progreso de Pacientes
+                </h3>
+              </div>
+              <div className="space-y-4">
+                {/* Dynamic Top Performers */}
+                {topPatients.length > 0 ? (
+                  topPatients.map((patient, index) => {
+                    const colors = [
+                      { bg: 'from-green-500 to-emerald-600', text: 'text-green-600', bar: 'from-green-500 to-emerald-500' },
+                      { bg: 'from-blue-500 to-cyan-600', text: 'text-blue-600', bar: 'from-blue-500 to-cyan-500' },
+                      { bg: 'from-amber-500 to-orange-600', text: 'text-amber-600', bar: 'from-amber-500 to-orange-500' }
+                    ];
+                    const color = colors[index] || colors[2];
+
+                    return (
+                      <div key={patient.id} className="space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-3">
+                            <div className={`h-10 w-10 rounded-full bg-gradient-to-br ${color.bg} flex items-center justify-center text-white font-bold text-xs`}>
+                              {index + 1}
+                            </div>
+                            <div>
+                              <p className="font-medium text-foreground">{patient.name}</p>
+                              <p className="text-xs text-muted-foreground">{patient.plan_name}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-semibold ${color.text}`}>
+                              {patient.weight_change > 0 ? '+' : ''}{patient.weight_change} kg
+                            </p>
+                            <p className="text-xs text-muted-foreground">{patient.progress_percentage}% meta</p>
+                          </div>
+                        </div>
+                        <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={`h-full bg-gradient-to-r ${color.bar} transition-all duration-500`}
+                            style={{ width: `${patient.progress_percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p className="text-sm">No hay datos de progreso disponibles</p>
+                  </div>
+                )}
+
+                {/* Summary */}
+                <div className="pt-4 mt-4 border-t border-border">
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                      <p className="text-2xl font-bold text-foreground">{stats?.progress.average || 0}%</p>
+                      <p className="text-xs text-muted-foreground">Progreso Promedio</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-foreground">{stats?.patients.total || 0}</p>
+                      <p className="text-xs text-muted-foreground">Pacientes Activos</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

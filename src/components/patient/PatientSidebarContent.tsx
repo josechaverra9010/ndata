@@ -8,7 +8,8 @@ import {
   TrendingUp,
   User,
   Utensils,
-  ChefHat
+  ChefHat,
+  HelpCircle
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -23,6 +24,7 @@ const menuItems = [
   { icon: TrendingUp, label: "Mi Progreso", path: "/patient/progress" },
   { icon: Calendar, label: "Mis Citas", path: "/patient/appointments" },
   { icon: MessageSquare, label: "Mensajes", path: "/patient/messages" },
+  { icon: HelpCircle, label: "Ayuda", path: "/patient/help" },
 ];
 
 const bottomMenuItems = [

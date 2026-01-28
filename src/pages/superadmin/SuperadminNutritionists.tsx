@@ -324,7 +324,6 @@ export default function SuperadminNutritionists() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar nutricionistas..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -451,7 +450,6 @@ export default function SuperadminNutritionists() {
               <Input
                 value={inviteData.name}
                 onChange={(e) => setInviteData({ ...inviteData, name: e.target.value })}
-                placeholder="Dra. María López"
               />
             </div>
             <div className="space-y-2">
@@ -460,7 +458,6 @@ export default function SuperadminNutritionists() {
                 type="email"
                 value={inviteData.email}
                 onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
-                placeholder="maria.lopez@email.com"
               />
             </div>
             <div className="space-y-2">
@@ -468,7 +465,6 @@ export default function SuperadminNutritionists() {
               <Input
                 value={inviteData.specialty}
                 onChange={(e) => setInviteData({ ...inviteData, specialty: e.target.value })}
-                placeholder="Nutrición Clínica"
               />
             </div>
           </div>
@@ -641,7 +637,6 @@ export default function SuperadminNutritionists() {
               <Input
                 value={editData.name || ""}
                 onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                placeholder="Dra. María López"
               />
             </div>
             <div className="space-y-2">
@@ -650,7 +645,6 @@ export default function SuperadminNutritionists() {
                 type="email"
                 value={editData.email || ""}
                 onChange={(e) => setEditData({ ...editData, email: e.target.value })}
-                placeholder="maria.lopez@email.com"
               />
             </div>
             <div className="space-y-2">
@@ -658,7 +652,6 @@ export default function SuperadminNutritionists() {
               <Input
                 value={editData.phone || ""}
                 onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
-                placeholder="3001234567"
               />
             </div>
             <div className="space-y-2">
@@ -666,7 +659,6 @@ export default function SuperadminNutritionists() {
               <Input
                 value={editData.specialty || ""}
                 onChange={(e) => setEditData({ ...editData, specialty: e.target.value })}
-                placeholder="Nutrición Clínica"
               />
             </div>
             <div className="space-y-2">
@@ -674,7 +666,6 @@ export default function SuperadminNutritionists() {
               <Input
                 value={editData.license || ""}
                 onChange={(e) => setEditData({ ...editData, license: e.target.value })}
-                placeholder="LIC-12345"
               />
             </div>
             <div className="space-y-2">
@@ -682,7 +673,6 @@ export default function SuperadminNutritionists() {
               <Textarea
                 value={editData.bio || ""}
                 onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
-                placeholder="Breve descripción profesional..."
                 rows={4}
               />
             </div>

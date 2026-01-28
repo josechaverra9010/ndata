@@ -318,7 +318,6 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
               <Label htmlFor="notes">Notas (opcional)</Label>
               <Textarea
                 id="notes"
-                placeholder="Agrega notas sobre la cita..."
                 value={formData.notes}
                 onChange={(e) =>
                   setFormData({ ...formData, notes: e.target.value })

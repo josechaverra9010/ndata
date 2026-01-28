@@ -1053,7 +1053,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         handleChange("peso_actual", e.target.value);
                         calculateIMC(e.target.value, formData.altura);
                       }}
-                      placeholder="70.0"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1069,7 +1068,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         handleChange("altura", e.target.value);
                         calculateIMC(formData.peso_actual, e.target.value);
                       }}
-                      placeholder="170"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1084,7 +1082,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         handleChange("edad", e.target.value);
                         calculateTMB(formData.peso_objetivo || formData.peso_actual, e.target.value, formData.genero);
                       }}
-                      placeholder="30"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1118,7 +1115,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                           handleChange("factor_actividad", e.target.value);
                           calculateRequerimientoEnergetico(formData.tmb, e.target.value);
                         }}
-                        placeholder="1.53"
                       />
                       <Select
                         disabled
@@ -1297,7 +1293,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.proteinas_gramos_f2}
                             readOnly
                             className="h-8 text-center text-sm bg-muted"
-                            placeholder="127.5"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1307,7 +1302,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.proteinas_calorias_f2}
                             readOnly
                             className="h-8 text-center text-sm bg-muted"
-                            placeholder="510"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1320,7 +1314,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                               setTimeout(() => calculateFase2Values(), 0);
                             }}
                             className="h-8 text-center text-sm bg-white"
-                            placeholder="20"
                           />
                         </td>
                         <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
@@ -1335,7 +1328,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 setTimeout(() => calculateFase2Values(), 0);
                               }}
                               className="h-6 text-xs bg-white"
-                              placeholder="50"
                             />
                           </div>
                         </td>
@@ -1354,7 +1346,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                               value={formData.proteinas_avb_gramos}
                               readOnly
                               className="h-6 text-xs bg-muted"
-                              placeholder="63.8"
                             />
                           </div>
                         </td>
@@ -1376,7 +1367,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 setTimeout(() => calculateFase2Values(), 0);
                               }}
                               className="h-6 text-xs bg-white"
-                              placeholder="1.7"
                             />
                           </div>
                         </td>
@@ -1394,7 +1384,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.grasas_gramos_f2}
                             readOnly
                             className="h-8 text-center text-sm bg-muted"
-                            placeholder="75.9"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1404,7 +1393,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.grasas_calorias_f2}
                             readOnly
                             className="h-8 text-center text-sm bg-muted"
-                            placeholder="683"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1417,7 +1405,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                               setTimeout(() => calculateFase2Values(), 0);
                             }}
                             className="h-8 text-center text-sm bg-white"
-                            placeholder="25"
                           />
                         </td>
                         <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
@@ -1451,7 +1438,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 setTimeout(() => calculateFase2Values(), 0);
                               }}
                               className="h-6 text-xs bg-white border-teal-200"
-                              placeholder="8"
                             />
                           </div>
                         </td>
@@ -1489,7 +1475,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                               value={formData.grasas_gp_gramos}
                               readOnly
                               className="h-6 text-xs bg-muted"
-                              placeholder="25.0"
                             />
                           </div>
                         </td>
@@ -1511,7 +1496,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 setTimeout(() => calculateFase2Values(), 0);
                               }}
                               className="h-6 text-xs bg-white"
-                              placeholder="8"
                             />
                           </div>
                         </td>
@@ -1532,7 +1516,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 handleChange("grasas_colesterol", e.target.value);
                               }}
                               className="h-6 text-xs bg-white"
-                              placeholder="300"
                             />
                           </div>
                         </td>
@@ -1550,7 +1533,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.cho_gramos_f2}
                             readOnly
                             className="h-8 text-center text-sm bg-muted"
-                            placeholder="382.5"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1560,7 +1542,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.cho_calorias_f2}
                             readOnly
                             className="h-8 text-center text-sm bg-muted"
-                            placeholder="1530"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1573,7 +1554,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                               setTimeout(() => calculateFase2Values(), 0);
                             }}
                             className="h-8 text-center text-sm bg-white"
-                            placeholder="60"
                           />
                         </td>
                         <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
@@ -1588,7 +1568,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 setTimeout(() => calculateFase2Values(), 0);
                               }}
                               className="h-6 text-xs bg-white"
-                              placeholder="10"
                             />
                           </div>
                         </td>

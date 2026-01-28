@@ -26,6 +26,8 @@ import PatientMeals from "./pages/patient/PatientMeals";
 import PatientProfile from "./pages/patient/PatientProfile";
 import PatientSettings from "./pages/patient/PatientSettings";
 import PatientRecipes from "./pages/patient/PatientRecipes";
+import PatientHelp from "./pages/patient/PatientHelp";
+import AdminSupport from "./pages/AdminSupport";
 import SuperadminDashboard from "./pages/superadmin/SuperadminDashboard";
 import SuperadminUsers from "./pages/superadmin/SuperadminUsers";
 import SuperadminNutritionists from "./pages/superadmin/SuperadminNutritionists";
@@ -59,6 +61,7 @@ const App = () => (
               <Route path="/progress" element={<ProtectedRoute allowedRoles={['admin']}><AdminProgress /></ProtectedRoute>} />
               <Route path="/weekly-menus" element={<ProtectedRoute allowedRoles={['admin']}><AdminWeeklyMenus /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />
+              <Route path="/support" element={<ProtectedRoute allowedRoles={['admin']}><AdminSupport /></ProtectedRoute>} />
 
               {/* Patient Routes */}
               <Route path="/patient" element={<ProtectedRoute allowedRoles={['patient']}><PatientDashboard /></ProtectedRoute>} />
@@ -69,6 +72,7 @@ const App = () => (
               <Route path="/patient/profile" element={<ProtectedRoute allowedRoles={['patient']}><PatientProfile /></ProtectedRoute>} />
               <Route path="/patient/settings" element={<ProtectedRoute allowedRoles={['patient']}><PatientSettings /></ProtectedRoute>} />
               <Route path="/patient/recipes" element={<ProtectedRoute allowedRoles={['patient']}><PatientRecipes /></ProtectedRoute>} />
+              <Route path="/patient/help" element={<ProtectedRoute allowedRoles={['patient']}><PatientHelp /></ProtectedRoute>} />
 
               {/* SuperAdmin Routes */}
               <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminDashboard /></ProtectedRoute>} />
