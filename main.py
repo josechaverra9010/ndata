@@ -19,11 +19,23 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
 import copy
+from storage_utils import storage_manager
 
 # Cargar variables de entorno
 load_dotenv()
 
 from sqlalchemy import func, and_
+
+# Helper para generar URLs de avatares
+def get_avatar_url(foto_perfil: Optional[str]) -> Optional[str]:
+    """
+    Convierte el nombre del archivo a URL pública.
+    En GCS genera URL firmada fresca (5 min).
+    En local retorna /media/filename.
+    """
+    if not foto_perfil:
+        return None
+    return storage_manager.get_file_url(foto_perfil)
 
 # Configuración de Base de Datos (PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -46,10 +58,12 @@ class Base(DeclarativeBase):
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SECRET_KEY = os.getenv("SECRET_KEY", "TU_LLAVE_SECRETA_SUPER_SEGURA")
 
-# Crear carpeta para fotos si no existe
+# Crear carpetas para archivos locales (solo en DEBUG)
+# En producción, los archivos se suben a GCS
 UPLOAD_DIR = "uploads"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+if os.getenv("DEBUG", "False").lower() == "true":
+    if not os.path.exists(UPLOAD_DIR):
+        os.makedirs(UPLOAD_DIR)
 
 app = FastAPI(
     title="NutriData API",
@@ -59,8 +73,25 @@ app = FastAPI(
     openapi_url="/openapi.json" if ENV != "production" else None,
 )
 
-# URL base para las fotos (usar variable de entorno o localhost por defecto)
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+# Montar carpetas estáticas solo en modo DEBUG
+if os.getenv("DEBUG", "False").lower() == "true":
+    app.mount("/media", StaticFiles(directory="media"), name="media")
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    contents = await file.read()
+    
+    # Guardamos usando nuestro manager híbrido
+    # En GCS retorna solo el filename, en local retorna /media/filename
+    file_path = await storage_manager.save_file(
+        file_content=contents,
+        filename=file.filename,
+        content_type=file.content_type
+    )
+    
+    # Retornar URL pública (firmada en GCS, local en DEBUG)
+    return {"url": get_avatar_url(file_path)}
 
 # Define los orígenes permitidos explícitamente
 origins = [
@@ -92,9 +123,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-# Montar la carpeta para que las fotos sean accesibles vía URL
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # ==================== FUNCIÓN DE ENVÍO DE EMAIL ====================
 
@@ -807,7 +835,7 @@ def login(request: LoginSchema, db: Session = Depends(get_db)):
             "role": user.role,
             "altura": user.altura,
             "peso_actual": user.peso_actual,
-            "avatar": user.foto_perfil
+            "avatar": get_avatar_url(user.foto_perfil)  # URL firmada fresca
         },
         "profile_complete": True
     }
@@ -1487,7 +1515,7 @@ def get_patients(db: Session = Depends(get_db)):
             "telefono": p.telefono,
             "fecha_nacimiento": p.fecha_nacimiento.strftime("%Y-%m-%d") if p.fecha_nacimiento else None,
             "genero": p.genero,
-            "foto_perfil": p.foto_perfil,
+            "foto_perfil": get_avatar_url(p.foto_perfil),
             "status": p.status or "activo",  # Asegurar que siempre tenga valor
             "role": p.role,
             "peso_actual": p.peso_actual,
@@ -1569,7 +1597,7 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
             "genero": new_patient.genero,
             "tipo_documento": new_patient.tipo_documento,
             "numero_documento": new_patient.numero_documento,
-            "foto_perfil": new_patient.foto_perfil,
+            "foto_perfil": get_avatar_url(new_patient.foto_perfil),
             "status": new_patient.status,
             "role": new_patient.role,
             "peso_actual": new_patient.peso_actual,
@@ -1616,7 +1644,7 @@ def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
         "genero": patient.genero,
         "tipo_documento": patient.tipo_documento,
         "numero_documento": patient.numero_documento,
-        "foto_perfil": patient.foto_perfil,
+        "foto_perfil": get_avatar_url(patient.foto_perfil),
         "status": patient.status or "activo",
         "role": patient.role,
         "peso_actual": patient.peso_actual,
@@ -1685,7 +1713,7 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
         "genero": patient.genero,
         "tipo_documento": patient.tipo_documento,
         "numero_documento": patient.numero_documento,
-        "foto_perfil": patient.foto_perfil,
+        "foto_perfil": get_avatar_url(patient.foto_perfil),
         "status": patient.status or "activo",
         "role": patient.role,
         "peso_actual": patient.peso_actual,
@@ -1799,12 +1827,20 @@ async def upload_photo(email: str, file: UploadFile = File(...), db: Session = D
 
     file_extension = file.filename.split(".")[-1]
     file_name = f"profile_{user.id}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
+    
+    contents = await file.read()
+    
+    # Usar storage_manager para guardar (local en DEBUG, GCS en producción)
+    file_url = await storage_manager.save_file(
+        file_content=contents,
+        filename=file_name,
+        content_type=file.content_type
+    )
+    
+    if not file_url:
+        raise HTTPException(status_code=500, detail="Error al guardar la imagen")
 
-    with open(file_path, "wb") as buffer:
-        buffer.write(await file.read())
-
-    user.foto_perfil = f"{BASE_URL}/uploads/{file_name}"
+    user.foto_perfil = file_url
     db.commit()
 
     return {"success": True, "foto_url": user.foto_perfil}
@@ -1854,7 +1890,7 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
             "role": user.role,
             "altura": user.altura,
             "peso_actual": user.peso_actual,
-            "avatar": user.foto_perfil
+            "avatar": get_avatar_url(user.foto_perfil)  # URL firmada fresca
         }
     }
 
@@ -2022,7 +2058,7 @@ def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
         results.append({
             "id": p.id,
             "name": f"{p.nombres} {p.apellidos}",
-            "avatar": p.foto_perfil,
+            "avatar": get_avatar_url(p.foto_perfil),
             "email": p.email,
             "plan": plan_name,
             "status": p.status,
@@ -2236,12 +2272,18 @@ async def create_recipe(
 ):
     image_url = None
     if image:
-        filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{image.filename}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        with open(file_path, "wb") as buffer:
-            import shutil
-            shutil.copyfileobj(image.file, buffer)
-        image_url = f"/uploads/{filename}"
+        filename = f"recipe_{datetime.now().strftime('%Y%m%d%H%M%S')}_{image.filename}"
+        contents = await image.read()
+        
+        # Usar storage_manager para guardar (local en DEBUG, GCS en producción)
+        image_url = await storage_manager.save_file(
+            file_content=contents,
+            filename=filename,
+            content_type=image.content_type
+        )
+        
+        if not image_url:
+            raise HTTPException(status_code=500, detail="Error al guardar la imagen de la receta")
 
     # Parse lists from JSON strings
     import json
@@ -2303,12 +2345,18 @@ async def update_recipe(
     
     image_url = recipe.image
     if image:
-        filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{image.filename}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        with open(file_path, "wb") as buffer:
-            import shutil
-            shutil.copyfileobj(image.file, buffer)
-        image_url = f"/uploads/{filename}"
+        filename = f"recipe_{datetime.now().strftime('%Y%m%d%H%M%S')}_{image.filename}"
+        contents = await image.read()
+        
+        # Usar storage_manager para guardar (local en DEBUG, GCS en producción)
+        image_url = await storage_manager.save_file(
+            file_content=contents,
+            filename=filename,
+            content_type=image.content_type
+        )
+        
+        if not image_url:
+            raise HTTPException(status_code=500, detail="Error al guardar la imagen de la receta")
 
     import json
     try:
@@ -3551,7 +3599,7 @@ def get_patients_progress(
         results.append({
             "id": patient.id,
             "name": f"{patient.nombres} {patient.apellidos}",
-            "avatar": patient.foto_perfil,
+            "avatar": get_avatar_url(patient.foto_perfil),
             "plan": plan.name if plan else "Sin plan",
             "plan_id": plan.id if plan else None,
             "start_date": active_plan_assignment.start_date,
@@ -3656,7 +3704,7 @@ def get_patient_progress_details(patient_id: int, db: Session = Depends(get_db))
     return {
         "id": patient.id,
         "name": f"{patient.nombres} {patient.apellidos}",
-        "avatar": patient.foto_perfil,
+        "avatar": get_avatar_url(patient.foto_perfil),
         "plan": plan_name,
         "start_date": start_date,
         "current_weight": current_weight,
@@ -4064,7 +4112,7 @@ def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
         results.append({
             "id": patient.id,
             "name": f"{patient.nombres} {patient.apellidos}",
-            "avatar": patient.foto_perfil,
+            "avatar": get_avatar_url(patient.foto_perfil),
             "email": patient.email,
             "plan": plan_name,
             "status": patient.status,
@@ -4468,7 +4516,7 @@ def get_patient_nutritionist(patient_id: int, db: Session = Depends(get_db)):
         "title": "Nutricionista Especializado",
         "verified": True,
         "patients_count": patients_count,
-        "photo": nutritionist_db.foto_perfil or "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face",
+        "photo": get_avatar_url(nutritionist_db.foto_perfil) or "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face",
         "phone": nutritionist_db.telefono,
         "email": nutritionist_db.email
     }
@@ -4849,7 +4897,7 @@ def get_patient_dashboard_summary(patient_id: int, db: Session = Depends(get_db)
             "id": patient.id,
             "name": f"{patient.nombres} {patient.apellidos}",
             "email": patient.email,
-            "photo": patient.foto_perfil
+            "photo": get_avatar_url(patient.foto_perfil)
         },
         "next_appointment": {
             "date": next_appointment.date.strftime("%d %b %Y") if next_appointment else None,
@@ -4885,7 +4933,7 @@ def get_admin_profile(user_id: int, db: Session = Depends(get_db)):
         "license": admin_profile.license if admin_profile else None,
         "bio": admin_profile.bio if admin_profile else None,
         "address": user.direccion,
-        "avatar": user.foto_perfil
+        "avatar": get_avatar_url(user.foto_perfil)
     }
 
 @app.put("/api/admin/profile/{user_id}")
@@ -4984,20 +5032,24 @@ async def upload_admin_avatar(
             detail="El archivo es demasiado grande. Máximo 2MB"
         )
     
-    # Guardar archivo
+    # Guardar archivo usando storage_manager (local en DEBUG, GCS en producción)
     file_name = f"admin_{user_id}_avatar.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
+    file_url = await storage_manager.save_file(
+        file_content=contents,
+        filename=file_name,
+        content_type=file.content_type
+    )
     
-    with open(file_path, "wb") as buffer:
-        buffer.write(contents)
+    if not file_url:
+        raise HTTPException(status_code=500, detail="Error al guardar la imagen")
     
-    # Actualizar URL de foto
-    user.foto_perfil = f"{BASE_URL}/uploads/{file_name}"
+    # Actualizar nombre del archivo en BD (no la URL)
+    user.foto_perfil = file_url  # Guarda solo filename en GCS, o /media/file en local
     db.commit()
     
     return {
         "success": True,
-        "avatar_url": user.foto_perfil
+        "avatar_url": get_avatar_url(user.foto_perfil)  # Retorna URL firmada fresca
     }
 
 @app.post("/api/admin/profile/{user_id}/change-password")
@@ -5290,7 +5342,7 @@ def get_complete_settings(user_id: int, db: Session = Depends(get_db)):
             "license": admin_profile.license if admin_profile else None,
             "bio": admin_profile.bio if admin_profile else None,
             "address": user.direccion,
-            "avatar": user.foto_perfil
+            "avatar": get_avatar_url(user.foto_perfil)
         },
         "notifications": {
             "emailAppointments": bool(notifications.email_appointments) if notifications else True,
@@ -5438,7 +5490,7 @@ def get_patient_settings(user_id: int, db: Session = Depends(get_db)):
             "name": f"{user.nombres} {user.apellidos}",
             "email": user.email,
             "phone": user.telefono,
-            "avatar": user.foto_perfil
+            "avatar": get_avatar_url(user.foto_perfil)
         },
         "notifications": {
             "emailReminders": bool(notifications.email_reminders),
@@ -5740,7 +5792,7 @@ def get_patient_settings(user_id: int, db: Session = Depends(get_db)):
             "name": f"{user.nombres} {user.apellidos}",
             "email": user.email,
             "phone": user.telefono,
-            "avatar": user.foto_perfil
+            "avatar": get_avatar_url(user.foto_perfil)
         },
         "notifications": {
             "emailReminders": bool(notifications.email_reminders),
@@ -5980,7 +6032,7 @@ def get_patient_dashboard(patient_id: int, db: Session = Depends(get_db)):
         "id": patient.id,
         "name": f"{patient.nombres} {patient.apellidos}",
         "email": patient.email,
-        "photo": patient.foto_perfil,
+        "photo": get_avatar_url(patient.foto_perfil),
         "phone": patient.telefono
     }
     
@@ -6517,7 +6569,7 @@ def get_patient_complete_profile(patient_id: int, db: Session = Depends(get_db))
             "edad_formateada": calcular_edad_detallada(patient.fecha_nacimiento),
             "genero": patient.genero,
             "direccion": patient.direccion,
-            "foto_perfil": patient.foto_perfil
+            "foto_perfil": get_avatar_url(patient.foto_perfil)
         },
         "health_info": {
             "altura": patient.altura,
@@ -6575,20 +6627,24 @@ async def upload_patient_avatar(
             detail="El archivo es demasiado grande. Máximo 2MB"
         )
     
-    # Guardar archivo
+    # Guardar archivo usando storage_manager (local en DEBUG, GCS en producción)
     file_name = f"patient_{patient_id}_avatar.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
+    file_url = await storage_manager.save_file(
+        file_content=contents,
+        filename=file_name,
+        content_type=file.content_type
+    )
     
-    with open(file_path, "wb") as buffer:
-        buffer.write(contents)
+    if not file_url:
+        raise HTTPException(status_code=500, detail="Error al guardar la imagen")
     
-    # Actualizar URL de foto
-    user.foto_perfil = f"{BASE_URL}/uploads/{file_name}"
+    # Actualizar nombre del archivo en BD (no la URL)
+    user.foto_perfil = file_url  # Guarda solo filename en GCS, o /media/file en local
     db.commit()
     
     return {
         "success": True,
-        "foto_url": user.foto_perfil
+        "foto_url": get_avatar_url(user.foto_perfil)  # Retorna URL firmada fresca
     }
 
 @app.put("/api/patient/{patient_id}/profile/update")
@@ -9422,7 +9478,7 @@ def superadmin_get_all_users(
             "email": user.email,
             "role": user.role,
             "status": user.status,
-            "avatar": user.foto_perfil,
+            "avatar": get_avatar_url(user.foto_perfil),
             "createdAt": user.created_at.strftime("%Y-%m-%d") if user.created_at else None,
             "lastLogin": user.updated_at if user.updated_at else None
         })
@@ -9474,7 +9530,7 @@ def superadmin_create_user(
             "email": new_user.email,
             "role": new_user.role,
             "status": new_user.status,
-            "avatar": new_user.foto_perfil,
+            "avatar": get_avatar_url(new_user.foto_perfil),
             "createdAt": new_user.created_at.strftime("%Y-%m-%d"),
             "lastLogin": None
         }
@@ -9497,7 +9553,7 @@ def superadmin_get_user(user_id: int, db: Session = Depends(get_db)):
         "email": user.email,
         "role": user.role,
         "status": user.status,
-        "avatar": user.foto_perfil,
+        "avatar": get_avatar_url(user.foto_perfil),
         "createdAt": user.created_at.strftime("%Y-%m-%d") if user.created_at else None,
         "lastLogin": user.updated_at
     }
@@ -9545,7 +9601,7 @@ def superadmin_update_user(
             "email": user.email,
             "role": user.role,
             "status": user.status,
-            "avatar": user.foto_perfil,
+            "avatar": get_avatar_url(user.foto_perfil),
             "createdAt": user.created_at.strftime("%Y-%m-%d") if user.created_at else None,
             "lastLogin": user.updated_at
         }
@@ -9684,7 +9740,7 @@ def superadmin_get_nutritionists(
             "patients": patients_count,
             "rating": 4.5,  # Mock - implementar sistema de ratings
             "status": nutritionist.status,
-            "avatar": nutritionist.foto_perfil,
+            "avatar": get_avatar_url(nutritionist.foto_perfil),
             "joinedAt": nutritionist.created_at.strftime("%Y-%m-%d") if nutritionist.created_at else None,
             "organization": None  # Mock - implementar si tienes organizaciones
         })
@@ -9725,7 +9781,7 @@ def superadmin_get_nutritionist_details(nutritionist_id: int, db: Session = Depe
         "patients": active_patients,
         "rating": 4.5,
         "status": nutritionist.status,
-        "avatar": nutritionist.foto_perfil,
+        "avatar": get_avatar_url(nutritionist.foto_perfil),
         "joinedAt": nutritionist.created_at.strftime("%Y-%m-%d") if nutritionist.created_at else None
     }
 
@@ -10143,7 +10199,7 @@ def get_conversations(
             conversations.append({
                 "id": p.id,
                 "patientName": f"{p.nombres} {p.apellidos}",
-                "patientAvatar": p.foto_perfil,
+                "patientAvatar": get_avatar_url(p.foto_perfil),
                 "lastMessage": last_msg.content if last_msg else "Iniciar conversación",
                 "lastMessageTime": last_msg.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if last_msg else "",
                 "unreadCount": unread,
@@ -10167,7 +10223,7 @@ def get_conversations(
              conversations.append({
                 "id": admin.id,
                 "patientName": f"{admin.nombres} {admin.apellidos}",
-                "patientAvatar": admin.foto_perfil,
+                "patientAvatar": get_avatar_url(admin.foto_perfil),
                 "lastMessage": last_msg.content if last_msg else "Consultar al especialista",
                 "lastMessageTime": last_msg.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if last_msg else "",
                 "unreadCount": unread,
