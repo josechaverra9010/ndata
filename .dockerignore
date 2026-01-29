@@ -14,9 +14,14 @@ node_modules/
 node_modules
 dist
 .npm
-bun.lockb
 .git
 .gitignore
 README.md
 Dockerfile
 .dockerignore
+*.log
+*.tmp
+.vscode/
+.idea/
+*.md
+render.yaml

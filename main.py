@@ -178,22 +178,23 @@ def sanitize_string(text: str, max_length: int = 1000) -> str:
     
     return text.strip()
 
-def get_absolute_url(relative_path: Optional[str]) -> Optional[str]:
-    """
-    Convertir ruta relativa a URL absoluta usando BASE_URL
-    """
-    if not relative_path:
-        return None
-    
-    # Si ya es una URL completa, devolverla tal cual
-    if relative_path.startswith(('http://', 'https://')):
-        return relative_path
-    
-    # Si es una ruta relativa, agregar BASE_URL
-    # Asegurar que no haya doble slash
-    base = BASE_URL.rstrip('/')
-    path = relative_path if relative_path.startswith('/') else f'/{relative_path}'
-    return f"{base}{path}"
+# DEPRECATED: Usar get_avatar_url() en su lugar
+# def get_absolute_url(relative_path: Optional[str]) -> Optional[str]:
+#     """
+#     Convertir ruta relativa a URL absoluta usando BASE_URL
+#     """
+#     if not relative_path:
+#         return None
+#     
+#     # Si ya es una URL completa, devolverla tal cual
+#     if relative_path.startswith(('http://', 'https://')):
+#         return relative_path
+#     
+#     # Si es una ruta relativa, agregar BASE_URL
+#     # Asegurar que no haya doble slash
+#     base = BASE_URL.rstrip('/')
+#     path = relative_path if relative_path.startswith('/') else f'/{relative_path}'
+#     return f"{base}{path}"
 
 def sanitize_filename(filename: str) -> str:
     """
@@ -971,7 +972,7 @@ def login(request: LoginSchema, db: Session = Depends(get_db)):
             "role": user.role,
             "altura": user.altura,
             "peso_actual": user.peso_actual,
-            "avatar": get_absolute_url(user.foto_perfil)
+            "avatar": get_avatar_url(user.foto_perfil)
         },
         "profile_complete": True
     }
@@ -2224,7 +2225,7 @@ def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
         results.append({
             "id": p.id,
             "name": f"{p.nombres} {p.apellidos}",
-            "avatar": get_absolute_url(p.foto_perfil),
+            "avatar": get_avatar_url(p.foto_perfil),
             "email": p.email,
             "plan": plan_name,
             "status": p.status,
@@ -2247,7 +2248,7 @@ def get_upcoming_appointments(limit: int = 5, db: Session = Depends(get_db)):
     results = []
     for appt in appointments:
         patient = db.query(UserDB).filter(UserDB.id == appt.patient_id).first()
-        avatar = get_absolute_url(patient.foto_perfil) if patient else None
+        avatar = get_avatar_url(patient.foto_perfil) if patient else None
         
         # Formatear fecha para label (ej: "Hoy", "Mañana" o "12 Oct")
         date_obj = appt.date # es date object
@@ -8424,7 +8425,7 @@ def get_top_patients_progress(limit: int = 3, db: Session = Depends(get_db)):
             "plan_name": meal_plan.name if meal_plan else "Plan Nutricional",
             "weight_change": round(peso_cambio, 1),
             "progress_percentage": progreso_porcentaje,
-            "avatar": get_absolute_url(patient.foto_perfil)
+            "avatar": get_avatar_url(patient.foto_perfil)
         })
     
     # Ordenar por progreso descendente y tomar los top N

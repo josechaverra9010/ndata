@@ -17,8 +17,7 @@ class HybridStorage:
         self.bucket_name = os.getenv("GS_BUCKET_NAME")
         self.project_id = os.getenv("GS_PROJECT_ID", "parchaoo")
         self.service_account = os.getenv("GS_SERVICE_ACCOUNT_EMAIL")
-        self.media_path = "media" # Carpeta local
-        # URLs firmadas válidas por 5 minutos (como Django: querystring_auth + expiration)
+        self.media_path = "media" # Carpeta local para archivos en modo DEBUG
         self.url_expiration = timedelta(seconds=300)
         
         # Credenciales y cliente
@@ -147,17 +146,28 @@ class HybridStorage:
         """
         if not filename:
             return None
+        
+        # Si ya es una URL completa (http/https), retornar tal cual
+        if filename.startswith(('http://', 'https://')):
+            return filename
             
         if self.debug or not self.client:
             # Modo local - si ya tiene /media/, retornar tal cual
             if filename.startswith("/media/"):
                 return filename
+            # Si tiene /uploads/, también retornar tal cual (backward compatibility)
+            if filename.startswith("/uploads/"):
+                return filename
+            # Si solo es el nombre, agregar /media/
             return f"/media/{filename}"
         else:
             # Modo GCS - generar URL firmada fresca
             try:
+                # Si el filename incluye /media/ o /uploads/, extraer solo el nombre
+                clean_filename = filename.replace("/media/", "").replace("/uploads/", "")
+                
                 bucket = self.client.bucket(self.bucket_name)
-                blob = bucket.blob(filename)
+                blob = bucket.blob(clean_filename)
                 
                 # Generar URL firmada temporal
                 signed_url = self._generate_signed_url(blob)
@@ -166,7 +176,8 @@ class HybridStorage:
             except Exception as e:
                 logger.error(f"[GCS] Error generando URL para {filename}: {e}")
                 # Fallback a URL pública
-                return f"https://storage.googleapis.com/{self.bucket_name}/{filename}"
+                clean_filename = filename.replace("/media/", "").replace("/uploads/", "")
+                return f"https://storage.googleapis.com/{self.bucket_name}/{clean_filename}"
 
 # Instancia global
 storage_manager = HybridStorage()

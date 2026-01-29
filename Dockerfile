@@ -6,7 +6,11 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile
-COPY . .
+# Copiar solo archivos necesarios para el build del frontend
+COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY postcss.config.js tailwind.config.ts components.json eslint.config.js ./
+COPY public/ ./public/
+COPY src/ ./src/
 RUN pnpm run build
 
 # ==========================================
@@ -27,10 +31,14 @@ WORKDIR /app
 COPY --from=python-builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-COPY . .
-
+# Copiar solo archivos necesarios para producción
+COPY main.py storage_utils.py ./
+COPY requirements.txt ./
 COPY uploads/ ./uploads/
 COPY --from=build-frontend /app/dist ./dist
+
+# Crear carpetas necesarias para DEBUG mode (se crean vacías)
+RUN mkdir -p media
 
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
