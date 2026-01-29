@@ -18,6 +18,7 @@ export const FOOD_GROUPS = [
     "Cereales refinados",
     "Cereales integrales",
     "Repostería industrial",
+    "Comidas rápidas",
     "Azúcares",
     "Alcohol",
     "Agua",

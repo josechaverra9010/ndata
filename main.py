@@ -641,17 +641,25 @@ class PatientResponse(BaseModel):
     tipo_documento: Optional[str] = None
     numero_documento: Optional[str] = None
     foto_perfil: Optional[str]
-    status: str  # Ahora incluido
+    status: str
     role: str
     peso_actual: Optional[float]
     peso_objetivo: Optional[float]
     nivel_actividad: Optional[str]
-    pal_factor: Optional[float] = None # Nuevo campo
+    pal_factor: Optional[float] = None
     progreso: int = 0 
     proxima_cita: str = "Sin programar"
     altura: Optional[float] = None
+    direccion: Optional[str] = None
+    alergias: List[str] = []
+    preferencias: List[str] = []
+    objetivos_salud: Optional[str] = None
+    condiciones_medicas: Optional[str] = None
+    alimentos_disgusto: Optional[str] = None
+    antecedentes_familiares: Optional[str] = None
     edad_formateada: Optional[str] = None
     evaluacion_nutricional: Optional[str] = None
+    frecuencia_consumo: Optional[List[dict]] = None
     frecuencia_consumo: Optional[List[dict]] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -1704,12 +1712,22 @@ def get_patients(db: Session = Depends(get_db)):
             "telefono": p.telefono,
             "fecha_nacimiento": p.fecha_nacimiento.strftime("%Y-%m-%d") if p.fecha_nacimiento else None,
             "genero": p.genero,
+            "direccion": p.direccion,
+            "tipo_documento": p.tipo_documento,
+            "numero_documento": p.numero_documento,
             "foto_perfil": get_avatar_url(p.foto_perfil),
-            "status": p.status or "activo",  # Asegurar que siempre tenga valor
+            "status": p.status or "activo",
             "role": p.role,
             "peso_actual": p.peso_actual,
             "peso_objetivo": p.peso_objetivo,
             "nivel_actividad": p.nivel_actividad,
+            "pal_factor": p.pal_factor,
+            "alergias": p.alergias or [],
+            "preferencias": p.preferencias or [],
+            "objetivos_salud": p.objetivos_salud,
+            "condiciones_medicas": p.condiciones_medicas,
+            "alimentos_disgusto": p.alimentos_disgusto,
+            "antecedentes_familiares": p.antecedentes_familiares,
             "progreso": progreso_calc,
             "proxima_cita": proxima_cita,
             "altura": p.altura,
@@ -1784,6 +1802,7 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
             "telefono": new_patient.telefono,
             "fecha_nacimiento": new_patient.fecha_nacimiento.strftime("%Y-%m-%d") if new_patient.fecha_nacimiento else None,
             "genero": new_patient.genero,
+            "direccion": new_patient.direccion,
             "tipo_documento": new_patient.tipo_documento,
             "numero_documento": new_patient.numero_documento,
             "foto_perfil": get_avatar_url(new_patient.foto_perfil),
@@ -1792,6 +1811,13 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
             "peso_actual": new_patient.peso_actual,
             "peso_objetivo": new_patient.peso_objetivo,
             "nivel_actividad": new_patient.nivel_actividad,
+            "pal_factor": new_patient.pal_factor,
+            "alergias": new_patient.alergias or [],
+            "preferencias": new_patient.preferencias or [],
+            "objetivos_salud": new_patient.objetivos_salud,
+            "condiciones_medicas": new_patient.condiciones_medicas,
+            "alimentos_disgusto": new_patient.alimentos_disgusto,
+            "antecedentes_familiares": new_patient.antecedentes_familiares,
             "progreso": 0,
             "proxima_cita": "Sin programar",
             "altura": new_patient.altura,
@@ -1831,6 +1857,7 @@ def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
         "telefono": patient.telefono,
         "fecha_nacimiento": patient.fecha_nacimiento.strftime("%Y-%m-%d") if patient.fecha_nacimiento else None,
         "genero": patient.genero,
+        "direccion": patient.direccion,
         "tipo_documento": patient.tipo_documento,
         "numero_documento": patient.numero_documento,
         "foto_perfil": get_avatar_url(patient.foto_perfil),
@@ -1839,6 +1866,13 @@ def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
         "peso_actual": patient.peso_actual,
         "peso_objetivo": patient.peso_objetivo,
         "nivel_actividad": patient.nivel_actividad,
+        "pal_factor": patient.pal_factor,
+        "alergias": patient.alergias or [],
+        "preferencias": patient.preferencias or [],
+        "objetivos_salud": patient.objetivos_salud,
+        "condiciones_medicas": patient.condiciones_medicas,
+        "alimentos_disgusto": patient.alimentos_disgusto,
+        "antecedentes_familiares": patient.antecedentes_familiares,
         "progreso": progreso_calc,
         "proxima_cita": proxima_cita,
         "altura": patient.altura,
@@ -1867,6 +1901,7 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
     patient.peso_actual = patient_data.peso_actual
     patient.peso_objetivo = patient_data.peso_objetivo
     patient.nivel_actividad = patient_data.nivel_actividad
+    patient.pal_factor = patient_data.pal_factor
     patient.alergias = patient_data.alergias
     patient.preferencias = patient_data.preferencias
     patient.objetivos_salud = patient_data.objetivos_salud
@@ -1900,6 +1935,7 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
         "telefono": patient.telefono,
         "fecha_nacimiento": patient.fecha_nacimiento.strftime("%Y-%m-%d") if patient.fecha_nacimiento else None,
         "genero": patient.genero,
+        "direccion": patient.direccion,
         "tipo_documento": patient.tipo_documento,
         "numero_documento": patient.numero_documento,
         "foto_perfil": get_avatar_url(patient.foto_perfil),
@@ -1908,6 +1944,13 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
         "peso_actual": patient.peso_actual,
         "peso_objetivo": patient.peso_objetivo,
         "nivel_actividad": patient.nivel_actividad,
+        "pal_factor": patient.pal_factor,
+        "alergias": patient.alergias or [],
+        "preferencias": patient.preferencias or [],
+        "objetivos_salud": patient.objetivos_salud,
+        "condiciones_medicas": patient.condiciones_medicas,
+        "alimentos_disgusto": patient.alimentos_disgusto,
+        "antecedentes_familiares": patient.antecedentes_familiares,
         "progreso": progreso_calc,
         "proxima_cita": "Sin programar",
         "altura": patient.altura,
