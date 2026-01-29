@@ -1,6 +1,9 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float, JSON, ForeignKey, Enum, DateTime, Boolean
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float, JSON, ForeignKey, Enum, DateTime, Boolean, func, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from sqlalchemy.orm.attributes import flag_modified
@@ -8,23 +11,22 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, date
+from dotenv import load_dotenv
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from storage_utils import storage_manager
+from jose import JWTError, jwt
 import jwt
 import os
 import json
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from dotenv import load_dotenv
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import requests
 import copy
-from storage_utils import storage_manager
+import html
+import re
 
 # Cargar variables de entorno
 load_dotenv()
-
-from sqlalchemy import func, and_
 
 # Helper para generar URLs de avatares
 def get_avatar_url(foto_perfil: Optional[str]) -> Optional[str]:
@@ -156,9 +158,6 @@ def get_db():
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # ==================== FUNCIONES DE SEGURIDAD ====================
-
-import html
-import re
 
 def sanitize_string(text: str, max_length: int = 1000) -> str:
     """
@@ -901,8 +900,6 @@ class AppointmentStatusUpdate(BaseModel):
     status: str  # confirmada, pendiente, cancelada
 
 # ==================== AUTH & SECURITY ====================
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
 ALGORITHM = "HS256"
@@ -1435,6 +1432,7 @@ class WeeklyMenuCompleteDB(Base):
     name = Column(String(200), nullable=False)
     description = Column(Text)
     category = Column(String(100))
+    meal_plan_id = Column(Integer, nullable=False, default=0)
     
     # Días de la semana con estructura JSON completa
     monday = Column(JSON, default={})
@@ -8816,21 +8814,23 @@ def calculate_weekly_totals(week_data: List[dict]) -> dict:
     total_protein = 0
     total_carbs = 0
     total_fat = 0
-    total_days = len(week_data)
+    meal_count = 0
     
     for day in week_data:
         for meal in day.get("meals", []):
-            if meal.get("recipe"):
+            # Contar comidas que tienen valores nutricionales
+            if meal.get("recipe_id") or meal.get("calories", 0) > 0:
                 total_calories += meal.get("calories", 0)
                 total_protein += meal.get("protein", 0)
                 total_carbs += meal.get("carbs", 0)
                 total_fat += meal.get("fat", 0)
+                meal_count += 1
     
     return {
-        "total_calories": total_calories // total_days if total_days > 0 else 0,
-        "avg_protein": total_protein // total_days if total_days > 0 else 0,
-        "avg_carbs": total_carbs // total_days if total_days > 0 else 0,
-        "avg_fat": total_fat // total_days if total_days > 0 else 0
+        "total_calories": total_calories,
+        "avg_protein": total_protein // meal_count if meal_count > 0 else 0,
+        "avg_carbs": total_carbs // meal_count if meal_count > 0 else 0,
+        "avg_fat": total_fat // meal_count if meal_count > 0 else 0
     }
 
 def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
@@ -8966,72 +8966,82 @@ def create_weekly_menu(
     """
     Crear un nuevo menú semanal
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Mapear días en español a inglés
-    days_map = {
-        "Lunes": "monday",
-        "Martes": "tuesday",
-        "Miércoles": "wednesday",
-        "Jueves": "thursday",
-        "Viernes": "friday",
-        "Sábado": "saturday",
-        "Domingo": "sunday"
-    }
-    
-    # Preparar datos de la semana
-    # Inicializar estructura de listas para 4 semanas
-    week_dict = {
-        "monday": [{}, {}, {}, {}],
-        "tuesday": [{}, {}, {}, {}],
-        "wednesday": [{}, {}, {}, {}],
-        "thursday": [{}, {}, {}, {}],
-        "friday": [{}, {}, {}, {}],
-        "saturday": [{}, {}, {}, {}],
-        "sunday": [{}, {}, {}, {}]
-    }
-    
-    for day_data in menu_data.week:
-        day_key = days_map.get(day_data.day)
-        week_idx = (day_data.week - 1) if day_data.week else 0
-        
-        if day_key and 0 <= week_idx < 4:
-            week_dict[day_key][week_idx] = {
-                "meals": [meal.model_dump() for meal in day_data.meals]
-            }
-    
-    # Calcular totales
-    totals = calculate_weekly_totals([
-        {"meals": [m.model_dump() for m in d.meals]} 
-        for d in menu_data.week
-    ])
-    
-    # Crear el menú
-    new_menu = WeeklyMenuCompleteDB(
-        name=menu_data.name,
-        description=menu_data.description,
-        category=menu_data.category,
-        monday=week_dict.get("monday", {}),
-        tuesday=week_dict.get("tuesday", {}),
-        wednesday=week_dict.get("wednesday", {}),
-        thursday=week_dict.get("thursday", {}),
-        friday=week_dict.get("friday", {}),
-        saturday=week_dict.get("saturday", {}),
-        sunday=week_dict.get("sunday", {}),
-        total_calories=totals["total_calories"],
-        avg_protein=totals["avg_protein"],
-        avg_carbs=totals["avg_carbs"],
-        avg_fat=totals["avg_fat"],
-        assigned_patients=0,
-        is_active=1,
-        created_at=now,
-        updated_at=now
-    )
-    
     try:
+        print(f"📝 Creando menú semanal: {menu_data.name}")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Mapear días en español a inglés
+        days_map = {
+            "Lunes": "monday",
+            "Martes": "tuesday",
+            "Miércoles": "wednesday",
+            "Jueves": "thursday",
+            "Viernes": "friday",
+            "Sábado": "saturday",
+            "Domingo": "sunday"
+        }
+        
+        # Preparar datos de la semana
+        # Inicializar estructura de listas para 4 semanas
+        week_dict = {
+            "monday": [{}, {}, {}, {}],
+            "tuesday": [{}, {}, {}, {}],
+            "wednesday": [{}, {}, {}, {}],
+            "thursday": [{}, {}, {}, {}],
+            "friday": [{}, {}, {}, {}],
+            "saturday": [{}, {}, {}, {}],
+            "sunday": [{}, {}, {}, {}]
+        }
+        
+        print(f"📅 Procesando {len(menu_data.week)} días de datos")
+        for day_data in menu_data.week:
+            day_key = days_map.get(day_data.day)
+            week_idx = (day_data.week - 1) if day_data.week else 0
+            
+            print(f"  - Día: {day_data.day} -> {day_key}, Semana: {week_idx}, Comidas: {len(day_data.meals)}")
+            
+            if day_key and 0 <= week_idx < 4:
+                week_dict[day_key][week_idx] = {
+                    "meals": [meal.model_dump() for meal in day_data.meals]
+                }
+        
+        # Calcular totales
+        print("🧮 Calculando totales nutricionales")
+        totals = calculate_weekly_totals([
+            {"meals": [m.model_dump() for m in d.meals]} 
+            for d in menu_data.week
+        ])
+        print(f"  Totales: {totals}")
+        
+        # Crear el menú
+        print("💾 Creando registro en base de datos")
+        new_menu = WeeklyMenuCompleteDB(
+            name=menu_data.name,
+            description=menu_data.description,
+            category=menu_data.category,
+            meal_plan_id=0,
+            monday=week_dict.get("monday", []),
+            tuesday=week_dict.get("tuesday", []),
+            wednesday=week_dict.get("wednesday", []),
+            thursday=week_dict.get("thursday", []),
+            friday=week_dict.get("friday", []),
+            saturday=week_dict.get("saturday", []),
+            sunday=week_dict.get("sunday", []),
+            total_calories=totals["total_calories"],
+            avg_protein=totals["avg_protein"],
+            avg_carbs=totals["avg_carbs"],
+            avg_fat=totals["avg_fat"],
+            assigned_patients=0,
+            is_active=1,
+            created_at=now,
+            updated_at=now
+        )
+        
         db.add(new_menu)
         db.commit()
         db.refresh(new_menu)
+        
+        print(f"✅ Menú creado exitosamente con ID: {new_menu.id}")
         
         return {
             "success": True,
@@ -9039,6 +9049,10 @@ def create_weekly_menu(
             "menu": serialize_weekly_menu(new_menu)
         }
     except Exception as e:
+        print(f"❌ ERROR al crear menú semanal: {type(e).__name__}")
+        print(f"   Mensaje: {str(e)}")
+        import traceback
+        print(f"   Traceback:\n{traceback.format_exc()}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear menú: {str(e)}")
 
