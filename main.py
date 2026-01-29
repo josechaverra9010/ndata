@@ -710,6 +710,28 @@ class RecipeCreate(RecipeBase):
 class RecipeResponse(RecipeBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
+    
+    @classmethod
+    def from_db(cls, recipe_db: 'RecipeDB'):
+        """Convertir RecipeDB a RecipeResponse con URL de imagen procesada"""
+        return cls(
+            id=recipe_db.id,
+            name=recipe_db.name,
+            description=recipe_db.description,
+            category=recipe_db.category,
+            prepTime=recipe_db.prepTime,
+            cookTime=recipe_db.cookTime,
+            servings=recipe_db.servings,
+            calories=recipe_db.calories,
+            protein=recipe_db.protein,
+            carbs=recipe_db.carbs,
+            fat=recipe_db.fat,
+            ingredients=recipe_db.ingredients,
+            instructions=recipe_db.instructions,
+            tags=recipe_db.tags,
+            image=get_avatar_url(recipe_db.image),  # Procesar URL de imagen
+            isFavorite=bool(recipe_db.isFavorite)
+        )
 
 # ESQUEMAS PARA MEAL PLANS
 
@@ -2409,14 +2431,15 @@ def update_profile(data: ProfileUpdateSchema, db: Session = Depends(get_db)):
 
 @app.get("/api/recipes", response_model=List[RecipeResponse])
 def get_recipes(db: Session = Depends(get_db)):
-    return db.query(RecipeDB).all()
+    recipes = db.query(RecipeDB).all()
+    return [RecipeResponse.from_db(recipe) for recipe in recipes]
 
 @app.get("/api/recipes/{recipe_id}", response_model=RecipeResponse)
 def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
-    return recipe
+    return RecipeResponse.from_db(recipe)
 
 @app.post("/api/recipes", response_model=RecipeResponse)
 async def create_recipe(
@@ -2484,7 +2507,7 @@ async def create_recipe(
     db.add(new_recipe)
     db.commit()
     db.refresh(new_recipe)
-    return new_recipe
+    return RecipeResponse.from_db(new_recipe)
 
 @app.put("/api/recipes/{recipe_id}", response_model=RecipeResponse)
 async def update_recipe(
@@ -2553,7 +2576,7 @@ async def update_recipe(
 
     db.commit()
     db.refresh(recipe)
-    return recipe
+    return RecipeResponse.from_db(recipe)
 
 @app.delete("/api/recipes/{recipe_id}")
 def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
@@ -3152,7 +3175,7 @@ def get_patient_daily_meals(patient_id: int, date: str, db: Session = Depends(ge
                 "protein": meal_data.get("protein", 0),
                 "carbs": meal_data.get("carbs", 0),
                 "fat": meal_data.get("fat", 0),
-                "image": meal_data.get("image")
+                "image": get_avatar_url(meal_data.get("image"))  # Procesar URL de imagen
             })
     
     return {"meals": meals_list}
@@ -6415,7 +6438,7 @@ def get_today_meals(patient_id: int, db: Session = Depends(get_db)):
                 "carbs": meal_data.get("carbohidratos", 0),
                 "fat": meal_data.get("grasas", 0),
                 "completed": False,  # Esto podría venir de una tabla de seguimiento
-                "image": meal_data.get("imagen", None)
+                "image": get_avatar_url(meal_data.get("imagen", None))  # Procesar URL de imagen
             })
     
     return {
@@ -7432,7 +7455,7 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
                 "fat": int(fat) if fat else 0,
                 "ingredients": list(ingredients) if isinstance(ingredients, list) else [],
                 "instructions": list(instructions) if isinstance(instructions, list) else [],
-                "image": image,
+                "image": get_avatar_url(image),  # Procesar URL de imagen
                 "type": meal_info["id"] # Alias for consistency
             })
     
@@ -7773,7 +7796,7 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
                         "time": extracted_data.get("time") or ms["time"],
                         "ingredients": ingredients,
                         "instructions": instructions,
-                        "image": image,
+                        "image": get_avatar_url(image),  # Procesar URL de imagen
                         "type": ms["id"]
                     })
             
