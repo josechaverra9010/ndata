@@ -44,6 +44,16 @@ interface Patient {
   progreso: number;
   proxima_cita: string;
   altura: number | null;
+  direccion: string | null;
+  tipo_documento: string | null;
+  numero_documento: string | null;
+  pal_factor: number | null;
+  alergias: string[] | null;
+  preferencias: string[] | null;
+  objetivos_salud: string | null;
+  condiciones_medicas: string | null;
+  alimentos_disgusto: string | null;
+  antecedentes_familiares: string | null;
   edad_formateada: string | null;
   fecha_nacimiento?: string | null;
   genero?: string | null;

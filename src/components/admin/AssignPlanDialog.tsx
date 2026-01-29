@@ -168,10 +168,10 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Asignar Plan a Paciente</DialogTitle>
+          {/*<DialogTitle>Asignar Plan a Paciente</DialogTitle>
           <DialogDescription>
             Selecciona un paciente y configura las fechas para el plan "{plan.name}"
-          </DialogDescription>
+          </DialogDescription>*/}
         </DialogHeader>
 
         {/* Plan Info */}

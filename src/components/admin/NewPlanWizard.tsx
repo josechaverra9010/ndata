@@ -49,7 +49,7 @@ const PHASES = [
   },
   {
     id: 2,
-    title: "FÓRMULA SINTÉTICA DE CONSUMO Y PLANEADA",
+    title: "FÓRMULA SINTÉTICA PLANEADA",
     icon: ClipboardList,
     description: "Define la distribución de macronutrientes (AMDR) y micronutrientes"
   },
@@ -114,6 +114,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     total_amdr_f2: "",
     total_fibra: "",
     peso_referencia_f2: "",
+    cho_kg_peso: "",
 
     // Fase 3: Grupos de Alimentos - Detalles completos
     grupos_alimentos_f3: GRUPOS_ALIMENTOS.reduce((acc, grupo) => {
@@ -259,18 +260,19 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
           genero,
           edad,
           peso_objetivo: pesoObjetivo,
+          peso_referencia_f2: pesoObjetivo,
           factor_actividad: patient?.pal_factor ? String(patient.pal_factor) : (pal || "1.55"), // Priorizar manual, luego mapeado, luego default
         };
         return next;
       });
 
       // Disparar cálculos con valores locales (evitar estado desfasado)
-      const tmbComputed = computeTmbValue(pesoActual, edad, genero);
+      const tmbComputed = computeTmbValue(pesoObjetivo, edad, genero);
       if (pesoActual && altura) {
         calculateIMC(pesoActual, altura);
       }
-      if (pesoActual && edad && genero) {
-        calculateTMB(pesoActual, edad, genero);
+      if (pesoObjetivo && edad && genero) {
+        calculateTMB(pesoObjetivo, edad, genero);
       }
       if (pal && tmbComputed != null) {
         calculateRequerimientoEnergetico(String(tmbComputed), pal);
@@ -539,12 +541,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     const pesoAjustado = ((pesoActual - pesoSaludable) * 0.25) + pesoSaludable;
     handleChange("peso_ajustado", pesoAjustado.toFixed(2));
 
-    // Peso de referencia automático: Si IMC > 30 usar PA, sino usar Actual
-    if (imc > 30) {
-      handleChange("peso_referencia_f2", pesoAjustado.toFixed(2));
-    } else {
-      handleChange("peso_referencia_f2", pesoActual.toFixed(2));
-    }
+    // Peso de referencia automático: SIEMPRE usar Peso Objetivo
+    handleChange("peso_referencia_f2", formData.peso_objetivo);
   };
 
   // Calcular Requerimiento Energético
@@ -567,53 +565,67 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     const totalCalorias = parseFloat(formData.requerimiento_energetico) || 0;
     if (totalCalorias <= 0) return;
 
-    // Obtener valores editables
-    const proteinasAMDR = parseFloat(formData.proteinas_amdr_f2) || 0;
-    const grasasAMDR = parseFloat(formData.grasas_amdr_f2) || 0;
-    const choAMDR = parseFloat(formData.cho_amdr_f2) || 0;
-    const grasasGSAMDR = parseFloat(formData.grasas_gs_amdr) || 0;
-    const grasasGPAMDR = parseFloat(formData.grasas_gp_amdr) || 0;
-    const choConcentAMDR = parseFloat(formData.cho_concent_amdr) || 0;
-    const proteinasAVB = parseFloat(formData.proteinas_avb_porcentaje) || 0;
-    const proteinasKgPeso = parseFloat(formData.proteinas_kg_peso) || 0;
+    // Obtener valores primarios (inputs)
+    const grasasAMDR_Input = parseFloat(formData.grasas_amdr_f2) || 0;
+    const proteinasKgPeso_Input = parseFloat(formData.proteinas_kg_peso) || 0;
     const pesoRef = parseFloat(formData.peso_referencia_f2 || formData.peso_objetivo) || 0;
 
-    // Calcular calorías de cada macronutriente
-    const proteinasCalorias = (totalCalorias * proteinasAMDR) / 100;
-    const grasasCalorias = (totalCalorias * grasasAMDR) / 100;
-    const choCalorias = (totalCalorias * choAMDR) / 100;
+    // 1. Calcular Proteína % AMDR basado en g/kg/peso
+    let proteinasAMDR_Calc = 0;
+    if (totalCalorias > 0 && pesoRef > 0) {
+      proteinasAMDR_Calc = (proteinasKgPeso_Input * pesoRef * 4) / totalCalorias * 100;
+    }
 
-    // Calcular gramos (1g proteína = 4 kcal, 1g grasa = 9 kcal, 1g CHO = 4 kcal)
+    // REDONDEO CRÍTICO para coherencia en UI (1 decimal)
+    const pAMDRFinal = parseFloat(proteinasAMDR_Calc.toFixed(1));
+    const gAMDRFinal = parseFloat(grasasAMDR_Input.toFixed(1));
+
+    // 2. CHO % AMDR es el remanente de 100 (permitir negativos por balance clínico)
+    const cAMDRFinal = 100 - pAMDRFinal - gAMDRFinal;
+
+    // Calcular calorías basadas en los porcentajes finales
+    const proteinasCalorias = (totalCalorias * pAMDRFinal) / 100;
+    const grasasCalorias = (totalCalorias * gAMDRFinal) / 100;
+    const choCalorias = (totalCalorias * cAMDRFinal) / 100;
+
+    // Calcular gramos
     const proteinasGramos = proteinasCalorias / 4;
     const grasasGramos = grasasCalorias / 9;
     const choGramos = choCalorias / 4;
+    const choKgPeso_Calc = pesoRef > 0 ? (choGramos / pesoRef) : 0;
 
-    // Calcular grasas saturadas, monoinsaturadas y poliinsaturadas
-    const grasasGSCalorias = (totalCalorias * grasasGSAMDR) / 100;
+    // Otros campos detallados
+    const grasasGS_AMDR = parseFloat(formData.grasas_gs_amdr) || 0;
+    const grasasGP_AMDR = parseFloat(formData.grasas_gp_amdr) || 0;
+    const choConcent_AMDR = parseFloat(formData.cho_concent_amdr) || 0;
+    const proteinasAVB_Pct = parseFloat(formData.proteinas_avb_porcentaje) || 0;
+
+    const grasasGSCalorias = (totalCalorias * grasasGS_AMDR) / 100;
     const grasasGSCaloriasResto = grasasCalorias - grasasGSCalorias;
-    const grasasGPCalorias = (totalCalorias * grasasGPAMDR) / 100;
+    const grasasGPCalorias = (totalCalorias * grasasGP_AMDR) / 100;
     const grasasGMCalorias = grasasGSCaloriasResto - grasasGPCalorias;
 
     const grasasGSGramos = grasasGSCalorias / 9;
     const grasasGMGramos = grasasGMCalorias / 9;
     const grasasGPGramos = grasasGPCalorias / 9;
+    const grasasGM_AMDR = gAMDRFinal - grasasGS_AMDR - grasasGP_AMDR;
 
-    // Calcular proteínas AVB
-    const proteinasAVBGramos = (proteinasGramos * proteinasAVB) / 100;
+    const proteinasAVBGramos = (proteinasGramos * proteinasAVB_Pct) / 100;
+    const choConcentGramos = (totalCalorias * choConcent_AMDR) / 100 / 4;
 
-    // Calcular CHO concentrados
-    const choConcentGramos = (choGramos * choConcentAMDR) / 100;
+    const totalAMDR = pAMDRFinal + gAMDRFinal + cAMDRFinal;
 
-    // Calcular total AMDR
-    const totalAMDR = proteinasAMDR + grasasAMDR + choAMDR;
-
-    // Actualizar valores calculados
+    // Actualizar estados
+    handleChange("proteinas_amdr_f2", pAMDRFinal.toFixed(1));
     handleChange("proteinas_calorias_f2", proteinasCalorias.toFixed(1));
     handleChange("proteinas_gramos_f2", proteinasGramos.toFixed(1));
     handleChange("grasas_calorias_f2", grasasCalorias.toFixed(1));
     handleChange("grasas_gramos_f2", grasasGramos.toFixed(1));
+    handleChange("grasas_gm_amdr", grasasGM_AMDR.toFixed(1));
+    handleChange("cho_amdr_f2", cAMDRFinal.toFixed(1));
     handleChange("cho_calorias_f2", choCalorias.toFixed(1));
     handleChange("cho_gramos_f2", choGramos.toFixed(1));
+    handleChange("cho_kg_peso", choKgPeso_Calc.toFixed(2));
     handleChange("grasas_gs_gramos", grasasGSGramos.toFixed(1));
     handleChange("grasas_gm_gramos", grasasGMGramos.toFixed(1));
     handleChange("grasas_gp_gramos", grasasGPGramos.toFixed(1));
@@ -701,13 +713,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   }, [
     currentPhase,
     formData.requerimiento_energetico,
-    formData.proteinas_amdr_f2,
     formData.grasas_amdr_f2,
-    formData.cho_amdr_f2,
     formData.grasas_gs_amdr,
     formData.grasas_gp_amdr,
     formData.cho_concent_amdr,
     formData.proteinas_avb_porcentaje,
+    formData.proteinas_kg_peso,
     formData.peso_referencia_f2,
     formData.peso_objetivo
   ]);
@@ -1052,6 +1063,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                       onChange={(e) => {
                         handleChange("peso_actual", e.target.value);
                         calculateIMC(e.target.value, formData.altura);
+                        // Cuando cambia el peso actual, recalculamos PS y PA
+                        calculatePesoSaludable(formData.altura, formData.imc, e.target.value);
                       }}
                     />
                   </div>
@@ -1080,7 +1093,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                       className="bg-muted"
                       onChange={(e) => {
                         handleChange("edad", e.target.value);
-                        calculateTMB(formData.peso_objetivo || formData.peso_actual, e.target.value, formData.genero);
+                        calculateTMB(formData.peso_objetivo, e.target.value, formData.genero);
                       }}
                     />
                   </div>
@@ -1088,9 +1101,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                     <Label htmlFor="genero">Género</Label>
                     <Select value={formData.genero} disabled onValueChange={(value) => {
                       handleChange("genero", value);
-                      // Usar peso de referencia (actual o ajustado) para TMB localmente si no hay estado actualizado ya
-                      const pesoRef = parseFloat(formData.peso_referencia_f2) || parseFloat(formData.peso_actual);
-                      calculateTMB(pesoRef.toString(), formData.edad, value);
+                      // Usar peso de referencia (objetivo) para TMB
+                      calculateTMB(formData.peso_referencia_f2, formData.edad, value);
                     }}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona" />
@@ -1172,20 +1184,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                       className="bg-muted"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="peso_referencia">Peso de Referencia (Cálculo)</Label>
+                  {/*<div className="space-y-2">
+                    <Label htmlFor="peso_referencia">Peso de Referencia (Peso Objetivo)</Label>
                     <Input
                       id="peso_referencia"
                       type="number"
                       value={formData.peso_referencia_f2}
                       readOnly
-                      onChange={(e) => {
-                        handleChange("peso_referencia_f2", e.target.value);
-                        calculateTMB(e.target.value, formData.edad, formData.genero);
-                      }}
                       className="bg-muted font-bold"
                     />
-                  </div>
+                  </div>*/}
                   <div className="space-y-2">
                     <Label htmlFor="tmb">TMR FAO/Schofield (kcal)</Label>
                     <Input
@@ -1282,11 +1290,11 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                     <tbody>
                       {/* Proteínas */}
                       <tr className="bg-white">
-                        <td className="border border-teal-200 p-2 font-medium">
+                        <td className="border border-teal-200 p-2 font-medium" rowSpan={3}>
                           Proteínas
                           <div className="text-[10px] text-teal-600 font-normal">Target: 14-20% AMDR</div>
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={3}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1295,7 +1303,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             className="h-8 text-center text-sm bg-muted"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={3}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1304,80 +1312,62 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             className="h-8 text-center text-sm bg-muted"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={3}>
                           <Input
                             type="number"
                             step="0.1"
                             value={formData.proteinas_amdr_f2}
-                            onChange={(e) => {
-                              handleChange("proteinas_amdr_f2", e.target.value);
-                              setTimeout(() => calculateFase2Values(), 0);
-                            }}
-                            className="h-8 text-center text-sm bg-white"
+                            readOnly
+                            className="h-8 text-center text-sm bg-muted font-bold"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">% AVB:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.proteinas_avb_porcentaje}
-                              onChange={(e) => {
-                                handleChange("proteinas_avb_porcentaje", e.target.value);
-                                setTimeout(() => calculateFase2Values(), 0);
-                              }}
-                              className="h-6 text-xs bg-white"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g AVB</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.proteinas_avb_gramos}
+                            readOnly
+                            className="h-6 text-xs bg-muted"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">g AVB:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.proteinas_avb_gramos}
-                              readOnly
-                              className="h-6 text-xs bg-muted"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">% AVB</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.proteinas_avb_porcentaje}
+                            onChange={(e) => {
+                              handleChange("proteinas_avb_porcentaje", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">g/kg/peso:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.proteinas_kg_peso}
-                              onChange={(e) => {
-                                handleChange("proteinas_kg_peso", e.target.value);
-                                setTimeout(() => calculateFase2Values(), 0);
-                              }}
-                              className="h-6 text-xs bg-white"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g/kg/peso</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formData.proteinas_kg_peso}
+                            onChange={(e) => {
+                              handleChange("proteinas_kg_peso", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white font-semibold border-teal-300"
+                          />
                         </td>
                       </tr>
+
                       {/* Grasas */}
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium">
+                        <td className="border border-teal-200 p-2 font-medium" rowSpan={7}>
                           Grasas
                           <div className="text-[10px] text-teal-600 font-normal">Target: 20-35% AMDR</div>
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={7}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1386,7 +1376,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             className="h-8 text-center text-sm bg-muted"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={7}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1395,138 +1385,114 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             className="h-8 text-center text-sm bg-muted"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={7}>
                           <Input
                             type="number"
                             step="0.1"
                             value={formData.grasas_amdr_f2}
                             onChange={(e) => {
                               handleChange("grasas_amdr_f2", e.target.value);
-                              setTimeout(() => calculateFase2Values(), 0);
                             }}
                             className="h-8 text-center text-sm bg-white"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">g GS:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.grasas_gs_gramos}
-                              readOnly
-                              className="h-6 text-xs bg-muted"
-                              placeholder="25.0"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g GS</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_gs_gramos}
+                            readOnly
+                            className="h-6 text-xs bg-muted"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right text-teal-600 font-semibold">%AMDR GS (Target &lt;10%):</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.grasas_gs_amdr}
-                              onChange={(e) => {
-                                handleChange("grasas_gs_amdr", e.target.value);
-                                setTimeout(() => calculateFase2Values(), 0);
-                              }}
-                              className="h-6 text-xs bg-white border-teal-200"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">%AMDR GS</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_gs_amdr}
+                            onChange={(e) => {
+                              handleChange("grasas_gs_amdr", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white border-teal-200"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">g GM:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.grasas_gm_gramos}
-                              readOnly
-                              className="h-6 text-xs bg-muted"
-                              placeholder="25.0"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g GM</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_gm_gramos}
+                            readOnly
+                            className="h-6 text-xs bg-muted"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">g GP:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.grasas_gp_gramos}
-                              readOnly
-                              className="h-6 text-xs bg-muted"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">%AMDR GM</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_gm_amdr || "30"}
+                            readOnly
+                            className="h-6 text-xs bg-muted"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">%AMDR GP:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.grasas_gp_amdr}
-                              onChange={(e) => {
-                                handleChange("grasas_gp_amdr", e.target.value);
-                                setTimeout(() => calculateFase2Values(), 0);
-                              }}
-                              className="h-6 text-xs bg-white"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g GP</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_gp_gramos}
+                            readOnly
+                            className="h-6 text-xs bg-muted"
+                          />
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-2 font-medium"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">Colesterol (mg):</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.grasas_colesterol}
-                              onChange={(e) => {
-                                handleChange("grasas_colesterol", e.target.value);
-                              }}
-                              className="h-6 text-xs bg-white"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">%AMDR GP</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_gp_amdr}
+                            onChange={(e) => {
+                              handleChange("grasas_gp_amdr", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white"
+                          />
                         </td>
                       </tr>
+                      <tr className="bg-teal-50/30">
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">Colesterol</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.grasas_colesterol}
+                            onChange={(e) => {
+                              handleChange("grasas_colesterol", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white"
+                          />
+                        </td>
+                      </tr>
+
                       {/* Carbohidratos */}
                       <tr className="bg-white">
-                        <td className="border border-teal-200 p-2 font-medium">
+                        <td className="border border-teal-200 p-2 font-medium" rowSpan={2}>
                           CHOs
                           <div className="text-[10px] text-teal-600 font-normal">Target: 50-65% AMDR</div>
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={2}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1535,7 +1501,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             className="h-8 text-center text-sm bg-muted"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={2}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1544,38 +1510,44 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             className="h-8 text-center text-sm bg-muted"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" rowSpan={2}>
                           <Input
                             type="number"
                             step="0.1"
                             value={formData.cho_amdr_f2}
-                            onChange={(e) => {
-                              handleChange("cho_amdr_f2", e.target.value);
-                              setTimeout(() => calculateFase2Values(), 0);
-                            }}
-                            className="h-8 text-center text-sm bg-white"
+                            readOnly
+                            className="h-8 text-center text-sm bg-muted font-bold"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right">CHO Concent %AMDR:</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.cho_concent_amdr}
-                              onChange={(e) => {
-                                handleChange("cho_concent_amdr", e.target.value);
-                                setTimeout(() => calculateFase2Values(), 0);
-                              }}
-                              className="h-6 text-xs bg-white"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g Concent</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.cho_concent_gramos}
+                            readOnly
+                            className="h-6 text-xs bg-muted"
+                          />
                         </td>
                       </tr>
+                      <tr className="bg-teal-50/30">
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">%AMDR</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.cho_concent_amdr}
+                            onChange={(e) => {
+                              handleChange("cho_concent_amdr", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white"
+                          />
+                        </td>
+                      </tr>
+
                       {/* Total */}
                       <tr className="bg-teal-100">
-                        <td className="border border-teal-200 p-2 font-medium">Total</td>
-                        <td className="border border-teal-200 p-1"></td>
+                        <td className="border border-teal-200 p-2 font-medium" colSpan={2}>Total:</td>
                         <td className="border border-teal-200 p-1">
                           <Input
                             type="number"
@@ -1583,7 +1555,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.total_calorias_f2}
                             readOnly
                             className="h-8 text-center text-sm font-semibold bg-muted"
-                            placeholder="2723"
                           />
                         </td>
                         <td className="border border-teal-200 p-1">
@@ -1593,29 +1564,27 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             value={formData.total_amdr_f2}
                             readOnly
                             className="h-8 text-center text-sm font-semibold bg-muted"
-                            placeholder="100.0"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50" colSpan={2}>
-                          <div className="grid grid-cols-2 gap-1">
-                            <div className="text-right font-medium text-teal-600">Fibra (g) (T: 14g/1000kcal):</div>
-                            <Input
-                              type="number"
-                              step="0.1"
-                              value={formData.total_fibra}
-                              onChange={(e) => {
-                                handleChange("total_fibra", e.target.value);
-                              }}
-                              className="h-6 text-xs bg-white border-teal-200"
-                              placeholder="14"
-                            />
-                          </div>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">Fibra</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData.total_fibra}
+                            onChange={(e) => {
+                              handleChange("total_fibra", e.target.value);
+                            }}
+                            className="h-6 text-xs bg-white border-teal-200"
+                            placeholder="14"
+                          />
                         </td>
                       </tr>
+
                       {/* Peso Referencia */}
                       <tr className="bg-teal-50">
                         <td className="border border-teal-200 p-2 font-medium">Kg Ref</td>
-                        <td className="border border-teal-200 p-1">
+                        <td className="border border-teal-200 p-1" colSpan={5}>
                           <Input
                             type="number"
                             step="0.1"
@@ -1625,9 +1594,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             placeholder="75"
                           />
                         </td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1"></td>
-                        <td className="border border-teal-200 p-1" colSpan={2}></td>
                       </tr>
                     </tbody>
                   </table>
@@ -1664,9 +1630,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         <th className="border border-primary-foreground/20 p-2 text-center font-bold">COL</th>
                         <th className="border border-primary-foreground/20 p-2 text-center font-bold">CHOS</th>
                         <th className="border border-primary-foreground/20 p-2 text-center font-bold">FD</th>
-                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Ca</th>
+                        {/* <th className="border border-primary-foreground/20 p-2 text-center font-bold">Ca</th>
                         <th className="border border-primary-foreground/20 p-2 text-center font-bold">P</th>
-                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Fe</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Fe</th> */}
                       </tr>
                     </thead>
                     <tbody>
@@ -1698,9 +1664,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                             <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.col || 0).toFixed(0)}</td>
                             <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.chos || 0).toFixed(1)}</td>
                             <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.fd || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.calcio || 0).toFixed(0)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.p || 0).toFixed(0)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.fe || 0).toFixed(1)}</td>
+                            {/*<td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.calcio || 0).toFixed(0)}</td>
+                              <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.p || 0).toFixed(0)}</td>
+                              <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.fe || 0).toFixed(1)}</td>*/}
                           </tr>
                         );
                       })}
@@ -1717,9 +1683,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.col || 0).toFixed(0)}</td>
                         <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.chos || 0).toFixed(1)}</td>
                         <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fd || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.calcio || 0).toFixed(0)}</td>
+                        {/* <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.calcio || 0).toFixed(0)}</td>
                         <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.p || 0).toFixed(0)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fe || 0).toFixed(1)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fe || 0).toFixed(1)}</td> */}
                       </tr>
                       {/* Diferencia con Fase 2 */}
                       <tr className="bg-red-50 font-bold text-red-700">
@@ -1755,6 +1721,26 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         <td className="border border-red-200 p-1" colSpan={3}></td>
                       </tr>
                     </tbody>
+                    <tfoot>
+                      <tr className="bg-primary hover:bg-primary/95 text-white sticky top-0 z-30">
+                        <th className="border border-primary-foreground/20 p-2 text-left font-bold sticky left-0 z-40 bg-inherit shadow-md min-w-[250px]">
+                          Grupo de alimentos
+                        </th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Port.</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Kcal</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Prot</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Grasa</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">GS</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">GM</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">GP</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">COL</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">CHOS</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">FD</th>
+                        {/* <th className="border border-primary-foreground/20 p-2 text-center font-bold">Ca</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">P</th>
+                        <th className="border border-primary-foreground/20 p-2 text-center font-bold">Fe</th> */}
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </CardContent>

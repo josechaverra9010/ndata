@@ -119,9 +119,12 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
         alimentos_disgusto: patient.alimentos_disgusto || "",
         antecedentes_familiares: patient.antecedentes_familiares || "",
         evaluacion_nutricional: patient.evaluacion_nutricional || "",
-        frecuencia_consumo: Array.isArray(patient.frecuencia_consumo) && patient.frecuencia_consumo.length > 0
-          ? patient.frecuencia_consumo
-          : FOOD_GROUPS.map(grupo => ({ grupo, frecuencia: "never" })),
+        frecuencia_consumo: FOOD_GROUPS.map(grupo => {
+          const existingItem = Array.isArray(patient.frecuencia_consumo)
+            ? patient.frecuencia_consumo.find(item => item.grupo === grupo)
+            : null;
+          return existingItem || { grupo, frecuencia: "never" };
+        }),
       });
     } else if (!open) {
       setFormData({
