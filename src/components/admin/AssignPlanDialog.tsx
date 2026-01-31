@@ -82,7 +82,12 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
   const fetchPatients = async () => {
     try {
       setLoadingPatients(true);
-      const response = await fetch(`${API_URL}/patients`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setPatients(data);
@@ -105,10 +110,12 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
 
     setLoading(true);
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/meal-plans/assign`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           patient_id: parseInt(selectedPatientId),

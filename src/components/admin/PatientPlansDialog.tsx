@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Calendar, TrendingUp, Utensils, Plus, Pause, Play, Trash2 } from "lucide-react";
+import { Loader2, Calendar, TrendingUp, Utensils, Plus, Pause, Play, Trash2, ClipboardList, Edit } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
@@ -17,6 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+import { PlanDetailsDialog } from "./PlanDetailsDialog";
 
 interface Patient {
   id: number;
@@ -60,6 +62,13 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
   const [assignments, setAssignments] = useState<PatientPlanAssignment[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [planToDelete, setPlanToDelete] = useState<PatientPlanAssignment | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [selectedSummaryPlan, setSelectedSummaryPlan] = useState<any>(null);
+  const [viewPhasesLoading, setViewPhasesLoading] = useState<number | null>(null);
+  const [editPlanOpen, setEditPlanOpen] = useState(false);
+  const [initialIsEditing, setInitialIsEditing] = useState(false);
+  const [initialTab, setInitialTab] = useState<string>("overview");
+  const [planToEdit, setPlanToEdit] = useState<any>(null);
 
   useEffect(() => {
     if (open && patient) {
@@ -70,7 +79,12 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
   const fetchPatientPlans = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/patients/${patient.id}/meal-plans`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${patient.id}/meal-plans`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
 
       if (!response.ok) {
         throw new Error("Error al cargar planes");
@@ -99,21 +113,25 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
 
   const handleChangeStatus = async (assignmentId: number, newStatus: string) => {
     try {
+      const token = localStorage.getItem("userToken");
       // Intentar con PATCH primero
       let response = await fetch(`${API_URL}/meal-plans/assign/${assignmentId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ status: newStatus }),
       });
 
       // Si PATCH no funciona (405), intentar con PUT
       if (response.status === 405) {
+        const token = localStorage.getItem("userToken");
         response = await fetch(`${API_URL}/meal-plans/assign/${assignmentId}/status`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ status: newStatus }),
         });
@@ -146,6 +164,32 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
     }
   };
 
+  const handleUpdatePlan = async (planId: number, planData: any) => {
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/meal-plans/${planId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(planData),
+      });
+
+      if (response.ok) {
+        toast({ title: "¡Éxito!", description: "Plan actualizado correctamente" });
+        setEditPlanOpen(false);
+        fetchPatientPlans();
+      } else {
+        const error = await response.json();
+        toast({ title: "Error", description: error.detail || "No se pudo actualizar el plan", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Error updating plan:", error);
+      toast({ title: "Error", description: "Error al actualizar el plan", variant: "destructive" });
+    }
+  };
+
   const handleDeleteClick = (assignment: PatientPlanAssignment) => {
     setPlanToDelete(assignment);
     setDeleteDialogOpen(true);
@@ -155,8 +199,12 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
     if (!planToDelete) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/meal-plans/assign/${planToDelete.id}`, {
         method: "DELETE",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
       });
 
       if (!response.ok) {
@@ -179,6 +227,33 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
     } finally {
       setDeleteDialogOpen(false);
       setPlanToDelete(null);
+    }
+  };
+
+  const handleViewPhases = async (plan: any) => {
+    setViewPhasesLoading(plan.id);
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/meal-plans/${plan.id}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
+      
+      if (response.ok) {
+        const fullPlan = await response.json();
+        setPlanToEdit(fullPlan);
+      } else {
+        setPlanToEdit(plan);
+      }
+    } catch (error) {
+      console.error("Error fetching full plan details:", error);
+      setPlanToEdit(plan);
+    } finally {
+      setViewPhasesLoading(null);
+      setInitialIsEditing(true);
+      setInitialTab("overview");
+      setEditPlanOpen(true);
     }
   };
 
@@ -259,34 +334,20 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
                       </div>
 
                       <div className="flex gap-1">
-                        {assignment.status === "active" ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleChangeStatus(assignment.id, "paused")}
-                            title="Pausar plan"
-                          >
-                            <Pause className="h-4 w-4" />
-                          </Button>
-                        ) : assignment.status === "paused" ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleChangeStatus(assignment.id, "active")}
-                            title="Activar plan"
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
-                        ) : null}
-
                         <Button
                           variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteClick(assignment)}
-                          className="text-destructive hover:text-destructive"
-                          title="Eliminar asignación"
+                          size="sm"
+                          onClick={() => {
+                            setPlanToEdit(assignment.meal_plan);
+                            setInitialIsEditing(false);
+                            setInitialTab("menu");
+                            setEditPlanOpen(true);
+                          }}
+                          className="text-primary hover:text-primary hover:bg-primary/10 mr-1"
+                          title="Ver menú semanal"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Utensils className="h-4 w-4 mr-1" />
+                          <span className="text-xs">Ver Resumen</span>
                         </Button>
                       </div>
                     </div>
@@ -351,8 +412,24 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
               </div>
             </ScrollArea>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      
+
+      <PlanDetailsDialog
+        plan={planToEdit}
+        open={editPlanOpen}
+        onOpenChange={setEditPlanOpen}
+        onUpdatePlan={handleUpdatePlan}
+        initialIsEditing={initialIsEditing}
+        initialTab={initialTab}
+      />
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

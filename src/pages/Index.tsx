@@ -72,13 +72,18 @@ const Index = () => {
     const fetchDashboardData = async () => {
       try {
         console.log('🔄 Iniciando fetch de datos del dashboard...');
+        const token = localStorage.getItem("userToken");
+        const headers = {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        };
 
         // Fetch stats, pacientes, citas y top progress en paralelo
         const [statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse] = await Promise.all([
-          fetch(`${API_URL}/dashboard/stats`),
-          fetch(`${API_URL}/dashboard/recent-patients?limit=5`),
-          fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`),
-          fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`)
+          fetch(`${API_URL}/dashboard/stats`, { headers }),
+          fetch(`${API_URL}/dashboard/recent-patients?limit=5`, { headers }),
+          fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`, { headers }),
+          fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`, { headers })
         ]);
 
         console.log('📊 Stats response status:', statsResponse.status);

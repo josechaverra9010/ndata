@@ -100,14 +100,23 @@ export default function PatientAppointments() {
     setLoading(true);
     try {
       // Cargar próximas citas
-      const upcomingRes = await fetch(`${API_URL}/patients/${patientId}/appointments/upcoming`);
+      const token = localStorage.getItem("userToken");
+      const upcomingRes = await fetch(`${API_URL}/patients/${patientId}/appointments/upcoming`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (upcomingRes.ok) {
         const data = await upcomingRes.json();
         setUpcomingAppointments(data);
       }
 
       // Cargar historial
-      const pastRes = await fetch(`${API_URL}/patients/${patientId}/appointments/past`);
+      const pastRes = await fetch(`${API_URL}/patients/${patientId}/appointments/past`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (pastRes.ok) {
         const data = await pastRes.json();
         setPastAppointments(data);
@@ -128,7 +137,12 @@ export default function PatientAppointments() {
     if (!patientId) return;
 
     try {
-      const res = await fetch(`${API_URL}/patients/${patientId}/nutritionist`);
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/patients/${patientId}/nutritionist`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setNutritionist(data);
@@ -142,7 +156,12 @@ export default function PatientAppointments() {
     if (!patientId) return;
 
     try {
-      const res = await fetch(`${API_URL}/patients/${patientId}/available-times?date=${date}`);
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/patients/${patientId}/available-times?date=${date}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         const available = data.slots
@@ -167,9 +186,13 @@ export default function PatientAppointments() {
 
     setSubmitting(true);
     try {
+      const token = localStorage.getItem("userToken");
       const res = await fetch(`${API_URL}/patients/${patientId}/appointments/request`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(newAppointment)
       });
 
@@ -220,11 +243,15 @@ export default function PatientAppointments() {
 
     setSubmitting(true);
     try {
+      const token = localStorage.getItem("userToken");
       const res = await fetch(
         `${API_URL}/patients/${patientId}/appointments/${selectedAppointment.id}/reschedule`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({
             date: newAppointment.date,
             time: newAppointment.time
@@ -266,9 +293,15 @@ export default function PatientAppointments() {
     if (!confirm("¿Estás seguro de que deseas cancelar esta cita?")) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const res = await fetch(
         `${API_URL}/patients/${patientId}/appointments/${appointmentId}/cancel`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          }
+        }
       );
 
       if (res.ok) {

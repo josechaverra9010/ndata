@@ -68,8 +68,13 @@ export function AssignPlanToPatientDialog({
     const fetchPlans = async () => {
         try {
             setLoadingPlans(true);
+            const token = localStorage.getItem("userToken");
             // We use the basic listing endpoint. In a real app we might paginate or filter.
-            const response = await fetch(`${API_URL}/meal-plans`);
+            const response = await fetch(`${API_URL}/meal-plans`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setPlans(data);
@@ -92,10 +97,12 @@ export function AssignPlanToPatientDialog({
 
         setLoading(true);
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/meal-plans/assign`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
                 },
                 body: JSON.stringify({
                     patient_id: patient.id,

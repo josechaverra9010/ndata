@@ -189,7 +189,12 @@ const AdminWeeklyMenus = () => {
             if (categoryFilter) params.append('category', categoryFilter);
             if (params.toString()) url += `?${params.toString()}`;
 
-            const response = await fetch(url);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(url, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
 
             if (!response.ok) {
                 throw new Error(`Error ${response.status}: ${response.statusText}`);
@@ -215,7 +220,12 @@ const AdminWeeklyMenus = () => {
 
     const fetchRecipes = async () => {
         try {
-            const response = await fetch(`${API_URL}/recipes`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/recipes`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
 
             if (!response.ok) {
                 throw new Error(`Error ${response.status}`);
@@ -309,9 +319,13 @@ const AdminWeeklyMenus = () => {
         };
 
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/weekly-menus`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify(menuData)
             });
 
@@ -342,9 +356,13 @@ const AdminWeeklyMenus = () => {
         };
 
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/weekly-menus/${selectedMenu.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify(updateData)
             });
 
@@ -435,8 +453,12 @@ const AdminWeeklyMenus = () => {
 
     const handleDuplicateMenu = async (menu: WeeklyMenu) => {
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/weekly-menus/${menu.id}/duplicate`, {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
             });
 
             const result = await response.json();
@@ -455,8 +477,12 @@ const AdminWeeklyMenus = () => {
         if (!menuToDelete) return;
 
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/weekly-menus/${menuToDelete.id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
             });
 
             const result = await response.json();

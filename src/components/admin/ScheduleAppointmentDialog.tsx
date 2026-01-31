@@ -74,10 +74,12 @@ export function ScheduleAppointmentDialog({
                 notes: formData.notes || null,
             };
 
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/appointments`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
                 },
                 body: JSON.stringify(appointmentData),
             });

@@ -68,7 +68,12 @@ const MealPlans = () => {
   const fetchMealPlans = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/meal-plans`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/meal-plans`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setMealPlans(data);
@@ -100,9 +105,13 @@ const MealPlans = () => {
 
   const handleUpdatePlan = async (planId: number, planData: Omit<MealPlan, "id" | "patients" | "is_active" | "created_at">) => {
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/meal-plans/${planId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(planData),
       });
 
@@ -125,7 +134,13 @@ const MealPlans = () => {
     if (!planToDelete) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(`${API_URL}/meal-plans/${planToDelete.id}`, { method: "DELETE" });
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/meal-plans/${planToDelete.id}`, {
+        method: "DELETE",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         setMealPlans(mealPlans.filter(p => p.id !== planToDelete.id));
         toast({ title: "¡Éxito!", description: "Plan eliminado correctamente" });

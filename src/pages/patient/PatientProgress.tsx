@@ -74,7 +74,12 @@ export default function PatientProgress() {
 
   const fetchProgressData = async () => {
     try {
-      const response = await fetch(`${API_URL}/patient/${patientId}/progress`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patient/${patientId}/progress`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (!response.ok) throw new Error("Error fetching progress");
       const data = await response.json();
       setProgressData(data);
@@ -102,9 +107,13 @@ export default function PatientProgress() {
 
     setSavingStatus(true);
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patient/${patientId}/progress/add`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           patient_id: patientId,
           date: metricForm.date,

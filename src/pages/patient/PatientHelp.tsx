@@ -67,7 +67,12 @@ const PatientHelp = () => {
 
     const fetchFAQs = async () => {
         try {
-            const response = await fetch(`${API_URL}/support/faqs`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/support/faqs`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setFaqs(data);
@@ -82,7 +87,12 @@ const PatientHelp = () => {
     const fetchTickets = async () => {
         if (!user?.id) return;
         try {
-            const response = await fetch(`${API_URL}/patient/${user.id}/support/tickets`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/patient/${user.id}/support/tickets`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setTickets(data);
@@ -105,9 +115,13 @@ const PatientHelp = () => {
         }
 
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/support/ticket`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({
                     patient_id: user?.id,
                     ...formData

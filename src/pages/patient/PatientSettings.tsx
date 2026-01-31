@@ -79,7 +79,12 @@ export default function PatientSettings() {
 
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/patient/settings/${userId}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patient/settings/${userId}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
 
       if (!response.ok) {
         throw new Error("Error al cargar configuración");
@@ -120,9 +125,13 @@ export default function PatientSettings() {
       setSaving(true);
 
       // Guardar notificaciones
+      const token = localStorage.getItem("userToken");
       const notifResponse = await fetch(`${API_URL}/patient/notifications/${userId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(notifications)
       });
 
@@ -133,7 +142,10 @@ export default function PatientSettings() {
       // Guardar apariencia
       const appearanceResponse = await fetch(`${API_URL}/patient/appearance/${userId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           theme: theme,
           language: appearance.language,
@@ -178,9 +190,13 @@ export default function PatientSettings() {
 
     try {
       setSaving(true);
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patient/profile/${userId}/change-password`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           current_password: passwordData.currentPassword,
           new_password: passwordData.newPassword,

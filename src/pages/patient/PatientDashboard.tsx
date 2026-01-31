@@ -143,8 +143,14 @@ export default function PatientDashboard() {
 
   const fetchDashboardData = async () => {
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(
-        `${API_URL}/patient/${patientId}/dashboard/complete`
+        `${API_URL}/patient/${patientId}/dashboard/complete`,
+        {
+          headers: {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          }
+        }
       );
 
       if (!response.ok) throw new Error('Error al cargar datos');
@@ -167,12 +173,16 @@ export default function PatientDashboard() {
     setUpdatingMeal(meal.meal_type);
 
     try {
+      const token = localStorage.getItem("userToken");
       const endpoint = meal.completed ? 'uncomplete' : 'complete';
       const response = await fetch(
         `${API_URL}/tracking/meal-toggle/${patientId}/${endpoint}`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({
             meal_type: meal.meal_type,
             date: new Date().toISOString().split('T')[0]
@@ -205,11 +215,15 @@ export default function PatientDashboard() {
     setAddingWater(true);
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(
         `${API_URL}/patient/${patientId}/water/add`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ glass_ml: 250 })
         }
       );
@@ -258,9 +272,13 @@ export default function PatientDashboard() {
 
     setSavingWeight(true);
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/profile/update`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ email: user?.email, peso_actual: parseFloat(newWeight) }),
       });
 
@@ -369,9 +387,13 @@ export default function PatientDashboard() {
                     onClick={async () => {
                       setAddingWater(true);
                       try {
+                        const token = localStorage.getItem("userToken");
                         const response = await fetch(`${API_URL}/patient/${patientId}/water/add`, {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                          },
                           body: JSON.stringify({ glass_ml: -250 })
                         });
                         if (response.ok) fetchDashboardData();

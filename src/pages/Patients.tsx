@@ -102,10 +102,12 @@ const Patients = () => {
       setLoading(true);
       setError(null);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patients`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
       });
 
@@ -220,10 +222,12 @@ const Patients = () => {
     if (!patientToDelete) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patients/${patientToDelete.id}`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
       });
 
