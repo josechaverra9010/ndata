@@ -70,7 +70,12 @@ export default function MyPlan() {
 
   const fetchPlanData = async () => {
     try {
-      const response = await fetch(`${API_URL}/patient/${patientId}/plan/weekly`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patient/${patientId}/plan/weekly`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (!response.ok) throw new Error('Error al cargar el plan');
       const data = await response.json();
       setPlanData(data);

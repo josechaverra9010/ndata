@@ -77,7 +77,12 @@ export default function AdminRecipes() {
   const fetchRecipes = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/recipes`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/recipes`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setRecipes(data);
@@ -98,8 +103,12 @@ export default function AdminRecipes() {
 
   const toggleFavorite = async (recipeId: number) => {
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/recipes/${recipeId}/favorite`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
       });
 
       if (response.ok) {
@@ -159,8 +168,12 @@ export default function AdminRecipes() {
     const method = editingRecipe ? 'PUT' : 'POST';
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(url, {
         method: method,
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: data
       });
 
@@ -182,8 +195,12 @@ export default function AdminRecipes() {
     if (!recipeToDelete) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/recipes/${recipeToDelete.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
       });
 
       if (response.ok) {
@@ -229,8 +246,12 @@ export default function AdminRecipes() {
     // Let's assume we don't duplicate the image for now if it's a file, or we can add logic later.
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/recipes`, {
         method: 'POST',
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: data
       });
 

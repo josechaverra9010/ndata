@@ -31,7 +31,12 @@ export function NutritionChart() {
   useEffect(() => {
     const fetchChartData = async () => {
       try {
-        const response = await fetch(`${API_URL}/dashboard/chart-data`);
+        const token = localStorage.getItem("userToken");
+        const response = await fetch(`${API_URL}/dashboard/chart-data`, {
+          headers: {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          }
+        });
         if (response.ok) {
           const chartData = await response.json();
           // El endpoint devuelve un array con { key, month, consultas, planes }

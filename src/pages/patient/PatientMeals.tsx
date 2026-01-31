@@ -111,11 +111,15 @@ export default function PatientMeals() {
     if (!patientId || !selectedMealId) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(
         `${API_URL}/patient/${patientId}/meals/food/add`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({
             meal_type: selectedMealId,
             date: new Date().toISOString().split('T')[0],
@@ -149,9 +153,15 @@ export default function PatientMeals() {
     if (!patientId) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(
         `${API_URL}/patient/${patientId}/meals/food/remove?meal_type=${mealId}&food_name=${encodeURIComponent(foodName)}&date=${new Date().toISOString().split('T')[0]}`,
-        { method: 'DELETE' }
+        {
+          method: 'DELETE',
+          headers: {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          }
+        }
       );
 
       if (!response.ok) throw new Error('Error al eliminar alimento');
@@ -185,9 +195,15 @@ export default function PatientMeals() {
     }
 
     try {
+      const token = localStorage.getItem("userToken");
       console.log(`Fetching meals for patient ID: ${patientId}`);
       const response = await fetch(
-        `${API_URL}/patient/${patientId}/meals/today/detailed`
+        `${API_URL}/patient/${patientId}/meals/today/detailed`,
+        {
+          headers: {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          }
+        }
       );
 
       if (!response.ok) throw new Error('Error al cargar comidas');
@@ -253,11 +269,15 @@ export default function PatientMeals() {
     setUpdatingFood(toggleKey);
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(
         `${API_URL}/patient/${patientId}/meals/food/toggle`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({
             meal_type: mealId,
             food_name: foodName,

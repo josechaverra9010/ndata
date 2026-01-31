@@ -219,10 +219,12 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
       const url = isEditing ? `${API_URL}/patients/${patient.id}` : `${API_URL}/patients`;
       const method = isEditing ? "PUT" : "POST";
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(url, {
         method: method,
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           nombres: formData.nombres.trim(),

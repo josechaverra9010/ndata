@@ -160,11 +160,12 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
   const fetchMenus = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/weekly-menus-complete`);
-      if (response.ok) {
-        const data = await response.json();
-        setMenus(data);
-      }
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/weekly-menus-complete`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
     } catch (error) {
       console.error("Error fetching menus:", error);
       toast.error("Error al cargar menús disponibles");
@@ -178,9 +179,13 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
 
     setAssigning(true);
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/meal-plans/${planId}/assign-menu`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ weekly_menu_id: parseInt(selectedMenuId) }),
       });
 
@@ -301,10 +306,12 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
 
   const fetchRecipeById = async (recipeId: number) => {
     try {
-      const response = await fetch(`${API_URL}/recipes/${recipeId}`);
-      if (response.ok) {
-        return await response.json();
-      }
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
     } catch (error) {
       console.error(`Error fetching recipe ${recipeId}:`, error);
     }
@@ -317,7 +324,12 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
     setEnrichedMenu(null);
 
     try {
-      const response = await fetch(`${API_URL}/weekly-menus/by-plan/${planId}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/weekly-menus/by-plan/${planId}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
 
       if (response.ok) {
         const data = await response.json();

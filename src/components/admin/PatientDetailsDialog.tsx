@@ -184,7 +184,12 @@ export function PatientDetailsDialog({
   const fetchRecalls = async () => {
     try {
       setLoadingRecalls(true);
-      const response = await fetch(`${API_URL}/patients/${patient.id}/recalls`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${patient.id}/recalls`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (!response.ok) throw new Error("Error fetching recalls");
       const data = await response.json();
       setRecalls(data);
@@ -198,8 +203,12 @@ export function PatientDetailsDialog({
   const handleDelete = async () => {
     try {
       setDeleting(true);
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patients/${patient.id}`, {
         method: "DELETE",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
       });
 
       if (!response.ok) {

@@ -53,10 +53,12 @@ export function Recordatorio24hForm({ patientId, onSuccess, onCancel }: Recordat
         };
 
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/patients/${patientId}/recalls`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
                 },
                 body: JSON.stringify(payload),
             });

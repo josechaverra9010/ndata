@@ -123,10 +123,12 @@ const AdminSettings = () => {
       setLoading(true);
       console.log("Loading settings for user ID:", userId);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/admin/settings/complete/${userId}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         }
       });
 
@@ -164,7 +166,12 @@ const AdminSettings = () => {
     if (!userId) return;
 
     try {
-      const response = await fetch(`${API_URL}/admin/billing/${userId}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/admin/billing/${userId}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setBilling(data);
@@ -183,10 +190,12 @@ const AdminSettings = () => {
     try {
       setSaving(true);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/admin/profile/${userId}`, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(profile)
       });
@@ -236,8 +245,12 @@ const AdminSettings = () => {
       const formData = new FormData();
       formData.append("file", file);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/admin/profile/${userId}/upload-avatar`, {
         method: "POST",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: formData
       });
 
@@ -289,10 +302,12 @@ const AdminSettings = () => {
     try {
       setSaving(true);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/admin/profile/${userId}/change-password`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           current_password: passwordData.currentPassword,
@@ -332,10 +347,12 @@ const AdminSettings = () => {
     try {
       setSaving(true);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/admin/notifications/${userId}`, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(notifications)
       });
@@ -366,10 +383,12 @@ const AdminSettings = () => {
     try {
       setSaving(true);
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/admin/appearance/${userId}`, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           theme: theme,

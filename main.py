@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy import inspect, text
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List
@@ -41,6 +42,17 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 class Base(DeclarativeBase):
     pass
+
+def ensure_schema_migrations():
+    inspector = inspect(engine)
+
+    if "users" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("users")}
+        if "nutritionist_id" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN nutritionist_id INTEGER NULL"))
+
+ensure_schema_migrations()
 
 # Seguridad
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -400,6 +412,10 @@ class UserDB(Base):
     antecedentes_familiares = Column(Text, nullable=True)
     evaluacion_nutricional = Column(Text, nullable=True)
     frecuencia_consumo = Column(JSON, nullable=True)
+
+    nutritionist_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    nutritionist = relationship("UserDB", foreign_keys=[nutritionist_id], remote_side=[id])
     
     # Relación con planes asignados
     assigned_plans = relationship("PatientMealPlanDB", back_populates="patient")
@@ -561,6 +577,8 @@ class PatientCreateSchema(BaseModel):
     evaluacion_nutricional: Optional[str] = None
     frecuencia_consumo: Optional[List[dict]] = None
 
+    nutritionist_id: Optional[int] = None
+
 class LoginSchema(BaseModel):
     email: str
     password: str
@@ -623,6 +641,8 @@ class PatientResponse(BaseModel):
     evaluacion_nutricional: Optional[str] = None
     frecuencia_consumo: Optional[List[dict]] = None
     frecuencia_consumo: Optional[List[dict]] = None
+
+    nutritionist_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -890,6 +910,30 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+def require_admin_or_superadmin(current_user: UserDB = Depends(get_current_user)):
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+    return current_user
+
+def authorize_patient_access(patient_id: int, current_user: UserDB, db: Session):
+    if current_user.role == "patient":
+        if current_user.id != patient_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        return
+
+    if current_user.role in ["admin", "superadmin"]:
+        if current_user.role == "superadmin":
+            return
+
+        patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+        if patient.nutritionist_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+        return
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -1625,9 +1669,15 @@ def calcular_progreso(peso_actual: Optional[float], peso_objetivo: Optional[floa
 # ==================== ENDPOINTS DE PACIENTES ====================
 
 @app.get("/api/patients", response_model=List[PatientResponse])
-def get_patients(db: Session = Depends(get_db)):
+def get_patients(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
     """Obtener todos los pacientes con información completa"""
-    patients = db.query(UserDB).filter(UserDB.role == "patient").all()
+    query = db.query(UserDB).filter(UserDB.role == "patient")
+    if current_user.role == "admin":
+        query = query.filter(UserDB.nutritionist_id == current_user.id)
+    patients = query.all()
     
     results = []
     for p in patients:
@@ -1673,13 +1723,18 @@ def get_patients(db: Session = Depends(get_db)):
             "altura": p.altura,
             "edad_formateada": edad_form,
             "evaluacion_nutricional": p.evaluacion_nutricional,
-            "frecuencia_consumo": p.frecuencia_consumo
+            "frecuencia_consumo": p.frecuencia_consumo,
+            "nutritionist_id": p.nutritionist_id
         })
     
     return results
 
 @app.post("/api/patients", response_model=PatientResponse)
-def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_db)):
+def create_patient(
+    patient_data: PatientCreateSchema,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
     """Crear un nuevo paciente"""
     # Verificar si el email ya existe
     existing_patient = db.query(UserDB).filter(UserDB.email == patient_data.email).first()
@@ -1726,6 +1781,15 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
         evaluacion_nutricional=patient_data.evaluacion_nutricional,
         frecuencia_consumo=patient_data.frecuencia_consumo
     )
+
+    if current_user.role == "admin":
+        new_patient.nutritionist_id = current_user.id
+    else:
+        if patient_data.nutritionist_id is not None:
+            nutritionist = db.query(UserDB).filter(UserDB.id == patient_data.nutritionist_id, UserDB.role == "admin").first()
+            if not nutritionist:
+                raise HTTPException(status_code=400, detail="Nutricionista inválido")
+            new_patient.nutritionist_id = nutritionist.id
     
     try:
         db.add(new_patient)
@@ -1763,15 +1827,21 @@ def create_patient(patient_data: PatientCreateSchema, db: Session = Depends(get_
             "altura": new_patient.altura,
             "edad_formateada": edad_form,
             "evaluacion_nutricional": new_patient.evaluacion_nutricional,
-            "frecuencia_consumo": new_patient.frecuencia_consumo
+            "frecuencia_consumo": new_patient.frecuencia_consumo,
+            "nutritionist_id": new_patient.nutritionist_id
         }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear paciente: {str(e)}")
 
 @app.get("/api/patients/{patient_id}", response_model=PatientResponse)
-def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_details(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Obtener detalles completos de un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -1818,12 +1888,19 @@ def get_patient_details(patient_id: int, db: Session = Depends(get_db)):
         "altura": patient.altura,
         "edad_formateada": edad_form,
         "evaluacion_nutricional": patient.evaluacion_nutricional,
-        "frecuencia_consumo": patient.frecuencia_consumo
+        "frecuencia_consumo": patient.frecuencia_consumo,
+        "nutritionist_id": patient.nutritionist_id
     }
 
 @app.put("/api/patients/{patient_id}", response_model=PatientResponse)
-def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Session = Depends(get_db)):
+def update_patient(
+    patient_id: int,
+    patient_data: PatientCreateSchema,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
     """Actualizar información de un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -1900,8 +1977,13 @@ def update_patient(patient_id: int, patient_data: PatientCreateSchema, db: Sessi
     }
 
 @app.delete("/api/patients/{patient_id}")
-def delete_patient(patient_id: int, db: Session = Depends(get_db)):
+def delete_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
     """Eliminar un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -1913,8 +1995,14 @@ def delete_patient(patient_id: int, db: Session = Depends(get_db)):
 # ==================== ENDPOINTS RECORDATORIO 24 HORAS ====================
 
 @app.post("/api/patients/{patient_id}/recalls", response_model=RecallResponse)
-def create_patient_recall(patient_id: int, recall_data: RecallCreate, db: Session = Depends(get_db)):
+def create_patient_recall(
+    patient_id: int,
+    recall_data: RecallCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Crear un nuevo recordatorio de 24 horas para un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -1958,8 +2046,13 @@ def create_patient_recall(patient_id: int, recall_data: RecallCreate, db: Sessio
     return response_dict
 
 @app.get("/api/patients/{patient_id}/recalls", response_model=List[RecallResponse])
-def get_patient_recalls(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_recalls(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Obtener el historial de recordatorios de 24 horas de un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     recalls = db.query(Recordatorio24hDB).filter(Recordatorio24hDB.patient_id == patient_id).order_by(Recordatorio24hDB.date.desc()).all()
     
     # Convertir fechas a string
@@ -1980,10 +2073,17 @@ def get_patient_recalls(patient_id: int, db: Session = Depends(get_db)):
     return results
 
 @app.get("/api/patients/stats")
-def get_patient_stats(db: Session = Depends(get_db)):
+def get_patient_stats(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
     """Estadísticas de pacientes"""
-    total = db.query(UserDB).filter(UserDB.role == "patient").count()
-    activos = db.query(UserDB).filter(UserDB.role == "patient", UserDB.status == "activo").count()
+    query = db.query(UserDB).filter(UserDB.role == "patient")
+    if current_user.role == "admin":
+        query = query.filter(UserDB.nutritionist_id == current_user.id)
+
+    total = query.count()
+    activos = query.filter(UserDB.status == "activo").count()
     return {
         "total_patients": total,
         "active_now": activos
@@ -3199,7 +3299,12 @@ def assign_plan_to_patient(assignment: AssignPlanSchema, db: Session = Depends(g
     return new_assignment
 
 @app.get("/api/patients/{patient_id}/meal-plans")
-def get_patient_meal_plans(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_meal_plans(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    authorize_patient_access(patient_id, current_user, db)
     assignments = db.query(PatientMealPlanDB).filter(
         PatientMealPlanDB.patient_id == patient_id
     ).all()
@@ -3766,11 +3871,13 @@ def get_patients_progress(
     return results
 
 @app.get("/api/progress/patients/{patient_id}", response_model=PatientProgressDetails)
-def get_patient_progress_details(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_progress_details(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Obtener detalles completos del progreso de un paciente"""
-    patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    authorize_patient_access(patient_id, current_user, db)
     
     # Obtener plan activo
     active_plan_assignment = db.query(PatientMealPlanDB).filter(
@@ -4552,14 +4659,15 @@ def get_appointments_by_type(db: Session = Depends(get_db)):
     
     return results
 @app.get("/api/patients/{patient_id}/appointments/upcoming")
-def get_patient_upcoming_appointments(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_upcoming_appointments(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Obtener las próximas citas de un paciente específico
     """
-    # Verificar que el paciente existe
-    patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    authorize_patient_access(patient_id, current_user, db)
     
     today = datetime.now().date()
     
@@ -4573,8 +4681,13 @@ def get_patient_upcoming_appointments(patient_id: int, db: Session = Depends(get
         AppointmentDB.time.asc()
     ).all()
     
-    admin = db.query(UserDB).filter(UserDB.role == "admin").first()
-    doctor_name = f"{admin.nombres} {admin.apellidos}" if admin else "Dra. María García"
+    nutritionist_db = db.query(UserDB).filter(UserDB.id == current_user.id).first() if current_user.role == "admin" else None
+    if not nutritionist_db:
+        patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+        if patient and patient.nutritionist_id:
+            nutritionist_db = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id, UserDB.role == "admin").first()
+
+    doctor_name = f"{nutritionist_db.nombres} {nutritionist_db.apellidos}" if nutritionist_db else "Dra. María García"
     
     results = []
     for appointment in upcoming_appointments:
@@ -4595,10 +4708,16 @@ def get_patient_upcoming_appointments(patient_id: int, db: Session = Depends(get
     return results
 
 @app.get("/api/patients/{patient_id}/appointments/past")
-def get_patient_past_appointments(patient_id: int, limit: int = 10, db: Session = Depends(get_db)):
+def get_patient_past_appointments(
+    patient_id: int,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Obtener el historial de citas pasadas de un paciente
     """
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4614,8 +4733,12 @@ def get_patient_past_appointments(patient_id: int, limit: int = 10, db: Session 
         AppointmentDB.time.desc()
     ).limit(limit).all()
     
-    admin = db.query(UserDB).filter(UserDB.role == "admin").first()
-    doctor_name = f"{admin.nombres} {admin.apellidos}" if admin else "Dra. María García"
+    nutritionist_db = db.query(UserDB).filter(UserDB.id == current_user.id).first() if current_user.role == "admin" else None
+    if not nutritionist_db:
+        if patient and patient.nutritionist_id:
+            nutritionist_db = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id, UserDB.role == "admin").first()
+
+    doctor_name = f"{nutritionist_db.nombres} {nutritionist_db.apellidos}" if nutritionist_db else "Dra. María García"
     
     results = []
     for appointment in past_appointments:
@@ -4634,16 +4757,24 @@ def get_patient_past_appointments(patient_id: int, limit: int = 10, db: Session 
     return results
 
 @app.get("/api/patients/{patient_id}/nutritionist")
-def get_patient_nutritionist(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_nutritionist(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Obtener información del nutricionista asignado al paciente
     """
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
-    
-    # Buscar el primer nutricionista (admin)
-    nutritionist_db = db.query(UserDB).filter(UserDB.role == "admin").first()
+
+    nutritionist_db = None
+    if patient.nutritionist_id:
+        nutritionist_db = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id, UserDB.role == "admin").first()
+    if not nutritionist_db:
+        nutritionist_db = db.query(UserDB).filter(UserDB.role == "admin").first()
     
     if not nutritionist_db:
         # Fallback si no hay admin
@@ -4658,8 +4789,8 @@ def get_patient_nutritionist(patient_id: int, db: Session = Depends(get_db)):
             "email": "maria.garcia@clinica.com"
         }
     
-    # Contar pacientes reales
-    patients_count = db.query(UserDB).filter(UserDB.role == "patient").count()
+    # Contar pacientes reales del nutricionista
+    patients_count = db.query(UserDB).filter(UserDB.role == "patient", UserDB.nutritionist_id == nutritionist_db.id).count()
     
     return {
         "id": nutritionist_db.id,
@@ -4676,11 +4807,13 @@ def get_patient_nutritionist(patient_id: int, db: Session = Depends(get_db)):
 def request_appointment(
     patient_id: int,
     appointment_data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
     Solicitar una nueva cita (paciente)
     """
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4758,11 +4891,13 @@ def reschedule_appointment(
     patient_id: int,
     appointment_id: int,
     reschedule_data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
     Reprogramar una cita existente (paciente)
     """
+    authorize_patient_access(patient_id, current_user, db)
     # Verificar que la cita existe y pertenece al paciente
     appointment = db.query(AppointmentDB).filter(
         AppointmentDB.id == appointment_id,
@@ -4827,11 +4962,13 @@ def reschedule_appointment(
 def cancel_appointment_patient(
     patient_id: int,
     appointment_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
     Cancelar una cita (paciente)
     """
+    authorize_patient_access(patient_id, current_user, db)
     appointment = db.query(AppointmentDB).filter(
         AppointmentDB.id == appointment_id,
         AppointmentDB.patient_id == patient_id
@@ -4868,10 +5005,15 @@ def cancel_appointment_patient(
     }
 
 @app.get("/api/patients/{patient_id}/appointments/stats")
-def get_patient_appointment_stats(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_appointment_stats(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Obtener estadísticas de citas del paciente
     """
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4932,11 +5074,13 @@ def get_patient_appointment_stats(patient_id: int, db: Session = Depends(get_db)
 def get_available_times_for_patient(
     patient_id: int,
     date: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
     Obtener horarios disponibles para una fecha específica (vista del paciente)
     """
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4992,10 +5136,15 @@ def get_available_times_for_patient(
 # ==================== ENDPOINT ADICIONAL PARA DASHBOARD ====================
 
 @app.get("/api/patients/{patient_id}/dashboard/summary")
-def get_patient_dashboard_summary(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_dashboard_summary(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Obtener resumen completo del dashboard del paciente
     """
+    authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")

@@ -54,7 +54,12 @@ export default function PatientRecipes() {
     const fetchRecipes = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_URL}/recipes`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/recipes`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setRecipes(data);

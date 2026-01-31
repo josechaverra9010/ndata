@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Users, Clock, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Users, Clock, AlertCircle, PieChart } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -238,10 +238,15 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   const fetchPatientAndPrefill = async (pid: number) => {
     setLoadingPatient(true);
     try {
-      const response = await fetch(`${API_URL}/patients/${pid}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${pid}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data?.detail || "No se pudo cargar el paciente");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.detail || "No se pudo cargar el paciente");
       }
       const patient = await response.json();
 
@@ -309,7 +314,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   const fetchWeeklyMenus = async () => {
     setLoadingMenus(true);
     try {
-      const response = await fetch(`${API_URL}/weekly-menus-complete`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/weekly-menus-complete`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setWeeklyMenus(data);
@@ -328,7 +338,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
 
   const fetchRecipeById = async (recipeId: number) => {
     try {
-      const response = await fetch(`${API_URL}/recipes/${recipeId}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         return await response.json();
       }
@@ -347,7 +362,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     console.log("🔍 Cargando menú detallado:", menuId);
     setLoadingRecipes(true);
     try {
-      const response = await fetch(`${API_URL}/weekly-menus/${menuId}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/weekly-menus/${menuId}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (!response.ok) throw new Error("Error en la respuesta del servidor");
 
       const menu = await response.json();
@@ -818,10 +838,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
 
     // Crear el plan y asignar menú si existe
     try {
+      const token = localStorage.getItem("userToken");
       // Crear el plan primero
       const response = await fetch(`${API_URL}/meal-plans`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(planData),
       });
 
@@ -834,7 +858,10 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
           try {
             const menuResponse = await fetch(`${API_URL}/meal-plans/${planId}/assign-menu`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+              },
               body: JSON.stringify({ weekly_menu_id: parseInt(formData.weekly_menu_id) }),
             });
 
@@ -887,7 +914,10 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
 
             const assignResponse = await fetch(`${API_URL}/meal-plans/assign`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+              },
               body: JSON.stringify({
                 patient_id: patientId,
                 meal_plan_id: planId,
@@ -1758,6 +1788,46 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                 <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Resumen de Fases Previas - Sticky */}
+                <div className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm pb-4 pt-1 -mt-1 border-b mb-6">
+                  <Card className="bg-primary/5 border-primary/20 overflow-hidden shadow-sm">
+                    <CardHeader className="py-2 px-4 bg-primary/10 border-b flex flex-row items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Utensils className="h-4 w-4 text-primary" />
+                        <CardTitle className="text-sm font-bold uppercase text-primary">Resumen de Porciones (Fase 3)</CardTitle>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] border-primary/20 text-primary">
+                        Referencia para Minuta
+                      </Badge>
+                    </CardHeader>
+                    <CardContent className="p-3">
+                      <div className="max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
+                        <table className="w-full text-xs">
+                          <tbody className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-1">
+                            {GRUPOS_ALIMENTOS.map(grupo => {
+                              const porciones = parseFloat(formData.grupos_alimentos_f3[grupo]?.porciones) || 0;
+                              if (porciones <= 0) return null;
+                              return (
+                                <tr key={grupo} className="flex justify-between items-center py-1 border-b border-primary/5 last:border-0">
+                                  <td className="text-muted-foreground truncate mr-2">{grupo}</td>
+                                  <td className="font-bold text-primary tabular-nums">{porciones}</td>
+                                </tr>
+                              );
+                            })}
+                            {Object.values(formData.grupos_alimentos_f3).every((g: any) => !(parseFloat(g.porciones) > 0)) && (
+                              <tr className="col-span-full">
+                                <td className="py-2 text-center text-muted-foreground italic" colSpan={2}>
+                                  No se han asignado porciones en la Fase 3
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
                 {/* Información Básica */}
                 <div className="grid grid-cols-2 gap-4 bg-muted/20 p-4 rounded-lg">
                   <div className="space-y-2">

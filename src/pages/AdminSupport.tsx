@@ -57,7 +57,12 @@ const AdminSupport = () => {
             if (filterStatus !== "all") url += `status=${filterStatus}&`;
             if (filterCategory !== "all") url += `category=${filterCategory}`;
 
-            const response = await fetch(url);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(url, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setTickets(data);
@@ -80,9 +85,13 @@ const AdminSupport = () => {
         }
 
         try {
+            const token = localStorage.getItem("userToken");
             const res = await fetch(`${API_URL}/support/ticket/${ticketId}`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({
                     admin_response: response,
                     status: "in_progress"
@@ -109,9 +118,13 @@ const AdminSupport = () => {
 
     const handleStatusChange = async (ticketId: number, newStatus: string) => {
         try {
+            const token = localStorage.getItem("userToken");
             const res = await fetch(`${API_URL}/support/ticket/${ticketId}`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({ status: newStatus })
             });
 

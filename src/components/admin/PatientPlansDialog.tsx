@@ -70,7 +70,12 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
   const fetchPatientPlans = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/patients/${patient.id}/meal-plans`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${patient.id}/meal-plans`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
 
       if (!response.ok) {
         throw new Error("Error al cargar planes");
@@ -99,21 +104,25 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
 
   const handleChangeStatus = async (assignmentId: number, newStatus: string) => {
     try {
+      const token = localStorage.getItem("userToken");
       // Intentar con PATCH primero
       let response = await fetch(`${API_URL}/meal-plans/assign/${assignmentId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ status: newStatus }),
       });
 
       // Si PATCH no funciona (405), intentar con PUT
       if (response.status === 405) {
+        const token = localStorage.getItem("userToken");
         response = await fetch(`${API_URL}/meal-plans/assign/${assignmentId}/status`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ status: newStatus }),
         });
@@ -155,8 +164,12 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
     if (!planToDelete) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/meal-plans/assign/${planToDelete.id}`, {
         method: "DELETE",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
       });
 
       if (!response.ok) {

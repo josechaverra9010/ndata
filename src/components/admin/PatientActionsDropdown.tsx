@@ -60,8 +60,12 @@ export function PatientActionsDropdown({
   const handleDelete = async () => {
     try {
       setDeleting(true);
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patients/${patient.id}`, {
         method: "DELETE",
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
       });
 
       if (!response.ok) {

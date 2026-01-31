@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 interface MealPlan {
     id: number;
     name: string;
+    category?: string;
+    calories?: number;
 }
 
 interface Patient {
@@ -69,7 +71,12 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
 
     const fetchPatients = async () => {
         try {
-            const response = await fetch(`${API_URL}/patients`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/patients`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setPatients(data);
@@ -81,7 +88,12 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
 
     const fetchWeeklyMenus = async () => {
         try {
-            const response = await fetch(`${API_URL}/weekly-menus-complete`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/weekly-menus-complete`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setWeeklyMenus(data);
@@ -93,7 +105,12 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
 
     const fetchMealPlans = async () => {
         try {
-            const response = await fetch(`${API_URL}/meal-plans`);
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/meal-plans`, {
+                headers: {
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                }
+            });
             if (response.ok) {
                 const data = await response.json();
                 setMealPlans(data);
@@ -115,9 +132,13 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
 
         setLoading(true);
         try {
+            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/assign-plan-with-menu`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({
                     patient_id: parseInt(selectedPatient),
                     meal_plan_id: parseInt(selectedPlanId),

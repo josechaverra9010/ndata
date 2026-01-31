@@ -75,7 +75,12 @@ export default function PatientProfile() {
   // Cargar datos iniciales
   useEffect(() => {
     if (!isAuthLoading && user?.email) {
-      fetch(`${API_URL}/profile/${user.email}`)
+      const token = localStorage.getItem("userToken");
+      fetch(`${API_URL}/profile/${user.email}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      })
         .then(res => res.json())
         .then(data => {
           setFormData({
@@ -110,7 +115,12 @@ export default function PatientProfile() {
     if (!user?.id) return;
     setLoadingRecalls(true);
     try {
-      const response = await fetch(`${API_URL}/patients/${user.id}/recalls`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${user.id}/recalls`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setRecalls(data);
@@ -143,8 +153,12 @@ export default function PatientProfile() {
       photoData.append("file", file);
 
       try {
+        const token = localStorage.getItem("userToken");
         const response = await fetch(`${API_URL}/patient/${user?.id}/upload-avatar`, {
           method: "POST",
+          headers: {
+            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          },
           body: photoData,
         });
         const result = await response.json();
@@ -196,9 +210,13 @@ export default function PatientProfile() {
     };
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/profile/update`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           ...profileData,
           frecuencia_consumo: formData.frecuencia_consumo

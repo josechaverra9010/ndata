@@ -58,7 +58,12 @@ export function PatientHeader() {
 
   const fetchPatientData = async () => {
     try {
-      const response = await fetch(`${API_URL}/patient/${patientId}/dashboard`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patient/${patientId}/dashboard`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       const data = await response.json();
       setPatientData(data.patient);
     } catch (error) {
@@ -70,7 +75,12 @@ export function PatientHeader() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch(`${API_URL}/patient/${patientId}/notifications`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patient/${patientId}/notifications`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
       const data = await response.json();
       setNotifications(data.notifications || []);
       setUnreadCount(data.count || 0);

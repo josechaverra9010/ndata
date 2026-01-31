@@ -1,0 +1,178 @@
+Found 32 vulnerable files:
+
+File: C:\Users\Victus\ndata\src\components\admin\AssignPlanDialog.tsx
+  - `${API_URL}/patients`
+  - `${API_URL}/meal-plans/assign`
+
+File: C:\Users\Victus\ndata\src\components\admin\AssignPlanToPatientDialog.tsx
+  - `${API_URL}/meal-plans`
+  - `${API_URL}/meal-plans/assign`
+
+File: C:\Users\Victus\ndata\src\components\admin\AssignPlanWithMenuDialog.tsx
+  - `${API_URL}/patients`
+  - `${API_URL}/weekly-menus-complete`
+  - `${API_URL}/meal-plans`
+  - `${API_URL}/assign-plan-with-menu`
+
+File: C:\Users\Victus\ndata\src\components\admin\NewPlanWizard.tsx
+  - `${API_URL}/patients/${pid}`
+  - `${API_URL}/weekly-menus-complete`
+  - `${API_URL}/recipes/${recipeId}`
+  - `${API_URL}/weekly-menus/${menuId}`
+  - `${API_URL}/meal-plans`
+  - `${API_URL}/meal-plans/${planId}/assign-menu`
+  - `${API_URL}/meal-plans/assign`
+
+File: C:\Users\Victus\ndata\src\components\admin\NutritionChart.tsx
+  - `${API_URL}/dashboard/chart-data`
+
+File: C:\Users\Victus\ndata\src\components\admin\PatientActionsDropdown.tsx
+  - `${API_URL}/patients/${patient.id}`
+  - `${API_URL}/patients/${patient.id}/status`
+
+File: C:\Users\Victus\ndata\src\components\admin\PatientDetailsDialog.tsx
+  - `${API_URL}/patients/${patient.id}/recalls`
+  - `${API_URL}/patients/${patient.id}`
+
+File: C:\Users\Victus\ndata\src\components\admin\PatientPlansDialog.tsx
+  - `${API_URL}/patients/${patient.id}/meal-plans`
+  - `${API_URL}/meal-plans/assign/${assignmentId}`
+  - `${API_URL}/meal-plans/assign/${assignmentId}/status`
+  - `${API_URL}/meal-plans/assign/${planToDelete.id}`
+
+File: C:\Users\Victus\ndata\src\components\admin\PlanDetailsDialog.tsx
+  - `${API_URL}/weekly-menus-complete`
+  - `${API_URL}/meal-plans/${planId}/assign-menu`
+  - `${API_URL}/recipes/${recipeId}`
+  - `${API_URL}/weekly-menus/by-plan/${planId}`
+
+File: C:\Users\Victus\ndata\src\components\admin\Recordatorio24hForm.tsx
+  - `${API_URL}/patients/${patientId}/recalls`
+
+File: C:\Users\Victus\ndata\src\components\admin\ScheduleAppointmentDialog.tsx
+  - `${API_URL}/appointments`
+
+File: C:\Users\Victus\ndata\src\components\patient\PatientHeader.tsx
+  - `${API_URL}/patient/${patientId}/dashboard`
+  - `${API_URL}/patient/${patientId}/notifications`
+
+File: C:\Users\Victus\ndata\src\pages\AdminRecipes.tsx
+  - `${API_URL}/recipes`
+  - `${API_URL}/recipes/${recipeId}/favorite`
+  - `${API_URL}/recipes/${recipeToDelete.id}`
+  - `${API_URL}/recipes`
+
+File: C:\Users\Victus\ndata\src\pages\AdminSettings.tsx
+  - `${API_URL}/admin/settings/complete/${userId}`
+  - `${API_URL}/admin/billing/${userId}`
+  - `${API_URL}/admin/profile/${userId}`
+  - `${API_URL}/admin/profile/${userId}/upload-avatar`
+  - `${API_URL}/admin/profile/${userId}/change-password`
+  - `${API_URL}/admin/notifications/${userId}`
+  - `${API_URL}/admin/appearance/${userId}`
+
+File: C:\Users\Victus\ndata\src\pages\AdminSupport.tsx
+  - `${API_URL}/support/ticket/${ticketId}`
+  - `${API_URL}/support/ticket/${ticketId}`
+
+File: C:\Users\Victus\ndata\src\pages\AdminWeeklyMenus.tsx
+  - `${API_URL}/recipes`
+  - `${API_URL}/weekly-menus`
+  - `${API_URL}/weekly-menus/${selectedMenu.id}`
+  - `${API_URL}/weekly-menus/${menu.id}/duplicate`
+  - `${API_URL}/weekly-menus/${menuToDelete.id}`
+
+File: C:\Users\Victus\ndata\src\pages\Auth.tsx
+  - `${API_URL}/login`
+  - `${API_URL}/forgot-password`
+
+File: C:\Users\Victus\ndata\src\pages\Index.tsx
+  - `${API_URL}/dashboard/stats`
+  - `${API_URL}/dashboard/recent-patients?limit=5`
+  - `${API_URL}/dashboard/upcoming-appointments?limit=5`
+  - `${API_URL}/dashboard/top-patients-progress?limit=3`
+
+File: C:\Users\Victus\ndata\src\pages\ResetPassword.tsx
+  - `${API_URL}/reset-password`
+
+File: C:\Users\Victus\ndata\src\pages\patient\MyPlan.tsx
+  - `${API_URL}/patient/${patientId}/plan/weekly`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientAppointments.tsx
+  - `${API_URL}/patients/${patientId}/appointments/upcoming`
+  - `${API_URL}/patients/${patientId}/appointments/past`
+  - `${API_URL}/patients/${patientId}/nutritionist`
+  - `${API_URL}/patients/${patientId}/available-times?date=${date}`
+  - `${API_URL}/patients/${patientId}/appointments/request`
+  - `${API_URL}/patients/${patientId}/appointments/${selectedAppointment.id}/reschedule`
+  - `${API_URL}/patients/${patientId}/appointments/${appointmentId}/cancel`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientDashboard.tsx
+  - `${API_URL}/patient/${patientId}/dashboard/complete`
+  - `${API_URL}/tracking/meal-toggle/${patientId}/${endpoint}`
+  - `${API_URL}/patient/${patientId}/water/add`
+  - `${API_URL}/profile/update`
+  - `${API_URL}/patient/${patientId}/water/add`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientHelp.tsx
+  - `${API_URL}/support/faqs`
+  - `${API_URL}/patient/${user.id}/support/tickets`
+  - `${API_URL}/support/ticket`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientMeals.tsx
+  - `${API_URL}/patient/${patientId}/meals/food/add`
+  - `${API_URL}/patient/${patientId}/meals/food/remove?meal_type=${mealId}&food_name=${encodeURIComponent(foodName
+  - `${API_URL}/patient/${patientId}/meals/today/detailed`
+  - `${API_URL}/patient/${patientId}/meals/initialize`
+  - `${API_URL}/patient/${patientId}/meals/food/toggle`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientProfile.tsx
+  - `${API_URL}/profile/${user.email}`
+  - `${API_URL}/patients/${user.id}/recalls`
+  - `${API_URL}/patient/${user?.id}/upload-avatar`
+  - `${API_URL}/profile/update`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientProgress.tsx
+  - `${API_URL}/patient/${patientId}/progress`
+  - `${API_URL}/patient/${patientId}/progress/add`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientRecipes.tsx
+  - `${API_URL}/recipes`
+
+File: C:\Users\Victus\ndata\src\pages\patient\PatientSettings.tsx
+  - `${API_URL}/patient/settings/${userId}`
+  - `${API_URL}/patient/notifications/${userId}`
+  - `${API_URL}/patient/appearance/${userId}`
+  - `${API_URL}/patient/profile/${userId}/change-password`
+
+File: C:\Users\Victus\ndata\src\pages\superadmin\SuperadminDashboard.tsx
+  - `${API_URL}/superadmin/dashboard/overview`
+  - `${API_URL}/dashboard/stats`
+  - `${API_URL}/dashboard/weekly-overview`
+  - `${API_URL}/dashboard/top-plans`
+  - `${API_URL}/dashboard/nutrition-chart`
+  - `${API_URL}/dashboard/patient-status-distribution`
+  - `${API_URL}/dashboard/appointments-by-type`
+  - `${API_URL}/progress/stats`
+
+File: C:\Users\Victus\ndata\src\pages\superadmin\SuperadminNutritionists.tsx
+  - `${API_URL}/superadmin/nutritionists${params}`
+  - `${API_URL}/superadmin/nutritionists/${id}`
+  - `${API_URL}/superadmin/nutritionists/${id}`
+  - `${API_URL}/superadmin/nutritionists/invite`
+  - `${API_URL}/superadmin/users/${selectedNutritionist.id}`
+  - `${API_URL}/superadmin/users/${id}/toggle-status`
+
+File: C:\Users\Victus\ndata\src\pages\superadmin\SuperadminSettings.tsx
+  - `${API_URL}/superadmin/settings/${userId}`
+  - `${API_URL}/admin/profile/${userId}`
+  - `${API_URL}/admin/profile/${userId}/upload-avatar`
+  - `${API_URL}/superadmin/settings/${userId}`
+
+File: C:\Users\Victus\ndata\src\pages\superadmin\SuperadminUsers.tsx
+  - `${API_URL}/superadmin/users?${params}`
+  - `${API_URL}/superadmin/users/${userId}/toggle-status`
+  - `${API_URL}/superadmin/users/${userId}`
+  - `${API_URL}/superadmin/users`
+  - `${API_URL}/superadmin/users/${selectedUser.id}`
+  - `${API_URL}/superadmin/users/export`
