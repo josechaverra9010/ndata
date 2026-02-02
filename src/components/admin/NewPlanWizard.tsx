@@ -1871,7 +1871,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                       <div className="text-sm text-muted-foreground">Cargando menús disponibles...</div>
                     ) : (
                       <Select
-                        value={formData.weekly_menu_id}
+                        value={formData.weekly_menu_id || "__none__"}
                         onValueChange={(value) =>
                           handleChange("weekly_menu_id", value === "__none__" ? "" : value)
                         }

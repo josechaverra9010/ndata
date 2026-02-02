@@ -242,11 +242,10 @@ def send_reset_email(to_email: str, reset_token: str, user_name: str):
     Enviar email de recuperación de contraseña
     """
     try:
-        # Configuración de Gmail SMTP
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-        sender_email = os.getenv("EMAIL_USER", "tu-email@gmail.com")
-        sender_password = os.getenv("EMAIL_PASSWORD", "tu-contraseña-de-aplicacion")
+        smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
+        sender_password = os.getenv("SMTP_PASSWORD", "")
         
         # URL del frontend (ajustar según entorno)
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
@@ -316,6 +315,74 @@ def send_reset_email(to_email: str, reset_token: str, user_name: str):
     except Exception as e:
         print(f"❌ Error al enviar email: {str(e)}")
         return False
+
+
+def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str, start_date: str):
+    """
+    Enviar email al paciente cuando se le asigna un plan nutricional.
+    """
+    try:
+        smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
+        sender_password = os.getenv("SMTP_PASSWORD", "")
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+        plan_link = f"{frontend_url}/patient/my-plan"
+
+        message = MIMEMultipart("alternative")
+        message["Subject"] = "Te han asignado un plan nutricional - NutriData"
+        message["From"] = f"NutriData <{sender_email}>"
+        message["To"] = to_email
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                .button {{ display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🍏 Plan nutricional asignado</h1>
+                </div>
+                <div class="content">
+                    <p>Hola <strong>{patient_name}</strong>,</p>
+                    <p>Tu nutricionista te ha asignado un nuevo plan nutricional: <strong>{plan_name}</strong>.</p>
+                    <p><strong>Fecha de inicio:</strong> {start_date}</p>
+                    <p>Puedes revisar tu plan y menú en la aplicación:</p>
+                    <p style="text-align: center;">
+                        <a href="{plan_link}" class="button">Ver mi plan</a>
+                    </p>
+                    <p>Saludos,<br>El equipo de NutriData</p>
+                </div>
+                <div class="footer">
+                    <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        html_part = MIMEText(html_content, "html")
+        message.attach(html_part)
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, message.as_string())
+
+        print(f"✅ Email de asignación de plan enviado a: {to_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Error al enviar email de asignación: {str(e)}")
+        return False
+
 
 # ==================== FUNCIÓN DE ENVÍO DE WHATSAPP ====================
 
@@ -3012,7 +3079,11 @@ def assign_plan_with_weekly_menu(data: dict, db: Session = Depends(get_db)):
         )
         send_whatsapp_notification(patient.telefono, msg)
 
-    
+    # Notificar al paciente por correo
+    if patient.email:
+        patient_name = f"{patient.nombres or ''} {patient.apellidos or ''}".strip() or "Paciente"
+        send_plan_assignment_email(patient.email, patient_name, plan.name, start_date_str)
+
     # Mapear días
     days_map = {
         0: ("monday", "Lunes"),
@@ -3295,7 +3366,13 @@ def assign_plan_to_patient(assignment: AssignPlanSchema, db: Session = Depends(g
     db.add(new_assignment)
     db.commit()
     db.refresh(new_assignment)
-    
+
+    # Notificar al paciente por correo
+    if patient.email:
+        patient_name = f"{patient.nombres or ''} {patient.apellidos or ''}".strip() or "Paciente"
+        start_date_str = str(assignment.start_date) if assignment.start_date else ""
+        send_plan_assignment_email(patient.email, patient_name, plan.name, start_date_str)
+
     return new_assignment
 
 @app.get("/api/patients/{patient_id}/meal-plans")
