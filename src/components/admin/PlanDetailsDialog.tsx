@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Users,
@@ -263,9 +264,8 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
   );
 }
 
-export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan, initialTab = "menu", initialIsEditing = false }: PlanDetailsDialogProps & { initialTab?: string; initialIsEditing?: boolean }) {
-  const [isEditing, setIsEditing] = useState(initialIsEditing);
-  const [activeTab, setActiveTab] = useState(initialTab);
+export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: PlanDetailsDialogProps) {
+  const [isEditing, setIsEditing] = useState(false);
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenu | null>(null);
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [enrichedMenu, setEnrichedMenu] = useState<any>(null);
@@ -297,13 +297,12 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan, init
         fat_target: plan.fat_target?.toString() || "",
         meals_per_day: plan.meals_per_day.toString(),
       });
-      setIsEditing(initialIsEditing);
-      setActiveTab(initialTab);
+      setIsEditing(false);
 
       // Cargar menú semanal
       fetchWeeklyMenu(plan.id);
     }
-  }, [plan, open, initialTab, initialIsEditing]);
+  }, [plan, open]);
 
   const fetchRecipeById = async (recipeId: number) => {
     try {
@@ -424,6 +423,26 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan, init
     toast.success("Plan duplicado correctamente");
   };
 
+  const calculateMacroPercentages = () => {
+    if (!plan) return { protein: 30, carbs: 45, fat: 25 };
+
+    const protein = plan.protein_target || 0;
+    const carbs = plan.carbs_target || 0;
+    const fat = plan.fat_target || 0;
+
+    const proteinCal = protein * 4;
+    const carbsCal = carbs * 4;
+    const fatCal = fat * 9;
+    const totalCal = proteinCal + carbsCal + fatCal;
+
+    if (totalCal === 0) return { protein: 30, carbs: 45, fat: 25 };
+
+    return {
+      protein: Math.round((proteinCal / totalCal) * 100),
+      carbs: Math.round((carbsCal / totalCal) * 100),
+      fat: Math.round((fatCal / totalCal) * 100),
+    };
+  };
 
   const renderMealCard = (meal: MealData, index: number) => {
     const mealType = meal.type?.toLowerCase() || "";
@@ -496,6 +515,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan, init
 
   if (!plan) return null;
 
+  const macros = calculateMacroPercentages();
 
   const categories = [
     "Pérdida de peso",
@@ -696,8 +716,9 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan, init
             </DialogFooter>
           </form>
         ) : (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-4">
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs defaultValue="overview" className="w-full mt-4">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="overview">Resumen</TabsTrigger>
               <TabsTrigger value="fases">4 Fases</TabsTrigger>
               <TabsTrigger value="menu">
                 Menú Semanal
@@ -708,6 +729,117 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan, init
                 )}
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="overview" className="space-y-4">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="pt-4 flex flex-col items-center">
+                    <Flame className="h-6 w-6 text-accent mb-2" />
+                    <p className="text-xl font-bold text-foreground">{plan.calories}</p>
+                    <p className="text-xs text-muted-foreground">kcal/día</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 flex flex-col items-center">
+                    <Clock className="h-6 w-6 text-info mb-2" />
+                    <p className="text-xl font-bold text-foreground">{plan.duration.split(" ")[0]}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {plan.duration.includes("semanas") ? "semanas" : plan.duration.includes("Continuo") ? "continuo" : ""}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 flex flex-col items-center">
+                    <Users className="h-6 w-6 text-primary mb-2" />
+                    <p className="text-xl font-bold text-foreground">{plan.patients}</p>
+                    <p className="text-xs text-muted-foreground">pacientes</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Macros Distribution */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Distribución de Macronutrientes</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {plan.protein_target && plan.protein_target > 0 ? (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-primary" />
+                            Proteínas
+                          </span>
+                          <span className="font-medium">{plan.protein_target}g ({macros.protein}%)</span>
+                        </div>
+                        <Progress value={macros.protein} className="h-2" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-accent" />
+                            Carbohidratos
+                          </span>
+                          <span className="font-medium">{plan.carbs_target}g ({macros.carbs}%)</span>
+                        </div>
+                        <Progress value={macros.carbs} className="h-2" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-warning" />
+                            Grasas
+                          </span>
+                          <span className="font-medium">{plan.fat_target}g ({macros.fat}%)</span>
+                        </div>
+                        <Progress value={macros.fat} className="h-2" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p className="text-sm">No se han definido objetivos de macronutrientes</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => setIsEditing(true)}
+                      >
+                        Configurar Macros
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Additional Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Información del Plan</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <span className="text-sm font-medium text-muted-foreground">Comidas por día</span>
+                    <span className="text-sm font-semibold text-foreground">{plan.meals_per_day}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <span className="text-sm font-medium text-muted-foreground">Categoría</span>
+                    <Badge variant="outline" className={categoryColors[plan.color as keyof typeof categoryColors]}>
+                      {plan.category}
+                    </Badge>
+                  </div>
+                  {plan.created_at && (
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-sm font-medium text-muted-foreground">Fecha de creación</span>
+                      <span className="text-sm font-semibold text-foreground">
+                        {new Date(plan.created_at).toLocaleDateString('es-ES')}
+                      </span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
             <TabsContent value="fases" className="space-y-4">
               <div className="space-y-4">
