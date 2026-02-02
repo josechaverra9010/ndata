@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { API_URL } from "@/config/api";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,8 @@ import {
   Flame, 
   Users, 
   Clock, 
-  AlertCircle 
+  AlertCircle,
+  Loader2
 } from "lucide-react";
 import { FOOD_NUTRIENTS } from "@/lib/foodNutrients";
 
@@ -31,34 +33,69 @@ interface PlanPhasesSummaryDialogProps {
 const GRUPOS_ALIMENTOS = Object.keys(FOOD_NUTRIENTS);
 
 export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhasesSummaryDialogProps) {
-  if (!plan) return null;
+  const [fullPlan, setFullPlan] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && plan?.id) {
+      // Si el plan ya tiene datos de fases, usarlos inicialmente pero actualizar en segundo plano
+      // Si no tiene datos de fases, mostrar loading
+      const hasPhases = plan.fase_1 || plan.fase_2;
+      setFullPlan(hasPhases ? plan : null);
+      
+      fetchPlanDetails();
+    } else if (!open) {
+        setFullPlan(null);
+    }
+  }, [open, plan]);
+
+  const fetchPlanDetails = async () => {
+    if (!plan?.id) return;
+    
+    // Si no tenemos datos previos, mostrar loading
+    if (!plan.fase_1 && !plan.fase_2) {
+        setLoading(true);
+    }
+
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/meal-plans/${plan.id}`, {
+        headers: {
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFullPlan(data);
+      }
+    } catch (error) {
+      console.error("Error fetching plan details:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+  
+  // Usar fullPlan si existe, sino fallback a plan (aunque plan podría estar incompleto)
+  const displayPlan = fullPlan || plan;
+
+  if (!displayPlan) return null;
 
   // Helper to safely access nested properties
   const getPhaseData = (phase: string, field: string) => {
-    if (plan[phase] && plan[phase][field] !== undefined) {
-      return plan[phase][field];
+    if (displayPlan[phase] && displayPlan[phase][field] !== undefined) {
+      return displayPlan[phase][field];
     }
     // Fallback for flat structure if applicable or alternative naming
-    return plan[field] || "---";
+    return displayPlan[field] || "---";
   };
 
-  const parsePhaseData = (data: any) => {
-    if (!data) return {};
-    if (typeof data === 'string') {
-      try {
-        return JSON.parse(data);
-      } catch (e) {
-        console.error("Error parsing phase data", e);
-        return {};
-      }
-    }
-    return data;
-  };
-
-  const f1 = parsePhaseData(plan.fase_1);
-  const f2 = parsePhaseData(plan.fase_2);
-  const f3 = parsePhaseData(plan.fase_3);
-  const f4 = parsePhaseData(plan.fase_4);
+  const f1 = displayPlan.fase_1 || {};
+  const f2 = displayPlan.fase_2 || {};
+  const f3 = displayPlan.fase_3 || {};
+  const f4 = displayPlan.fase_4 || {};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,12 +104,18 @@ export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhases
           <DialogTitle className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5 text-primary" />
             Resumen del Plan Nutricional
+            {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
           </DialogTitle>
           <DialogDescription>
-            Detalle de las 4 fases del plan: {plan.name}
+            Detalle de las 4 fases del plan: {displayPlan.name}
           </DialogDescription>
         </DialogHeader>
 
+        {loading && !fullPlan ? (
+           <div className="flex items-center justify-center flex-1">
+             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+           </div>
+        ) : (
         <Tabs defaultValue="phase1" className="flex-1 overflow-hidden flex flex-col">
           <div className="px-1">
             <TabsList className="grid w-full grid-cols-4 mb-4">
@@ -97,11 +140,11 @@ export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhases
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Peso Actual</p>
-                      <p className="font-semibold">{f1.peso_actual || plan.patient_weight || "---"} kg</p>
+                      <p className="font-semibold">{f1.peso_actual || displayPlan.patient_weight || "---"} kg</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Altura</p>
-                      <p className="font-semibold">{f1.altura || plan.patient_height || "---"} cm</p>
+                      <p className="font-semibold">{f1.altura || displayPlan.patient_height || "---"} cm</p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">IMC</p>
@@ -121,7 +164,7 @@ export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhases
                     </div>
                     <div className="space-y-1 col-span-2 bg-primary/5 p-2 rounded-lg border border-primary/10">
                       <p className="text-xs text-primary font-bold uppercase">Requerimiento Energético Total</p>
-                      <p className="text-xl font-bold text-primary">{f1.requerimiento_energetico || plan.calories || "---"} kcal</p>
+                      <p className="text-xl font-bold text-primary">{f1.requerimiento_energetico || displayPlan.calories || "---"} kcal</p>
                     </div>
                   </div>
                 </CardContent>
@@ -287,6 +330,7 @@ export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhases
             </TabsContent>
           </ScrollArea>
         </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );

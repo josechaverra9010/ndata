@@ -568,6 +568,12 @@ const Patients = () => {
             open={plansOpen}
             onOpenChange={setPlansOpen}
             onAssignPlan={() => setAssignPlanOpen(true)}
+            onEditPlan={(assignment) => {
+              toast({
+                title: "Editar Plan",
+                description: `Editando plan: ${assignment.meal_plan?.name || "Sin nombre"}. Funcionalidad en desarrollo.`,
+              });
+            }}
           />
 
           <AssignPlanToPatientDialog
