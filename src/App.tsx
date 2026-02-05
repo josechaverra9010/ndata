@@ -12,6 +12,7 @@ import MealPlans from "./pages/MealPlans";
 import AdminCalendar from "./pages/AdminCalendar";
 import AdminMessages from "./pages/AdminMessages";
 import AdminRecipes from "./pages/AdminRecipes";
+import AdminCompositionTable from "./pages/AdminCompositionTable";
 import AdminProgress from "./pages/AdminProgress";
 import AdminSettings from "./pages/AdminSettings";
 import Auth from "./pages/Auth";
@@ -58,6 +59,7 @@ const App = () => (
               <Route path="/appointments" element={<ProtectedRoute allowedRoles={['admin']}><AdminCalendar /></ProtectedRoute>} />
               <Route path="/messages" element={<ProtectedRoute allowedRoles={['admin']}><AdminMessages /></ProtectedRoute>} />
               <Route path="/recipes" element={<ProtectedRoute allowedRoles={['admin']}><AdminRecipes /></ProtectedRoute>} />
+              <Route path="/composition-table" element={<ProtectedRoute allowedRoles={['admin']}><AdminCompositionTable /></ProtectedRoute>} />
               <Route path="/progress" element={<ProtectedRoute allowedRoles={['admin']}><AdminProgress /></ProtectedRoute>} />
               <Route path="/weekly-menus" element={<ProtectedRoute allowedRoles={['admin']}><AdminWeeklyMenus /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />

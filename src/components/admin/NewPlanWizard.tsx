@@ -31,7 +31,7 @@ import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, Fil
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FOOD_NUTRIENTS } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, getCompositionRowForIngredient } from "@/lib/foodNutrients";
 
 interface NewPlanWizardProps {
   open: boolean;
@@ -70,12 +70,20 @@ const PHASES = [
 // Grupos de alimentos dinámicos desde FOOD_NUTRIENTS
 const GRUPOS_ALIMENTOS = Object.keys(FOOD_NUTRIENTS);
 
-export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: NewPlanWizardProps) {
-  const [currentPhase, setCurrentPhase] = useState(1);
-  const [selectedWeek, setSelectedWeek] = useState(1);
-  const [loadingPatient, setLoadingPatient] = useState(false);
-  const [formData, setFormData] = useState({
-    // Fase 1: Requerimiento Energético y Peso Saludable
+const PLAN_WIZARD_DRAFT_KEY = "ndata_plan_wizard_draft";
+
+export const PLAN_TYPES = [
+  { value: "adulto", label: "Adulto" },
+  { value: "pediatria", label: "Pediatría" },
+  { value: "gestante", label: "Gestante" },
+  { value: "gestante_adolescente", label: "Gestante adolescente" },
+  { value: "hospitalizado", label: "Hospitalizado" },
+  { value: "deportista", label: "Deportista" },
+] as const;
+
+function getDefaultFormData() {
+  return {
+    tipo_plan: "adulto" as string,
     peso_actual: "",
     altura: "",
     edad: "",
@@ -87,8 +95,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     imc: "",
     tmb: "",
     factor_actividad: "",
-
-    // Fase 2: Fórmula Sintética de Consumo y Planeada
     proteinas_gramos_f2: "",
     proteinas_calorias_f2: "",
     proteinas_amdr_f2: "",
@@ -115,8 +121,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     total_fibra: "",
     peso_referencia_f2: "",
     cho_kg_peso: "",
-
-    // Fase 3: Grupos de Alimentos - Detalles completos
     grupos_alimentos_f3: GRUPOS_ALIMENTOS.reduce((acc, grupo) => {
       acc[grupo] = {
         porciones: "",
@@ -140,7 +144,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       };
       return acc;
     }, {} as Record<string, any>),
-
     totals_f3: {
       kcal: 0,
       prot: 0,
@@ -160,24 +163,59 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       zn: 0,
       cu: 0
     },
-
-    // Fase 4: Minuta Patrón e Ingredientes
     nombre_plan: "",
     descripcion: "",
     categoria: "",
     color: "primary",
     duracion: "",
     comidas_dia: "3",
-    ingredientes_f4: {} as Record<string, any>, // [DayName][MealType][IngredientName] = grams
+    ingredientes_f4: {} as Record<string, any>,
     observaciones: "",
     weekly_menu_id: ""
-  });
+  };
+}
+
+function mergeFormDataWithDefaults(saved: any): any {
+  const defaultData = getDefaultFormData();
+  if (!saved || typeof saved !== "object") return defaultData;
+  const merged = { ...defaultData };
+  for (const key of Object.keys(defaultData)) {
+    if (saved[key] === undefined) continue;
+    if (key === "grupos_alimentos_f3" && saved[key] && typeof saved[key] === "object") {
+      const defaultGroups = defaultData.grupos_alimentos_f3;
+      merged.grupos_alimentos_f3 = { ...defaultGroups };
+      for (const g of Object.keys(saved.grupos_alimentos_f3 || {})) {
+        if (defaultGroups[g]) {
+          merged.grupos_alimentos_f3[g] = { ...defaultGroups[g], ...(saved.grupos_alimentos_f3[g] || {}) };
+        } else {
+          merged.grupos_alimentos_f3[g] = saved.grupos_alimentos_f3[g];
+        }
+      }
+    } else if (key === "totals_f3" && saved[key] && typeof saved[key] === "object") {
+      merged.totals_f3 = { ...defaultData.totals_f3, ...saved.totals_f3 };
+    } else if (key === "ingredientes_f4" && saved[key] && typeof saved[key] === "object") {
+      merged.ingredientes_f4 = { ...(saved.ingredientes_f4 || {}) };
+    } else {
+      merged[key] = saved[key];
+    }
+  }
+  return merged;
+}
+
+export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: NewPlanWizardProps) {
+  const [currentPhase, setCurrentPhase] = useState(1);
+  const [selectedWeek, setSelectedWeek] = useState(1);
+  const [loadingPatient, setLoadingPatient] = useState(false);
+  const [formData, setFormData] = useState(getDefaultFormData);
 
   const [completedPhases, setCompletedPhases] = useState<number[]>([]);
   const [weeklyMenus, setWeeklyMenus] = useState<any[]>([]);
   const [loadingMenus, setLoadingMenus] = useState(false);
   const [detailedMenu, setDetailedMenu] = useState<any>(null);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
+  // Guardar gramos base de Fase 4 (sin multiplicador) y multiplicadores por ingrediente
+  const [baseIngredientsF4, setBaseIngredientsF4] = useState<Record<string, any>>({});
+  const [ingredientMultipliers, setIngredientMultipliers] = useState<Record<string, any>>({});
   const { toast } = useToast();
 
   const currentPhaseData = PHASES.find(p => p.id === currentPhase) || PHASES[0];
@@ -294,15 +332,47 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     }
   };
 
+  // Al abrir: restaurar borrador si existe; si no, empezar desde cero y opcionalmente prefill con paciente
   useEffect(() => {
     if (!open) return;
-    // Resetear a fase 1 al abrir
+    try {
+      const raw = localStorage.getItem(PLAN_WIZARD_DRAFT_KEY);
+      const draft = raw ? JSON.parse(raw) : null;
+      if (draft && typeof draft.currentPhase === "number" && draft.formData) {
+        setFormData(mergeFormDataWithDefaults(draft.formData));
+        setCurrentPhase(Math.min(4, Math.max(1, draft.currentPhase)));
+        setCompletedPhases(Array.isArray(draft.completedPhases) ? draft.completedPhases : []);
+        toast({
+          title: "Borrador restaurado",
+          description: "Puedes continuar desde donde habías quedado.",
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn("Error loading plan wizard draft:", e);
+    }
+    setFormData(getDefaultFormData());
     setCurrentPhase(1);
     setCompletedPhases([]);
     if (typeof patientId === "number") {
       fetchPatientAndPrefill(patientId);
     }
   }, [open, patientId]);
+
+  // Persistir borrador mientras el modal está abierto (cada cambio de fase o formulario)
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const payload = {
+        formData,
+        currentPhase,
+        completedPhases,
+      };
+      localStorage.setItem(PLAN_WIZARD_DRAFT_KEY, JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Error saving plan wizard draft:", e);
+    }
+  }, [open, formData, currentPhase, completedPhases]);
 
   // Cargar menús semanales cuando se abre la Fase 4
   useEffect(() => {
@@ -418,7 +488,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       setDetailedMenu(fullEnrichedMenu);
       console.log("✅ Menú enriquecido satisfactoriamente:", fullEnrichedMenu);
 
-      // Inicializar ingredientes_f4 de forma inteligente preservando los existentes
+      // Inicializar ingredientes_f4 con los gramos de la tabla de composición (por receta), no editables
       const currentIngredients = { ...formData.ingredientes_f4 };
       const initialIngredients: Record<string, any> = { ...currentIngredients };
 
@@ -426,20 +496,36 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
         if (!initialIngredients[dayIdx]) initialIngredients[dayIdx] = {};
 
         day.meals.forEach((meal: any, mealIdx: number) => {
-          // Intentar obtener por Tipo y también por Índice (retrocompatibilidad)
           const mealKey = meal.type || mealIdx.toString();
           if (!initialIngredients[dayIdx][mealKey]) initialIngredients[dayIdx][mealKey] = {};
 
           if (meal.recipeDetails?.ingredients && Array.isArray(meal.recipeDetails.ingredients)) {
             meal.recipeDetails.ingredients.forEach((ing: string) => {
-              // SOLO inicializar a vacío si no existe ya un valor (para no borrar lo que el usuario escribió)
-              if (initialIngredients[dayIdx][mealKey][ing] === undefined) {
-                initialIngredients[dayIdx][mealKey][ing] = "";
-              }
+              const baseName = (ing && typeof ing === "string") ? ing.replace(/\s*:.*$/, "").trim() : String(ing);
+              const row = getCompositionRowForIngredient(ing) ?? getCompositionRowForIngredient(baseName);
+              const grams = row?.portion_grams != null ? String(row.portion_grams) : "";
+              initialIngredients[dayIdx][mealKey][ing] = grams;
             });
           }
         });
       });
+
+      // Guardar gramos base y multiplicadores iniciales (1) por ingrediente
+      const initialMultipliers: Record<string, any> = {};
+      Object.entries(initialIngredients).forEach(([dayKey, meals]) => {
+        if (!meals || typeof meals !== "object") return;
+        initialMultipliers[dayKey] = {};
+        Object.entries(meals as Record<string, any>).forEach(([mealKey, ingredients]) => {
+          if (!ingredients || typeof ingredients !== "object") return;
+          initialMultipliers[dayKey][mealKey] = {};
+          Object.keys(ingredients as Record<string, any>).forEach((ingredientName) => {
+            initialMultipliers[dayKey][mealKey][ingredientName] = 1;
+          });
+        });
+      });
+
+      setBaseIngredientsF4(initialIngredients);
+      setIngredientMultipliers(initialMultipliers);
       handleChange("ingredientes_f4", initialIngredients);
     } catch (error) {
       console.error("Error fetching detailed menu:", error);
@@ -466,7 +552,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   };
 
   // Calcular IMC
-  // Actualizar gramos de ingredientes
+  // Actualizar gramos de un ingrediente concreto (Fase 4)
   const updateIngredientGrams = (dayIdx: number, mealType: string, ingredient: string, grams: string) => {
     setFormData(prev => ({
       ...prev,
@@ -775,6 +861,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       duration: formData.duracion,
       category: formData.categoria,
       color: formData.color,
+      tipo: formData.tipo_plan || "adulto",
       meals_per_day: parseInt(formData.comidas_dia) || 3,
 
       // Datos de las 4 fases
@@ -938,65 +1025,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
           }
         }
 
-        // Reset form
-        setFormData({
-          peso_actual: "",
-          altura: "",
-          edad: "",
-          genero: "",
-          peso_saludable: "",
-          peso_ajustado: "",
-          peso_objetivo: "",
-          requerimiento_energetico: "",
-          imc: "",
-          tmb: "",
-          factor_actividad: "",
-          proteinas_gramos_f2: "",
-          proteinas_calorias_f2: "",
-          proteinas_amdr_f2: "",
-          proteinas_avb_gramos: "",
-          proteinas_avb_porcentaje: "",
-          proteinas_kg_peso: "",
-          grasas_gramos_f2: "",
-          grasas_calorias_f2: "",
-          grasas_amdr_f2: "",
-          grasas_gs_gramos: "",
-          grasas_gs_amdr: "",
-          grasas_gm_gramos: "",
-          grasas_gm_amdr: "",
-          grasas_gp_gramos: "",
-          grasas_gp_amdr: "",
-          grasas_colesterol: "",
-          cho_gramos_f2: "",
-          cho_calorias_f2: "",
-          cho_amdr_f2: "",
-          cho_concent_gramos: "",
-          cho_concent_amdr: "",
-          total_calorias_f2: "",
-          total_amdr_f2: "",
-          total_fibra: "",
-          peso_referencia_f2: "",
-          grupos_alimentos_f3: GRUPOS_ALIMENTOS.reduce((acc, grupo) => {
-            acc[grupo] = {
-              porciones: "", kcal: 0, prot: 0, grasa: 0, gs: 0, gm: 0, gp: 0, col: 0, chos: 0, fd: 0,
-              calcio: 0, p: 0, fe: 0, na: 0, k: 0, mg: 0, zn: 0, cu: 0
-            };
-            return acc;
-          }, {} as Record<string, any>),
-          totals_f3: {
-            kcal: 0, prot: 0, grasa: 0, gs: 0, gm: 0, gp: 0, col: 0, chos: 0, fd: 0,
-            calcio: 0, p: 0, fe: 0, na: 0, k: 0, mg: 0, zn: 0, cu: 0
-          },
-          nombre_plan: "",
-          descripcion: "",
-          categoria: "",
-          color: "primary",
-          duracion: "",
-          comidas_dia: "3",
-          ingredientes_f4: {},
-          observaciones: "",
-          weekly_menu_id: ""
-        });
+        // Limpiar borrador y reset form
+        localStorage.removeItem(PLAN_WIZARD_DRAFT_KEY);
+        setFormData(getDefaultFormData());
         setCurrentPhase(1);
         setCompletedPhases([]);
         onOpenChange(false);
@@ -1027,6 +1058,26 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
             Completa las 4 fases para crear un plan nutricional completo
           </DialogDescription>
         </DialogHeader>
+
+        {/* Tipo de plan */}
+        <div className="space-y-2">
+          <Label className="text-base font-semibold text-primary">Tipo de plan</Label>
+          <Select
+            value={formData.tipo_plan}
+            onValueChange={(value) => handleChange("tipo_plan", value)}
+          >
+            <SelectTrigger className="max-w-xs">
+              <SelectValue placeholder="Seleccionar tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              {PLAN_TYPES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Progress Bar */}
         <div className="space-y-2">
@@ -1966,24 +2017,76 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                         <div className="space-y-3">
                                           <Label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">
                                             <FileText className="h-3 w-3" />
-                                            Ingredientes y Gramos
+                                            Ingredientes y gramos (según receta / tabla de composición)
                                           </Label>
                                           <div className="grid gap-2">
-                                            {meal.recipeDetails.ingredients.map((ing: string, ingIdx: number) => (
-                                              <div key={ingIdx} className="flex items-center gap-3 bg-muted/10 p-2 rounded border border-transparent hover:border-primary/10 transition-colors">
-                                                <span className="text-xs flex-1 truncate font-medium">{ing}</span>
-                                                <div className="flex items-center gap-1 w-24 shrink-0">
-                                                  <Input
-                                                    type="text"
-                                                    placeholder="0"
-                                                    className="h-7 text-xs text-right font-bold pr-1 focus-visible:ring-primary border-primary/20"
-                                                    value={formData.ingredientes_f4[dayIdx]?.[meal.type]?.[ing] || formData.ingredientes_f4[dayIdx]?.[mealIdx]?.[ing] || ""}
-                                                    onChange={(e) => updateIngredientGrams(dayIdx, meal.type, ing, e.target.value)}
-                                                  />
-                                                  <span className="text-[10px] font-bold text-muted-foreground">g</span>
+                                            {meal.recipeDetails.ingredients.map((ing: string, ingIdx: number) => {
+                                              const mealKey = meal.type || mealIdx.toString();
+                                              const baseGramsStr =
+                                                baseIngredientsF4?.[dayIdx]?.[mealKey]?.[ing] ??
+                                                baseIngredientsF4?.[dayIdx]?.[mealIdx]?.[ing] ??
+                                                "";
+                                              const baseGrams = parseFloat(String(baseGramsStr));
+                                              const currentMultiplier =
+                                                ingredientMultipliers?.[dayIdx]?.[mealKey]?.[ing] ?? 1;
+                                              const gramsValue =
+                                                formData.ingredientes_f4[dayIdx]?.[mealKey]?.[ing] ?? "";
+
+                                              const displayGrams =
+                                                gramsValue ||
+                                                (Number.isFinite(baseGrams)
+                                                  ? (baseGrams * currentMultiplier).toFixed(1)
+                                                  : "");
+
+                                              return (
+                                                <div
+                                                  key={ingIdx}
+                                                  className="flex items-center gap-3 bg-muted/10 p-2 rounded border border-transparent"
+                                                >
+                                                  <span className="text-xs flex-1 truncate font-medium">
+                                                    {ing.replace(/\s*:.*$/, "").trim() || ing}
+                                                  </span>
+                                                  <span className="text-[11px] text-muted-foreground w-10 text-right tabular-nums">
+                                                    {displayGrams ? `${displayGrams} g` : "—"}
+                                                  </span>
+                                                  <div className="flex items-center gap-1 shrink-0">
+                                                    <span className="text-[10px] text-muted-foreground">x</span>
+                                                    <Input
+                                                      type="number"
+                                                      step="0.1"
+                                                      className="h-7 w-16 text-[11px] text-center"
+                                                      value={currentMultiplier}
+                                                      onChange={(e) => {
+                                                        const raw = parseFloat(e.target.value);
+                                                        const safeMultiplier =
+                                                          Number.isFinite(raw) && raw >= 0 ? raw : 0;
+
+                                                        setIngredientMultipliers(prev => ({
+                                                          ...prev,
+                                                          [dayIdx]: {
+                                                            ...(prev[dayIdx] || {}),
+                                                            [mealKey]: {
+                                                              ...(prev[dayIdx]?.[mealKey] || {}),
+                                                              [ing]: safeMultiplier,
+                                                            },
+                                                          },
+                                                        }));
+
+                                                        if (Number.isFinite(baseGrams)) {
+                                                          const scaled = baseGrams * safeMultiplier;
+                                                          updateIngredientGrams(
+                                                            dayIdx,
+                                                            mealKey,
+                                                            ing,
+                                                            scaled.toFixed(1)
+                                                          );
+                                                        }
+                                                      }}
+                                                    />
+                                                  </div>
                                                 </div>
-                                              </div>
-                                            ))}
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       ) : (

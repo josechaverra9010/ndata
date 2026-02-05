@@ -26,9 +26,9 @@ import {
   Activity
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { MealCard } from "@/components/patient/MealCard";
+import { MealDetailDialog } from "@/components/patient/MealDetailDialog";
 
 interface DashboardStats {
   calories: {
@@ -69,7 +69,7 @@ interface Meal {
   ingredients?: string[];
   instructions?: string[];
   image?: string;
-  // Propiedades adicionales usadas en el modal y por compatibilidad
+  recipe_id?: number;
   meal?: string;
   receta?: string;
   food?: string;
@@ -106,6 +106,8 @@ export default function PatientDashboard() {
   const [updatingMeal, setUpdatingMeal] = useState<string | null>(null);
   const [addingWater, setAddingWater] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null);
+  const [mealDetailForModal, setMealDetailForModal] = useState<Meal | null>(null);
+  const [loadingMealDetail, setLoadingMealDetail] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [newWeight, setNewWeight] = useState("");
@@ -113,6 +115,55 @@ export default function PatientDashboard() {
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const patientId = user?.id;
+
+  // Al abrir el modal, si la comida tiene recipe_id, cargar siempre la receta completa para mostrar ingredientes e instrucciones
+  useEffect(() => {
+    if (!isDetailsOpen || !selectedMeal) {
+      setMealDetailForModal(null);
+      setLoadingMealDetail(false);
+      return;
+    }
+    const rid = (selectedMeal as Meal & { recipe_id?: number }).recipe_id;
+    if (!rid) {
+      setMealDetailForModal(selectedMeal);
+      setLoadingMealDetail(false);
+      return;
+    }
+    setLoadingMealDetail(true);
+    setMealDetailForModal(selectedMeal);
+    let cancelled = false;
+    const token = localStorage.getItem("userToken");
+    fetch(`${API_URL}/recipes/${rid}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((recipe: { name?: string; ingredients?: string[]; instructions?: string[]; image?: string } | null) => {
+        if (cancelled) return;
+        setLoadingMealDetail(false);
+        if (recipe) {
+          setMealDetailForModal({
+            ...selectedMeal,
+            receta: recipe.name ?? selectedMeal.receta,
+            food: recipe.name ?? selectedMeal.food,
+            description: recipe.name ?? selectedMeal.description,
+            ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : selectedMeal.ingredients ?? [],
+            instructions: Array.isArray(recipe.instructions) ? recipe.instructions : selectedMeal.instructions ?? [],
+            image: recipe.image ?? selectedMeal.image,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoadingMealDetail(false);
+      });
+    return () => { cancelled = true; };
+  }, [isDetailsOpen, selectedMeal]);
+
+  const getImageUrl = (imagePath: string | undefined) => {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("http")) return imagePath;
+    const base = API_URL.replace("/api", "");
+    return `${base}${imagePath}`;
+  };
 
   useEffect(() => {
     if (isDetailsOpen && !selectedMeal) {
@@ -822,39 +873,58 @@ export default function PatientDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Recipe Details Dialog */}
-      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-        <DialogContent className="max-w-md lg:max-w-2xl h-[90vh] sm:h-[85vh] overflow-hidden flex flex-col p-0 border-none sm:rounded-3xl">
-          {/* Header with Background Pattern/Color */}
-          <div className="relative h-32 shrink-0 bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b border-border/50">
-            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#6366f1_1px,transparent_1px)] [background-size:16px_16px]" />
-            <div className="absolute bottom-6 left-6 right-6">
-              <div className="flex items-end justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider mb-1">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                    {selectedMeal?.meal || "Comida"}
+      <MealDetailDialog
+        open={isDetailsOpen}
+        onOpenChange={setIsDetailsOpen}
+        meal={mealDetailForModal ?? selectedMeal ?? null}
+        getImageUrl={getImageUrl}
+        loading={loadingMealDetail}
+      />
+      {/* MealDetailDialog is the shared component from Mi plan - used above */}
+      {false && (
+        <Dialog open={false} onOpenChange={() => {}}>
+        <DialogContent>
+          {(() => {
+            const meal = mealDetailForModal ?? selectedMeal;
+            if (!meal) return null;
+            return (
+              <>
+                {loadingMealDetail && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 rounded-3xl">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <p className="text-sm text-muted-foreground">Cargando receta...</p>
+                    </div>
                   </div>
-                  <DialogTitle className="text-2xl font-extrabold tracking-tight text-foreground line-clamp-1">
-                    {selectedMeal?.receta || selectedMeal?.food || selectedMeal?.name || "Detalle de Comida"}
-                  </DialogTitle>
+                )}
+                <div className="relative h-32 shrink-0 bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b border-border/50">
+                  <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#6366f1_1px,transparent_1px)] [background-size:16px_16px]" />
+                  <div className="absolute bottom-6 left-6 right-6">
+                    <div className="flex items-end justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider mb-1">
+                          <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                          {meal.meal || "Comida"}
+                        </div>
+                        <DialogTitle className="text-2xl font-extrabold tracking-tight text-foreground line-clamp-1">
+                          {meal.receta || meal.food || meal.name || "Detalle de Comida"}
+                        </DialogTitle>
+                      </div>
+                      <Badge variant="secondary" className="mb-1 font-bold bg-primary/10 text-primary border-primary/20 px-3 py-1">
+                        {meal.calories ?? meal.calorias ?? 0} kcal
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
-                <Badge variant="secondary" className="mb-1 font-bold bg-primary/10 text-primary border-primary/20 px-3 py-1">
-                  {selectedMeal?.calories || selectedMeal?.calorias || 0} kcal
-                </Badge>
-              </div>
-            </div>
-          </div>
 
-          <ScrollArea className="flex-1 min-h-0 px-6">
-            <div className="space-y-8 py-6 pb-10">
-              {/* Image Section */}
-              {selectedMeal?.image && (
+                <ScrollArea className="flex-1 min-h-0 px-6">
+                  <div className="space-y-8 py-6 pb-10">
+                    {meal.image && (
                 <div className="group relative rounded-2xl overflow-hidden border border-border/50 shadow-2xl transition-all duration-500 hover:shadow-primary/10">
                   <div className="aspect-video w-full">
                     <img
-                      src={selectedMeal.image}
-                      alt={selectedMeal.food}
+                      src={getImageUrl(meal.image)}
+                      alt={meal.receta || meal.food || "Comida"}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                       onError={(e) => {
                         (e.target as HTMLImageElement).parentElement?.parentElement?.style.setProperty('display', 'none');
@@ -877,17 +947,24 @@ export default function PatientDashboard() {
                     </h3>
                   </div>
 
-                  {Array.isArray(selectedMeal?.ingredients) && selectedMeal.ingredients.length > 0 ? (
+                  {Array.isArray(meal?.ingredients) && meal.ingredients.length > 0 ? (
                     <div className="grid gap-2.5">
-                      {selectedMeal.ingredients.map((ingredient: any, idx: number) => {
-                        // Verificamos si es un objeto con propiedades de ingrediente
-                        const isObject = typeof ingredient === 'object' && ingredient !== null;
-                        const name = isObject ? ingredient.name : ingredient;
-
-                        // Buscamos la cantidad/porción en diferentes posibles propiedades
-                        let amount = null;
+                      {meal.ingredients.map((ingredient: any, idx: number) => {
+                        const isObject = typeof ingredient === "object" && ingredient !== null;
+                        let name: string;
+                        let amount: string | null = null;
                         if (isObject) {
-                          amount = ingredient.portion || ingredient.grams || ingredient.cantidad || ingredient.amount || ingredient.quantity;
+                          name = ingredient.name ?? ingredient.ingredient ?? "";
+                          amount = ingredient.portion ?? ingredient.grams ?? ingredient.cantidad ?? ingredient.amount ?? ingredient.quantity ?? null;
+                        } else {
+                          const str = String(ingredient ?? "").trim();
+                          const colonIdx = str.indexOf(":");
+                          if (colonIdx > 0) {
+                            name = str.slice(0, colonIdx).trim();
+                            amount = str.slice(colonIdx + 1).trim() || null;
+                          } else {
+                            name = str;
+                          }
                         }
 
                         return (
@@ -933,9 +1010,9 @@ export default function PatientDashboard() {
                     </h3>
                   </div>
 
-                  {Array.isArray(selectedMeal?.instructions) && selectedMeal.instructions.length > 0 ? (
+                  {Array.isArray(meal?.instructions) && meal.instructions.length > 0 ? (
                     <div className="space-y-4">
-                      {selectedMeal.instructions.map((step: string, idx: number) => (
+                      {meal.instructions.map((step: string, idx: number) => (
                         <div key={idx} className="flex gap-4 group">
                           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary text-xs font-black shadow-sm group-hover:bg-primary group-hover:text-white transition-all duration-300">
                             {idx + 1}
@@ -960,8 +1037,12 @@ export default function PatientDashboard() {
               </div>
             </div>
           </ScrollArea>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
+      )}
     </PatientLayout >
   );
 }

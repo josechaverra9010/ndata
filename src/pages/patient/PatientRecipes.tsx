@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { API_URL } from "@/config/api";
+import { getCompositionRowForIngredient } from "@/lib/foodNutrients";
 import { toast } from "sonner";
 import {
     Search, Clock, Flame, Users, ChefHat, Heart, Filter, Eye, Utensils, List
@@ -40,6 +41,8 @@ export default function PatientRecipes() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("Todas");
     const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+    const [recipeDetail, setRecipeDetail] = useState<Recipe | null>(null);
+    const [detailLoading, setDetailLoading] = useState(false);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [loading, setLoading] = useState(true);
 
@@ -50,6 +53,83 @@ export default function PatientRecipes() {
         const matchesCategory = selectedCategory === "Todas" || recipe.category === selectedCategory;
         return matchesSearch && matchesCategory;
     });
+
+    const normalizeList = (raw: unknown, keys: string[]): string[] => {
+        if (raw == null) return [];
+        if (Array.isArray(raw)) {
+            const result: string[] = [];
+            for (const item of raw) {
+                let text = "";
+                if (typeof item === "string") {
+                    text = item.trim();
+                } else if (item != null && typeof item === "object" && !Array.isArray(item)) {
+                    const obj = item as Record<string, unknown>;
+                    for (const key of keys) {
+                        if (key in obj && obj[key] != null) {
+                            text = String(obj[key]).trim();
+                            break;
+                        }
+                    }
+                    if (!text && "name" in obj) text = String(obj.name ?? "").trim();
+                    if (!text && "text" in obj) text = String(obj.text ?? "").trim();
+                    if (!text) text = String(item).trim();
+                } else {
+                    text = String(item ?? "").trim();
+                }
+                if (!text) continue;
+                if (text.includes("\n")) {
+                    result.push(...text.split("\n").map(t => t.trim()).filter(Boolean));
+                } else if (text.includes(",") && !text.trim().startsWith("[")) {
+                    result.push(...text.split(",").map(t => t.trim()).filter(Boolean));
+                } else {
+                    result.push(text);
+                }
+            }
+            return result;
+        }
+        if (typeof raw === "string") {
+            const s = raw.trim();
+            if (!s) return [];
+            try {
+                const parsed = JSON.parse(s);
+                if (parsed !== s) return normalizeList(parsed, keys);
+            } catch {
+                // no es JSON
+            }
+            if (s.includes("\n")) return s.split("\n").map(t => t.trim()).filter(Boolean);
+            if (s.includes(",") && !s.includes("[")) return s.split(",").map(t => t.trim()).filter(Boolean);
+            return [s];
+        }
+        return [];
+    };
+
+    const normalizeIngredients = (raw: unknown) => {
+        // Caso especial: si vienen objetos { name, portion } o { name, portion_size }
+        if (Array.isArray(raw)) {
+            const result: string[] = [];
+            for (const item of raw) {
+                if (item && typeof item === "object" && !Array.isArray(item)) {
+                    const obj = item as Record<string, unknown>;
+                    const name = (obj.name ?? obj.ingredient ?? obj.Ingredient) as string | undefined;
+                    const portion = (obj.portion ?? obj.portion_size) as string | undefined;
+                    if (name) {
+                        const nameStr = String(name).trim();
+                        const portionStr = portion ? String(portion).trim() : "";
+                        result.push(portionStr ? `${nameStr}: ${portionStr}` : nameStr);
+                        continue;
+                    }
+                }
+                // Fallback al normalizador genérico
+                result.push(
+                    ...normalizeList([item], ["ingredient", "Ingredient", "name", "text", "title", "item"]),
+                );
+            }
+            return result;
+        }
+        return normalizeList(raw, ["ingredient", "Ingredient", "name", "text", "title", "item"]);
+    };
+    const normalizeInstructions = (raw: unknown) =>
+        normalizeList(raw, ["step", "Step", "instruction", "Instruction", "name", "text", "title"]);
 
     const fetchRecipes = async () => {
         try {
@@ -62,7 +142,12 @@ export default function PatientRecipes() {
             });
             if (response.ok) {
                 const data = await response.json();
-                setRecipes(data);
+                const normalized = (Array.isArray(data) ? data : []).map((r: Record<string, unknown>) => ({
+                    ...r,
+                    ingredients: normalizeIngredients(r.ingredients ?? (r as Record<string, unknown>).Ingredients),
+                    instructions: normalizeInstructions(r.instructions ?? (r as Record<string, unknown>).Instructions),
+                }));
+                setRecipes(normalized);
             } else {
                 toast.error("Error al cargar las recetas");
             }
@@ -77,6 +162,47 @@ export default function PatientRecipes() {
     useEffect(() => {
         fetchRecipes();
     }, []);
+
+    // Al abrir el modal, cargar la receta completa por ID para tener ingredientes e instrucciones
+    useEffect(() => {
+        if (!isDetailOpen || !selectedRecipe?.id) {
+            setRecipeDetail(null);
+            return;
+        }
+        let cancelled = false;
+        setDetailLoading(true);
+        setRecipeDetail(null);
+        const token = localStorage.getItem("userToken");
+        fetch(`${API_URL}/recipes/${selectedRecipe.id}`, {
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data: Record<string, unknown> | null) => {
+                if (cancelled || !data) return;
+                setRecipeDetail({
+                    ...selectedRecipe,
+                    ...data,
+                    id: selectedRecipe.id,
+                    name: (data.name as string) ?? selectedRecipe.name,
+                    description: (data.description as string) ?? selectedRecipe.description,
+                    category: (data.category as string) ?? selectedRecipe.category,
+                    prepTime: (data.prepTime as number) ?? selectedRecipe.prepTime,
+                    cookTime: (data.cookTime as number) ?? selectedRecipe.cookTime,
+                    servings: (data.servings as number) ?? selectedRecipe.servings,
+                    calories: (data.calories as number) ?? selectedRecipe.calories,
+                    protein: (data.protein as number) ?? selectedRecipe.protein,
+                    carbs: (data.carbs as number) ?? selectedRecipe.carbs,
+                    fat: (data.fat as number) ?? selectedRecipe.fat,
+                    image: (data.image as string) ?? selectedRecipe.image,
+                    tags: Array.isArray(data.tags) ? data.tags : selectedRecipe.tags,
+                    ingredients: normalizeIngredients(data.ingredients ?? data.Ingredients),
+                    instructions: normalizeInstructions(data.instructions ?? data.Instructions),
+                } as Recipe);
+            })
+            .catch(() => { if (!cancelled) setRecipeDetail(selectedRecipe); })
+            .finally(() => { if (!cancelled) setDetailLoading(false); });
+        return () => { cancelled = true; };
+    }, [isDetailOpen, selectedRecipe?.id]);
 
     const getImageUrl = (imagePath: string | undefined) => {
         if (!imagePath) return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
@@ -159,22 +285,41 @@ export default function PatientRecipes() {
                                 </div>
                             </div>
                             <CardContent className="p-4">
-                                <h3 className="font-bold text-lg mb-1 group-hover:text-primary transition-colors">{recipe.name}</h3>
-                                <p className="text-sm text-muted-foreground line-clamp-2 mb-4 h-10">{recipe.description}</p>
+                                <h3 className="font-bold text-lg mb-1 group-hover:text-primary transition-colors">
+                                    {recipe.name}
+                                </h3>
+                                <p className="text-sm text-muted-foreground line-clamp-2 mb-4 h-10">
+                                    {recipe.description}
+                                </p>
 
-                                <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/50 pt-3">
-                                    <span className="flex items-center gap-1.5 font-medium">
-                                        <Clock className="h-3.5 w-3.5 text-primary" />
-                                        {recipe.prepTime + recipe.cookTime} min
-                                    </span>
-                                    <span className="flex items-center gap-1.5 font-medium">
-                                        <Flame className="h-3.5 w-3.5 text-orange-500" />
-                                        {recipe.calories} kcal
-                                    </span>
-                                    <span className="flex items-center gap-1.5 font-medium">
-                                        <Users className="h-3.5 w-3.5 text-blue-500" />
-                                        {recipe.servings}
-                                    </span>
+                                <div className="border-t border-border/50 pt-3 space-y-2">
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                        <span className="flex items-center gap-1.5 font-medium">
+                                            <Clock className="h-3.5 w-3.5 text-primary" />
+                                            {(recipe.prepTime ?? 0) + (recipe.cookTime ?? 0)} min
+                                        </span>
+                                        <span className="flex items-center gap-1.5 font-medium">
+                                            <Users className="h-3.5 w-3.5 text-blue-500" />
+                                            {recipe.servings} porciones
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                                        <span className="font-semibold flex items-center gap-1">
+                                            <Flame className="h-3.5 w-3.5 text-orange-500" />
+                                            {(recipe.calories ?? 0)} kcal
+                                        </span>
+                                        <span className="flex flex-col items-end sm:flex-row sm:items-center sm:gap-3">
+                                            <span className="font-medium text-primary">
+                                                Prot: {(recipe.protein ?? 0)} g
+                                            </span>
+                                            <span className="font-medium text-amber-600">
+                                                Carb: {(recipe.carbs ?? 0)} g
+                                            </span>
+                                            <span className="font-medium text-yellow-700">
+                                                Grasas: {(recipe.fat ?? 0)} g
+                                            </span>
+                                        </span>
+                                    </div>
                                 </div>
                             </CardContent>
                         </Card>
@@ -194,114 +339,145 @@ export default function PatientRecipes() {
                 )}
 
                 {/* Recipe Detail Dialog */}
-                <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-                    <DialogContent className="max-w-3xl max-h-[90vh] p-0 overflow-hidden flex flex-col">
-                        {selectedRecipe && (
-                            <>
-                                <ScrollArea className="flex-1">
-                                    <div className="relative h-64 sm:h-80">
-                                        <img
-                                            src={getImageUrl(selectedRecipe.image)}
-                                            alt={selectedRecipe.name}
-                                            className="w-full h-full object-cover"
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                                        <div className="absolute bottom-6 left-6 right-6">
-                                            <Badge className="bg-primary/90 text-primary-foreground border-0 mb-2">
-                                                {selectedRecipe.category}
-                                            </Badge>
-                                            <h2 className="text-2xl sm:text-3xl font-bold text-white">{selectedRecipe.name}</h2>
-                                        </div>
-                                    </div>
-
-                                    <div className="p-6 space-y-8">
-                                        <p className="text-muted-foreground text-lg leading-relaxed">{selectedRecipe.description}</p>
-
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                            <div className="text-center p-4 bg-primary/5 rounded-2xl border border-primary/10">
-                                                <Clock className="h-5 w-5 mx-auto mb-2 text-primary" />
-                                                <p className="text-base font-bold text-foreground">{selectedRecipe.prepTime + selectedRecipe.cookTime} min</p>
-                                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Tiempo total</p>
-                                            </div>
-                                            <div className="text-center p-4 bg-orange-50 rounded-2xl border border-orange-100">
-                                                <Flame className="h-5 w-5 mx-auto mb-2 text-orange-500" />
-                                                <p className="text-base font-bold text-foreground">{selectedRecipe.calories} kcal</p>
-                                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Calorías</p>
-                                            </div>
-                                            <div className="text-center p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                                                <Users className="h-5 w-5 mx-auto mb-2 text-blue-500" />
-                                                <p className="text-base font-bold text-foreground">{selectedRecipe.servings}</p>
-                                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Porciones</p>
-                                            </div>
-                                            <div className="text-center p-4 bg-green-50 rounded-2xl border border-green-100">
-                                                <ChefHat className="h-5 w-5 mx-auto mb-2 text-green-500" />
-                                                <p className="text-base font-bold text-foreground">Saludable</p>
-                                                <p className="text-xs text-muted-foreground uppercase tracking-wider">Perfil</p>
+                <Dialog open={isDetailOpen} onOpenChange={(open) => { setIsDetailOpen(open); if (!open) setRecipeDetail(null); }}>
+                    <DialogContent className="max-w-3xl max-h-[90vh] p-0 overflow-hidden !flex flex-col gap-0" aria-describedby={undefined}>
+                        <DialogHeader className="sr-only">
+                            <DialogTitle>{selectedRecipe?.name ?? "Detalle de receta"}</DialogTitle>
+                            <DialogDescription>Ingredientes, instrucciones y datos nutricionales de la receta.</DialogDescription>
+                        </DialogHeader>
+                        {selectedRecipe && (() => {
+                            const recipe = recipeDetail ?? selectedRecipe;
+                            const baseIngredients = normalizeIngredients(recipe.ingredients ?? (recipe as Record<string, unknown>).Ingredients);
+                            const displayIngredients = baseIngredients.map((ing) => {
+                                const row = getCompositionRowForIngredient(ing);
+                                const grams = row?.portion_grams;
+                                if (grams != null && grams !== 0) {
+                                    return `${row!.name}: ${grams} g`;
+                                }
+                                return ing;
+                            });
+                            const displayInstructions = normalizeInstructions(recipe.instructions ?? (recipe as Record<string, unknown>).Instructions);
+                            return (
+                                <>
+                                    <ScrollArea className="flex-1 min-h-0 overflow-auto">
+                                        <div className="relative h-64 sm:h-80">
+                                            <img
+                                                src={getImageUrl(recipe.image)}
+                                                alt={recipe.name}
+                                                className="w-full h-full object-cover"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                            <div className="absolute bottom-6 left-6 right-6">
+                                                <Badge className="bg-primary/90 text-primary-foreground border-0 mb-2">
+                                                    {selectedRecipe.category}
+                                                </Badge>
+                                                <h2 className="text-2xl sm:text-3xl font-bold text-white">{selectedRecipe.name}</h2>
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-3 gap-3 p-4 bg-muted/30 rounded-2xl border border-border">
-                                            <div className="text-center">
-                                                <p className="text-sm text-muted-foreground mb-1">Proteína</p>
-                                                <p className="text-lg font-bold text-primary">{selectedRecipe.protein}g</p>
-                                            </div>
-                                            <div className="text-center border-x border-border/50">
-                                                <p className="text-sm text-muted-foreground mb-1">Carbos</p>
-                                                <p className="text-lg font-bold text-orange-500">{selectedRecipe.carbs}g</p>
-                                            </div>
-                                            <div className="text-center">
-                                                <p className="text-sm text-muted-foreground mb-1">Grasas</p>
-                                                <p className="text-lg font-bold text-yellow-600">{selectedRecipe.fat}g</p>
-                                            </div>
-                                        </div>
+                                        <div className="p-6 space-y-8">
+                                            <p className="text-muted-foreground text-lg leading-relaxed">{recipe.description}</p>
 
-                                        <Tabs defaultValue="ingredients" className="w-full">
-                                            <TabsList className="w-full bg-muted/50 p-1 h-12">
-                                                <TabsTrigger value="ingredients" className="flex-1 gap-2 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                                                    <List className="h-4 w-4" />
-                                                    Ingredientes
-                                                </TabsTrigger>
-                                                <TabsTrigger value="instructions" className="flex-1 gap-2 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                                                    <Utensils className="h-4 w-4" />
-                                                    Instrucciones
-                                                </TabsTrigger>
-                                            </TabsList>
-                                            <TabsContent value="ingredients" className="mt-6">
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                    {selectedRecipe.ingredients.map((ingredient, idx) => (
-                                                        <div key={idx} className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl">
-                                                            <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
-                                                            <span className="text-sm font-medium">{ingredient}</span>
-                                                        </div>
-                                                    ))}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                <div className="text-center p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                                                    <Clock className="h-5 w-5 mx-auto mb-2 text-primary" />
+                                                    <p className="text-base font-bold text-foreground">{(recipe.prepTime ?? 0) + (recipe.cookTime ?? 0)} min</p>
+                                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Tiempo total</p>
                                                 </div>
-                                            </TabsContent>
-                                            <TabsContent value="instructions" className="mt-6">
-                                                <div className="space-y-4">
-                                                    {selectedRecipe.instructions.map((instruction, idx) => (
-                                                        <div key={idx} className="flex gap-4 p-4 bg-card border border-border rounded-xl group hover:border-primary/30 transition-colors">
-                                                            <span className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                                                                {idx + 1}
-                                                            </span>
-                                                            <p className="text-sm sm:text-base text-foreground leading-relaxed pt-1">{instruction}</p>
-                                                        </div>
-                                                    ))}
+                                                <div className="text-center p-4 bg-orange-50 rounded-2xl border border-orange-100">
+                                                    <Flame className="h-5 w-5 mx-auto mb-2 text-orange-500" />
+                                                    <p className="text-base font-bold text-foreground">{recipe.calories} kcal</p>
+                                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Calorías</p>
                                                 </div>
-                                            </TabsContent>
-                                        </Tabs>
+                                                <div className="text-center p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                                                    <Users className="h-5 w-5 mx-auto mb-2 text-blue-500" />
+                                                    <p className="text-base font-bold text-foreground">{recipe.servings}</p>
+                                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Porciones</p>
+                                                </div>
+                                                <div className="text-center p-4 bg-green-50 rounded-2xl border border-green-100">
+                                                    <ChefHat className="h-5 w-5 mx-auto mb-2 text-green-500" />
+                                                    <p className="text-base font-bold text-foreground">Saludable</p>
+                                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Perfil</p>
+                                                </div>
+                                            </div>
 
-                                        <div className="flex flex-wrap gap-2 pt-4">
-                                            {selectedRecipe.tags.map(tag => (
-                                                <Badge key={tag} variant="outline" className="text-xs bg-muted/30">#{tag}</Badge>
-                                            ))}
+                                            {/* Ingredientes e instrucciones — visibles justo debajo de las tarjetas */}
+                                            <div className="space-y-4">
+                                                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                                                    <List className="h-5 w-5 text-primary" />
+                                                    Ingredientes e instrucciones
+                                                    {detailLoading && <span className="text-xs font-normal text-muted-foreground">(cargando…)</span>}
+                                                </h3>
+                                                <Tabs defaultValue="ingredients" className="w-full">
+                                                    <TabsList className="w-full bg-muted/50 p-1 h-12">
+                                                        <TabsTrigger value="ingredients" className="flex-1 gap-2 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                                                            <List className="h-4 w-4" />
+                                                            Ingredientes
+                                                        </TabsTrigger>
+                                                        <TabsTrigger value="instructions" className="flex-1 gap-2 font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                                                            <Utensils className="h-4 w-4" />
+                                                            Instrucciones
+                                                        </TabsTrigger>
+                                                    </TabsList>
+                                                    <TabsContent value="ingredients" className="mt-4">
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[200px] overflow-y-auto pr-2">
+                                                            {displayIngredients.map((text, idx) => (
+                                                                <div key={idx} className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl">
+                                                                    <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
+                                                                    <span className="text-sm font-medium">{text}</span>
+                                                                </div>
+                                                            ))}
+                                                            {displayIngredients.length === 0 && (
+                                                                <p className="text-sm text-muted-foreground col-span-full">No hay ingredientes listados para esta receta.</p>
+                                                            )}
+                                                        </div>
+                                                    </TabsContent>
+                                                    <TabsContent value="instructions" className="mt-4">
+                                                        <div className="space-y-4 max-h-[280px] overflow-y-auto pr-2">
+                                                            {displayInstructions.map((text, idx) => (
+                                                                <div key={idx} className="flex gap-4 p-4 bg-card border border-border rounded-xl group hover:border-primary/30 transition-colors">
+                                                                    <span className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary text-sm font-bold flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                                                                        {idx + 1}
+                                                                    </span>
+                                                                    <p className="text-sm sm:text-base text-foreground leading-relaxed pt-1">{typeof text === "string" ? text : String(text ?? "")}</p>
+                                                                </div>
+                                                            ))}
+                                                            {displayInstructions.length === 0 && (
+                                                                <p className="text-sm text-muted-foreground">No hay instrucciones listadas para esta receta.</p>
+                                                            )}
+                                                        </div>
+                                                    </TabsContent>
+                                                </Tabs>
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-3 p-4 bg-muted/30 rounded-2xl border border-border">
+                                                <div className="text-center">
+                                                    <p className="text-sm text-muted-foreground mb-1">Proteína</p>
+                                                    <p className="text-lg font-bold text-primary">{recipe.protein}g</p>
+                                                </div>
+                                                <div className="text-center border-x border-border/50">
+                                                    <p className="text-sm text-muted-foreground mb-1">Carbos</p>
+                                                    <p className="text-lg font-bold text-orange-500">{recipe.carbs}g</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-sm text-muted-foreground mb-1">Grasas</p>
+                                                    <p className="text-lg font-bold text-yellow-600">{recipe.fat}g</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-2 pt-4">
+                                                {(Array.isArray(recipe.tags) ? recipe.tags : []).map((tag, i) => (
+                                                    <Badge key={i} variant="outline" className="text-xs bg-muted/30">#{typeof tag === "string" ? tag : String(tag)}</Badge>
+                                                ))}
+                                            </div>
                                         </div>
+                                    </ScrollArea>
+                                    <div className="shrink-0 p-4 border-t border-border bg-background flex justify-end">
+                                        <Button onClick={() => setIsDetailOpen(false)}>Cerrar</Button>
                                     </div>
-                                </ScrollArea>
-                                <div className="p-4 border-t border-border bg-background flex justify-end">
-                                    <Button onClick={() => setIsDetailOpen(false)}>Cerrar</Button>
-                                </div>
-                            </>
-                        )}
+                                </>
+                            );
+                        })()}
                     </DialogContent>
                 </Dialog>
             </div>

@@ -21,12 +21,13 @@ const ResetPassword = () => {
         confirmPassword: "",
     });
 
-    const token = searchParams.get("token");
+    const rawToken = searchParams.get("token");
+    const token = rawToken ? rawToken.trim() : null;
 
     useEffect(() => {
         if (!token) {
-            toast.error("Token inválido");
-            navigate("/auth");
+            toast.error("Enlace inválido o expirado");
+            navigate("/auth", { replace: true });
         }
     }, [token, navigate]);
 
@@ -73,6 +74,16 @@ const ResetPassword = () => {
             setIsLoading(false);
         }
     };
+
+    if (!token) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-8 bg-background">
+                <div className="text-center text-muted-foreground">
+                    <p>Redirigiendo al inicio de sesión...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (isSuccess) {
         return (

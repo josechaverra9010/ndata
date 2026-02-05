@@ -1,15 +1,14 @@
 import {
   LayoutDashboard,
   Users,
-  Apple,
   Calendar,
   MessageSquare,
   Settings,
   LogOut,
   ChefHat,
   TrendingUp,
-  ChefHatIcon,
-  ChevronFirst
+  ChevronFirst,
+  Table2
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -21,6 +20,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Pacientes", path: "/patients" },
   { icon: ChefHat, label: "Recetas", path: "/recipes" },
+  { icon: Table2, label: "Tabla de composición", path: "/composition-table" },
   { icon: ChevronFirst, label: "Menú semanal", path: "/weekly-menus" },
   { icon: Calendar, label: "Citas", path: "/appointments" },
   { icon: TrendingUp, label: "Progreso", path: "/progress" },

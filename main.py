@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import inspect, text
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional, List
 from datetime import datetime, timedelta
 import jwt
@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from urllib.parse import quote
 import requests
 import copy
 
@@ -51,6 +52,11 @@ def ensure_schema_migrations():
         if "nutritionist_id" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN nutritionist_id INTEGER NULL"))
+    if "meal_plans" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("meal_plans")}
+        if "tipo" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE meal_plans ADD COLUMN tipo VARCHAR(50) DEFAULT 'adulto'"))
 
 ensure_schema_migrations()
 
@@ -236,82 +242,102 @@ def validate_password_strength(password: str) -> bool:
 
 
 # ==================== FUNCIÓN DE ENVÍO DE EMAIL ====================
+# Colores y estilos alineados con la identidad NutriData (index.css / tailwind)
+# Primary: verde #7a9b76, fondo crema #faf5f0, texto #352d26, acento #c9a96a
+
+def _email_styles():
+    """Estilos base de los correos (identidad NutriData)."""
+    return """
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; line-height: 1.6; color: #352d26; background: #f0ebe5; }
+        .wrapper { max-width: 600px; margin: 0 auto; padding: 24px 16px; }
+        .card { background: #faf5f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(53, 45, 38, 0.08); }
+        .brand { background: linear-gradient(135deg, #7a9b76 0%, #85a881 100%); padding: 28px 24px; text-align: center; }
+        .brand img { max-height: 44px; width: auto; display: inline-block; }
+        .brand-title { color: #ffffff; font-size: 22px; font-weight: 700; margin: 12px 0 0 0; letter-spacing: -0.02em; }
+        .content { padding: 32px 28px; color: #352d26; }
+        .content p { margin: 0 0 16px 0; font-size: 15px; }
+        .content .lead { font-size: 16px; color: #352d26; }
+        .btn { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #7a9b76 0%, #85a881 100%); color: #ffffff !important; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px; margin: 8px 0 20px 0; box-shadow: 0 2px 8px rgba(122, 155, 118, 0.35); }
+        .btn:hover { opacity: 0.95; }
+        .muted { color: #6b6159; font-size: 14px; }
+        .footer { text-align: center; padding: 20px 24px; color: #6b6159; font-size: 12px; border-top: 1px solid #ddd5cc; background: #faf5f0; }
+        .link-fallback { word-break: break-all; background: #ede8e3; padding: 12px 14px; border-radius: 8px; font-size: 13px; color: #6b6159; margin: 12px 0; }
+        .highlight { background: rgba(122, 155, 118, 0.12); padding: 2px 6px; border-radius: 4px; }
+    """
+
+
+def _email_layout(inner_body: str, title: str, frontend_url: str):
+    """Estructura HTML común: logo, marca, contenido, pie."""
+    logo_url = os.getenv("EMAIL_LOGO_URL", "https://utridata.com/logo-light.png")
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>{_email_styles()}</style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="card">
+            <div class="brand">
+                <img src="{logo_url}" alt="NutriData" width="160" height="44" />
+                <p class="brand-title">NutriData</p>
+            </div>
+            <div class="content">
+                {inner_body}
+            </div>
+            <div class="footer">
+                <p style="margin:0;">Este es un correo automático. No respondas a este mensaje.</p>
+                <p style="margin:8px 0 0 0;"><a href="{frontend_url}" style="color:#7a9b76;text-decoration:none;">Ir a la plataforma</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+
 
 def send_reset_email(to_email: str, reset_token: str, user_name: str):
     """
-    Enviar email de recuperación de contraseña
+    Enviar email de recuperación de contraseña (estilo NutriData).
     """
     try:
         smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
         sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
         sender_password = os.getenv("SMTP_PASSWORD", "")
-        
-        # URL del frontend (ajustar según entorno)
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
-        
-        # Crear mensaje
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080").rstrip("/")
+        reset_link = f"{frontend_url}/reset-password?token={quote(reset_token, safe='')}"
+
         message = MIMEMultipart("alternative")
         message["Subject"] = "Recuperación de Contraseña - NutriData"
         message["From"] = f"NutriData <{sender_email}>"
         message["To"] = to_email
-        
-        # Contenido HTML del email
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                .button {{ display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🔐 Recuperación de Contraseña</h1>
-                </div>
-                <div class="content">
-                    <p>Hola <strong>{user_name}</strong>,</p>
-                    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en NutriData.</p>
-                    <p>Haz clic en el siguiente botón para crear una nueva contraseña:</p>
-                    <p style="text-align: center;">
-                        <a href="{reset_link}" class="button">Restablecer Contraseña</a>
-                    </p>
-                    <p>O copia y pega este enlace en tu navegador:</p>
-                    <p style="word-break: break-all; background: #e9ecef; padding: 10px; border-radius: 5px;">
-                        {reset_link}
-                    </p>
-                    <p><strong>Este enlace expirará en 1 hora.</strong></p>
-                    <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
-                    <p>Saludos,<br>El equipo de NutriData</p>
-                </div>
-                <div class="footer">
-                    <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        
-        # Adjuntar HTML
+
+        inner = f"""
+                <p class="lead">Hola <strong>{user_name}</strong>,</p>
+                <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en NutriData.</p>
+                <p>Haz clic en el botón para crear una nueva contraseña:</p>
+                <p style="text-align: center;">
+                    <a href="{reset_link}" class="btn">Restablecer contraseña</a>
+                </p>
+                <p class="muted">O copia y pega este enlace en tu navegador:</p>
+                <p class="link-fallback">{reset_link}</p>
+                <p><strong>Este enlace expirará en 1 hora.</strong></p>
+                <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+                <p>Saludos,<br><strong>El equipo de NutriData</strong></p>
+                """
+        html_content = _email_layout(inner, "Recuperación de Contraseña", frontend_url)
         html_part = MIMEText(html_content, "html")
         message.attach(html_part)
-        
-        # Enviar email
+
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, to_email, message.as_string())
-        
+
         print(f"✅ Email de recuperación enviado a: {to_email}")
         return True
-        
     except Exception as e:
         print(f"❌ Error al enviar email: {str(e)}")
         return False
@@ -319,7 +345,7 @@ def send_reset_email(to_email: str, reset_token: str, user_name: str):
 
 def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str, start_date: str):
     """
-    Enviar email al paciente cuando se le asigna un plan nutricional.
+    Enviar email al paciente cuando se le asigna un plan nutricional (estilo NutriData).
     """
     try:
         smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -327,48 +353,24 @@ def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str,
         sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
         sender_password = os.getenv("SMTP_PASSWORD", "")
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        plan_link = f"{frontend_url}/patient/my-plan"
+        plan_link = f"{frontend_url.rstrip('/')}/patient/my-plan"
 
         message = MIMEMultipart("alternative")
         message["Subject"] = "Te han asignado un plan nutricional - NutriData"
         message["From"] = f"NutriData <{sender_email}>"
         message["To"] = to_email
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                .button {{ display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🍏 Plan nutricional asignado</h1>
-                </div>
-                <div class="content">
-                    <p>Hola <strong>{patient_name}</strong>,</p>
-                    <p>Tu nutricionista te ha asignado un nuevo plan nutricional: <strong>{plan_name}</strong>.</p>
-                    <p><strong>Fecha de inicio:</strong> {start_date}</p>
-                    <p>Puedes revisar tu plan y menú en la aplicación:</p>
-                    <p style="text-align: center;">
-                        <a href="{plan_link}" class="button">Ver mi plan</a>
-                    </p>
-                    <p>Saludos,<br>El equipo de NutriData</p>
-                </div>
-                <div class="footer">
-                    <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        inner = f"""
+                <p class="lead">Hola <strong>{patient_name}</strong>,</p>
+                <p>Tu nutricionista te ha asignado un nuevo plan nutricional: <span class="highlight"><strong>{plan_name}</strong></span>.</p>
+                <p><strong>Fecha de inicio:</strong> {start_date}</p>
+                <p>Revisa tu plan y menú en la aplicación:</p>
+                <p style="text-align: center;">
+                    <a href="{plan_link}" class="btn">Ver mi plan</a>
+                </p>
+                <p>Saludos,<br><strong>El equipo de NutriData</strong></p>
+                """
+        html_content = _email_layout(inner, "Plan nutricional asignado", frontend_url)
         html_part = MIMEText(html_content, "html")
         message.attach(html_part)
 
@@ -535,6 +537,8 @@ class MealPlanDB(Base):
     duration = Column(String(50))
     category = Column(String(50))
     color = Column(String(20), default="primary")
+    # Tipo de plan: adulto, pediatria, gestante, gestante_adolescente, hospitalizado, deportista
+    tipo = Column(String(50), default="adulto")
     
     protein_target = Column(Integer)
     carbs_target = Column(Integer)
@@ -746,20 +750,35 @@ class NoteCreate(BaseModel):
 
 class RecipeBase(BaseModel):
     name: str
-    description: Optional[str]
-    category: str
-    prepTime: int
-    cookTime: int
-    servings: int
-    calories: int
-    protein: int
-    carbs: int
-    fat: int
-    ingredients: List[str]
-    instructions: List[str]
-    tags: List[str]
-    image: Optional[str]
+    description: Optional[str] = None
+    category: Optional[str] = None
+    prepTime: int = 0
+    cookTime: int = 0
+    servings: int = 1
+    calories: int = 0
+    protein: int = 0
+    carbs: int = 0
+    fat: int = 0
+    ingredients: List[str] = []
+    instructions: List[str] = []
+    tags: List[str] = []
+    image: Optional[str] = None
     isFavorite: bool = False
+
+    @field_validator("ingredients", "instructions", "tags", mode="before")
+    @classmethod
+    def ensure_list(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, (list, tuple)):
+            return list(v)
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return list(parsed) if isinstance(parsed, (list, tuple)) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return []
 
 class RecipeCreate(RecipeBase):
     pass
@@ -777,6 +796,7 @@ class MealPlanCreate(BaseModel):
     duration: str
     category: str
     color: str = "primary"
+    tipo: str = "adulto"  # adulto, pediatria, gestante, gestante_adolescente, hospitalizado, deportista
     protein_target: Optional[int] = 0
     carbs_target: Optional[int] = 0
     fat_target: Optional[int] = 0
@@ -794,6 +814,7 @@ class MealPlanResponse(BaseModel):
     duration: str
     category: str
     color: str
+    tipo: Optional[str] = "adulto"
     protein_target: Optional[int]
     carbs_target: Optional[int]
     fat_target: Optional[int]
@@ -2254,8 +2275,8 @@ def forgot_password(data: ForgotPasswordSchema, db: Session = Depends(get_db)):
             print(f"{'='*60}\n")
         else:
             # Si falla el envío, imprimir el link en consola como fallback
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-            reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080").rstrip("/")
+            reset_link = f"{frontend_url}/reset-password?token={quote(reset_token, safe='')}"
             print(f"\n{'='*60}")
             print(f"⚠️  ERROR AL ENVIAR EMAIL - LINK DE RESPALDO")
             print(f"{'='*60}")
@@ -2570,16 +2591,105 @@ def update_profile(data: ProfileUpdateSchema, db: Session = Depends(get_db)):
 
 # ==================== ENDPOINTS DE RECETAS ====================
 
-@app.get("/api/recipes", response_model=List[RecipeResponse])
-def get_recipes(db: Session = Depends(get_db)):
-    return db.query(RecipeDB).all()
+def _recipe_to_response(recipe: RecipeDB) -> dict:
+    """Convierte RecipeDB a dict asegurando ingredients e instructions como listas de strings."""
+    def item_to_str(item, text_keys=None):
+        """Convierte un item (string, dict, etc.) a string. text_keys para ingredientes/instrucciones."""
+        if item is None:
+            return ""
+        if isinstance(item, str):
+            return item.strip()
+        if isinstance(item, (int, float, bool)):
+            return str(item)
+        if isinstance(item, dict):
+            # Caso especial: ingredientes con nombre y porción (ej. {"name": "Arroz", "portion": "50g"})
+            name_val = item.get("name")
+            portion_val = item.get("portion")
+            if name_val is not None and portion_val:
+                combined = f"{name_val}: {portion_val}".strip()
+                if combined:
+                    return combined
 
-@app.get("/api/recipes/{recipe_id}", response_model=RecipeResponse)
+            keys = text_keys or ["ingredient", "Ingredient", "name", "text", "title", "item", "step", "Step", "instruction", "Instruction"]
+            for k in keys:
+                if k in item and item[k] is not None:
+                    s = str(item[k]).strip()
+                    if s:
+                        return s
+            return ""
+        return str(item).strip()
+
+    def to_list(val, text_keys=None):
+        if val is None:
+            return []
+        if isinstance(val, (list, tuple)):
+            out = []
+            for item in val:
+                s = item_to_str(item, text_keys)
+                if s:
+                    # Si el string tiene varias líneas o comas, expandir
+                    if "\n" in s:
+                        out.extend(x.strip() for x in s.split("\n") if x.strip())
+                    elif "," in s and not s.strip().startswith("["):
+                        out.extend(x.strip() for x in s.split(",") if x.strip())
+                    else:
+                        out.append(s)
+            return out
+        if isinstance(val, str):
+            val = val.strip()
+            if not val:
+                return []
+            try:
+                p = json.loads(val)
+                if isinstance(p, (list, tuple)):
+                    return to_list(p, text_keys)
+                if isinstance(p, (str, int, float, bool)):
+                    return [str(p)]
+                if isinstance(p, dict):
+                    s = item_to_str(p, text_keys)
+                    return [s] if s else []
+                return []
+            except (json.JSONDecodeError, TypeError):
+                if "\n" in val:
+                    return [x.strip() for x in val.split("\n") if x.strip()]
+                if "," in val:
+                    return [x.strip() for x in val.split(",") if x.strip()]
+                return [val]
+        return []
+
+    ing_keys = ["ingredient", "Ingredient", "name", "text", "title", "item"]
+    inst_keys = ["step", "Step", "instruction", "Instruction", "name", "text", "title"]
+    return {
+        "id": recipe.id,
+        "name": recipe.name,
+        "description": recipe.description or "",
+        "category": recipe.category or "",
+        "prepTime": getattr(recipe, "prepTime", 0) or 0,
+        "cookTime": getattr(recipe, "cookTime", 0) or 0,
+        "servings": recipe.servings or 1,
+        "calories": recipe.calories or 0,
+        "protein": recipe.protein or 0,
+        "carbs": recipe.carbs or 0,
+        "fat": recipe.fat or 0,
+        "ingredients": to_list(recipe.ingredients, ing_keys),
+        "instructions": to_list(recipe.instructions, inst_keys),
+        "tags": to_list(getattr(recipe, "tags", None)),
+        "image": recipe.image,
+        "isFavorite": bool(getattr(recipe, "isFavorite", 0)),
+    }
+
+
+@app.get("/api/recipes")
+def get_recipes(db: Session = Depends(get_db)):
+    recipes = db.query(RecipeDB).all()
+    return [_recipe_to_response(r) for r in recipes]
+
+@app.get("/api/recipes/{recipe_id}")
 def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
-    return recipe
+    return _recipe_to_response(recipe)
 
 @app.post("/api/recipes", response_model=RecipeResponse)
 async def create_recipe(
@@ -2747,6 +2857,7 @@ def get_meal_plans(db: Session = Depends(get_db)):
             "duration": plan.duration,
             "category": plan.category,
             "color": plan.color,
+            "tipo": getattr(plan, "tipo", None) or "adulto",
             "protein_target": plan.protein_target,
             "carbs_target": plan.carbs_target,
             "fat_target": plan.fat_target,
@@ -7209,7 +7320,8 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
 
     # NUEVO: Si los datos vienen como una lista (posiblemente de semanas)
     if isinstance(day_menu, list):
-        idx = (active_plan.current_week - 1) if active_plan else 0
+        week_num = (active_plan.current_week if active_plan else 1) or 1
+        idx = max(0, week_num - 1)
         if len(day_menu) > idx:
             day_menu = day_menu[idx]
         elif len(day_menu) > 0:
@@ -7220,9 +7332,23 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
     # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
     if isinstance(day_menu, dict) and "meals" in day_menu and isinstance(day_menu["meals"], list):
         new_day_menu = {}
+        type_to_standard = {
+            "desayuno": "breakfast", "breakfast": "breakfast",
+            "snack_am": "morning_snack", "morning_snack": "morning_snack", "media_manana": "morning_snack", "merienda_manana": "morning_snack",
+            "almuerzo": "lunch", "comida": "lunch", "lunch": "lunch",
+            "snack_pm": "afternoon_snack", "afternoon_snack": "afternoon_snack", "media_tarde": "afternoon_snack", "merienda": "afternoon_snack", "merienda_tarde": "afternoon_snack",
+            "cena": "dinner", "dinner": "dinner",
+        }
         for m in day_menu["meals"]:
-            if isinstance(m, dict) and "type" in m:
-                new_day_menu[m["type"]] = m
+            if not isinstance(m, dict):
+                continue
+            t = (m.get("type") or m.get("meal_type") or "").strip().lower()
+            if not t:
+                continue
+            new_day_menu[t] = m
+            standard = type_to_standard.get(t)
+            if standard and standard != t:
+                new_day_menu[standard] = m
         day_menu = new_day_menu
 
     # Estructura de comidas
@@ -7279,7 +7405,7 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
             # Extraer descripción con múltiples variaciones de nombres de campo
             description = get_field_value(
                 meal_data,
-                ["receta", "recipe", "name", "nombre", "descripcion", "description", "titulo", "title"],
+                ["receta", "recipe", "recipe_name", "name", "nombre", "descripcion", "description", "titulo", "title"],
                 meal_info["name"]  # Usar el nombre del tipo de comida como fallback
             )
             
@@ -7315,15 +7441,55 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
             ingredients = meal_data.get("ingredients") or []
             instructions = meal_data.get("instructions") or []
             image = meal_data.get("image")
-            
-            recipe_id = meal_data.get("recipe_id")
-            if (not ingredients or not instructions) and recipe_id:
-                from sqlalchemy import text
+
+            recipe_id_raw = meal_data.get("recipe_id") or meal_data.get("id_receta") or meal_data.get("recipeId") or meal_data.get("id")
+            try:
+                recipe_id = int(recipe_id_raw) if recipe_id_raw is not None and str(recipe_id_raw).strip() != "" else None
+            except (TypeError, ValueError):
+                recipe_id = None
+            recipe = None
+            if recipe_id:
                 recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+            if not recipe and description and str(description).strip() and str(description) != meal_info["name"]:
+                recipe = db.query(RecipeDB).filter(RecipeDB.name == str(description).strip()).first()
                 if recipe:
-                    if not ingredients: ingredients = recipe.ingredients
-                    if not instructions: instructions = recipe.instructions
-                    if not image: image = recipe.image
+                    recipe_id = recipe.id
+            if recipe:
+                recipe_dict = _recipe_to_response(recipe)
+                if not ingredients:
+                    ingredients = recipe_dict.get("ingredients") or []
+                if not instructions:
+                    instructions = recipe_dict.get("instructions") or []
+                if not image:
+                    image = recipe_dict.get("image")
+                if not description or description == meal_info["name"]:
+                    description = recipe_dict.get("name") or description
+                if not calories and recipe_dict.get("calories"):
+                    calories = recipe_dict.get("calories")
+                if not protein and recipe_dict.get("protein") is not None:
+                    protein = recipe_dict.get("protein")
+                if not carbs and recipe_dict.get("carbs") is not None:
+                    carbs = recipe_dict.get("carbs")
+                if not fat and recipe_dict.get("fat") is not None:
+                    fat = recipe_dict.get("fat")
+
+            # Normalizar ingredientes/instrucciones a lista (por si vienen como JSON string del menú)
+            if not isinstance(ingredients, (list, tuple)):
+                if isinstance(ingredients, str):
+                    try:
+                        ingredients = json.loads(ingredients) if ingredients.strip() else []
+                    except (json.JSONDecodeError, TypeError):
+                        ingredients = [ingredients] if ingredients.strip() else []
+                else:
+                    ingredients = []
+            if not isinstance(instructions, (list, tuple)):
+                if isinstance(instructions, str):
+                    try:
+                        instructions = json.loads(instructions) if instructions.strip() else []
+                    except (json.JSONDecodeError, TypeError):
+                        instructions = [instructions] if instructions.strip() else []
+                else:
+                    instructions = []
 
             result.append({
                 "meal_type": meal_info["id"],
@@ -7332,13 +7498,17 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
                 "calories": int(calories) if calories else 0,
                 "completed": bool(tracked.completed) if tracked else False,
                 "description": str(description),
+                "receta": str(description),
+                "food": str(description),
+                "meal": meal_info["name"],
                 "protein": int(protein) if protein else 0,
                 "carbs": int(carbs) if carbs else 0,
                 "fat": int(fat) if fat else 0,
-                "ingredients": list(ingredients) if isinstance(ingredients, list) else [],
-                "instructions": list(instructions) if isinstance(instructions, list) else [],
+                "ingredients": list(ingredients) if isinstance(ingredients, (list, tuple)) else [],
+                "instructions": list(instructions) if isinstance(instructions, (list, tuple)) else [],
                 "image": image,
-                "type": meal_info["id"] # Alias for consistency
+                "type": meal_info["id"],
+                "recipe_id": recipe_id,
             })
     
     # Aplicar ingredientes personalizados si existen en fase_4

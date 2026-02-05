@@ -16,6 +16,10 @@ export interface NutrientData {
   mg?: number;
   zn?: number;
   cu?: number;
+  /** Porción en gramos (según tabla PDF) */
+  portion_grams?: number;
+  /** Unidad de medida (ej. 1 vaso pequeño, 3 cucharas soperas colmadas) */
+  unit_measure?: string;
 }
 
 export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
@@ -76,14 +80,15 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 1.21,
     "cu": 0.25
   },
+  /** Promedio del grupo (sin porción) */
   "Carnes crudas altas en lípidos adultos y niños": {
-    "kcal": 138.7,
-    "prot": 15.6,
+    "kcal": 143,
+    "prot": 15.7,
     "grasa": 7.9,
-    "gs": 2.51,
-    "gm": 3.3,
-    "gp": 1.25,
-    "col": 137.0,
+    "gs": 2.59,
+    "gm": 3.06,
+    "gp": 1.31,
+    "col": 143.0,
     "chos": 1.3,
     "fd": 0.0,
     "calcio": 37.0,
@@ -94,6 +99,56 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "mg": 20.0,
     "zn": 1.87,
     "cu": 0.47
+  },
+  "Alas de pollo carne y piel": {
+    "kcal": 186, "prot": 15.4, "grasa": 13.4, "gs": 3.76, "gm": 5.33, "gp": 2.85, "col": 65.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 84, "unit_measure": "2 unidades medianas"
+  },
+  "Bagre carne y piel": {
+    "kcal": 140, "prot": 14.4, "grasa": 8.7, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 76, "unit_measure": "1 medallón grueso"
+  },
+  "Callo o panza": {
+    "kcal": 98, "prot": 14.6, "grasa": 4.0, "gs": 2.03, "gm": 1.31, "gp": 0.07, "col": 95.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Camarón especies mezcladas": {
+    "kcal": 77, "prot": 14.8, "grasa": 1.2, "gs": 0.24, "gm": 0.18, "gp": 0.49, "col": 111.0, "chos": 0.7, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 73, "unit_measure": "6 unidades grandes"
+  },
+  "Contramuslo de pollo sin hueso y con piel": {
+    "kcal": 222, "prot": 18.2, "grasa": 16.1, "gs": 4.56, "gm": 6.59, "gp": 3.48, "col": 88.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 105, "unit_measure": "1 unidad mediana"
+  },
+  "Hígado de pollo": {
+    "kcal": 90, "prot": 13.0, "grasa": 2.8, "gs": 0.94, "gm": 0.68, "gp": 0.46, "col": 316.0, "chos": 2.4, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 72, "unit_measure": "2 unidades medianas"
+  },
+  "Hígado de res": {
+    "kcal": 143, "prot": 20.0, "grasa": 3.9, "gs": 1.5, "gm": 0.51, "gp": 0.84, "col": 354.0, "chos": 5.8, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Langostino especies mezcladas": {
+    "kcal": 73, "prot": 15.2, "grasa": 1.0, "gs": 0.15, "gm": 0.16, "gp": 0.28, "col": 108.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 95, "unit_measure": "6 unidades medianas"
+  },
+  "Lengua de res": {
+    "kcal": 224, "prot": 14.9, "grasa": 16.1, "gs": 7.0, "gm": 7.24, "gp": 0.9, "col": 87.0, "chos": 3.7, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Sardina enlatada en salsa de tomate": {
+    "kcal": 178, "prot": 16.4, "grasa": 12.0, "gs": 3.09, "gm": 5.54, "gp": 2.43, "col": 61.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "2 unidades medianas"
   },
   "Carnes magras cocidas menores de 2 años": {
     "kcal": 49.2,
@@ -114,14 +169,15 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 0.55,
     "cu": 0.04
   },
+  /** Promedio del grupo (sin porción) */
   "Carnes magras crudas y proteínas texturizada adultos y niños": {
-    "kcal": 108.3,
+    "kcal": 112,
     "prot": 19.1,
     "grasa": 3.1,
-    "gs": 0.92,
-    "gm": 1.16,
-    "gp": 0.53,
-    "col": 50.0,
+    "gs": 0.98,
+    "gm": 1.1,
+    "gp": 0.58,
+    "col": 49.0,
     "chos": 1.0,
     "fd": 0.3,
     "calcio": 22.0,
@@ -133,6 +189,97 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 1.81,
     "cu": 0.11
   },
+  "Atún enlatado en agua, sólidos": {
+    "kcal": 139, "prot": 30.6, "grasa": 1.0, "gs": 0.28, "gm": 0.19, "gp": 0.41, "col": 36.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 120, "unit_measure": "1 lata"
+  },
+  "Carne de cabra o chivo": {
+    "kcal": 109, "prot": 20.6, "grasa": 2.3, "gs": 0.71, "gm": 1.03, "gp": 0.17, "col": 57.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Carne de cerdo lomo o cañón magro": {
+    "kcal": 143, "prot": 21.4, "grasa": 5.7, "gs": 1.95, "gm": 2.56, "gp": 0.61, "col": 59.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Carne de conejo todos los cortes": {
+    "kcal": 136, "prot": 20.1, "grasa": 5.6, "gs": 1.66, "gm": 1.5, "gp": 1.08, "col": 57.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Carne de cordero diferentes cortes grasa menor 10%": {
+    "kcal": 134, "prot": 20.3, "grasa": 5.3, "gs": 1.88, "gm": 2.11, "gp": 0.48, "col": 65.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Carne de Cuy o cuy": {
+    "kcal": 95, "prot": 19.0, "grasa": 1.6, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Carne de res todos los cortes magra": {
+    "kcal": 150, "prot": 21.5, "grasa": 6.5, "gs": 2.32, "gm": 2.61, "gp": 0.24, "col": 59.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Carne de ternera diferentes cortes magra": {
+    "kcal": 112, "prot": 20.2, "grasa": 2.9, "gs": 0.86, "gm": 0.92, "gp": 0.3, "col": 83.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Chuleta de cerdo magro": {
+    "kcal": 149, "prot": 22.1, "grasa": 6.0, "gs": 2.07, "gm": 2.71, "gp": 0.65, "col": 55.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Contramuslo de pollo, carne sin piel": {
+    "kcal": 102, "prot": 16.9, "grasa": 3.4, "gs": 0.86, "gm": 1.04, "gp": 0.83, "col": 71.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 86, "unit_measure": "1 unidad mediana"
+  },
+  "Muslo de pollo, carne sin piel": {
+    "kcal": 90, "prot": 15.1, "grasa": 2.9, "gs": 0.74, "gm": 0.89, "gp": 0.71, "col": 60.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 75, "unit_measure": "1 unidad mediana"
+  },
+  "Pargo especies mezcladas": {
+    "kcal": 100, "prot": 20.5, "grasa": 1.3, "gs": 0.29, "gm": 0.25, "gp": 0.46, "col": 37.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1 trozo mediano"
+  },
+  "Pavo todas las carnes sin piel": {
+    "kcal": 119, "prot": 21.8, "grasa": 2.9, "gs": 0.95, "gm": 0.61, "gp": 0.83, "col": 65.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 100, "unit_measure": "1/5 libra"
+  },
+  "Pechuga de pollo, carne sin piel": {
+    "kcal": 88, "prot": 18.5, "grasa": 1.0, "gs": 0.26, "gm": 0.24, "gp": 0.22, "col": 46.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 80, "unit_measure": "1/4 unidad grande"
+  },
+  "Proteina de soya texturizada hidratada": {
+    "kcal": 83, "prot": 14.5, "grasa": 0.1, "gs": 0.01, "gm": 0.02, "gp": 0.05, "col": 0, "chos": 7.8, "fd": 1.4,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 60, "unit_measure": "2 cucharas soperas colmadas"
+  },
+  "Proteina de trigo texturizada hidratada": {
+    "kcal": 78, "prot": 9.5, "grasa": 0.8, "gs": 0.11, "gm": 0.16, "gp": 0.42, "col": 0, "chos": 9.6, "fd": 4.4,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 75, "unit_measure": "3 cucharas soperas colmadas"
+  },
+  "Salmon rosado, crudo": {
+    "kcal": 85, "prot": 14.5, "grasa": 2.6, "gs": 0.41, "gm": 0.68, "gp": 0.99, "col": 38.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 73, "unit_measure": "1 trozo pequeño"
+  },
+  "Trucha arcoiris": {
+    "kcal": 112, "prot": 16.9, "grasa": 4.4, "gs": 1.26, "gm": 1.25, "gp": 1.47, "col": 48.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 81, "unit_measure": "1/2 unidad mediana"
+  },
+  /** Promedio del grupo (sin porción) */
   "Cereales adultos": {
     "kcal": 93.8,
     "prot": 2.5,
@@ -151,6 +298,128 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "mg": 13.0,
     "zn": 0.42,
     "cu": 0.05
+  },
+  "Almojábana": { "kcal": 89, "prot": 4.0, "grasa": 3.8, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 9.3, "fd": 0, "calcio": 99, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 31, "unit_measure": "1 unidad pequeña" },
+  "Arepa delgada de maíz blanco trillado": { "kcal": 104, "prot": 2.1, "grasa": 0.3, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 22.5, "fd": 0, "calcio": 2, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 56, "unit_measure": "1 unidad pequeña" },
+  "Arepa redonda de maíz blanco trillado": { "kcal": 90, "prot": 2.1, "grasa": 0.3, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 19.4, "fd": 0, "calcio": 2, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 52, "unit_measure": "1 unidad grande" },
+  "Arroz blanco, cocido": { "kcal": 104, "prot": 1.9, "grasa": 0.2, "gs": 0.05, "gm": 0.06, "gp": 0.05, "col": 0, "chos": 22.9, "fd": 0.2, "calcio": 2, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 80, "unit_measure": "6 cucharas soperas colmadas" },
+  "Arroz integral, cocido": { "kcal": 91, "prot": 1.9, "grasa": 0.6, "gs": 0.14, "gm": 0.24, "gp": 0.24, "col": 0, "chos": 19.0, "fd": 1.5, "calcio": 8, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 81, "unit_measure": "8 cucharas soperas colmadas" },
+  "Arroz parbolizado cocido": { "kcal": 86, "prot": 1.7, "grasa": 0.2, "gs": 0.05, "gm": 0.06, "gp": 0.05, "col": 0, "chos": 18.5, "fd": 0.3, "calcio": 14, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 75, "unit_measure": "5 cucharas soperas colmadas" },
+  "Avena en hojuelas fortificada": { "kcal": 89, "prot": 3.7, "grasa": 1.5, "gs": 0.26, "gm": 0.46, "gp": 0.54, "col": 0, "chos": 15.4, "fd": 2.6, "calcio": 13, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 24, "unit_measure": "4 cucharas soperas colmadas" },
+  "Cebada perlada cocida": { "kcal": 89, "prot": 1.7, "grasa": 0.3, "gs": 0.06, "gm": 0.04, "gp": 0.15, "col": 0, "chos": 20.3, "fd": 2.7, "calcio": 8, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 72, "unit_measure": "5 cucharas soperas colmadas" },
+  "Choco Krispis": { "kcal": 87, "prot": 1.4, "grasa": 0.3, "gs": 0.09, "gm": 0.07, "gp": 0.12, "col": 0, "chos": 19.9, "fd": 0.3, "calcio": 2, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 23, "unit_measure": "2/3 pocillo chocolatero" },
+  "Corn Flakes": { "kcal": 91, "prot": 1.7, "grasa": 0.2, "gs": 0.05, "gm": 0.03, "gp": 0.10, "col": 0, "chos": 21.6, "fd": 0.7, "calcio": 1, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "2/3 pocillo chocolatero" },
+  "Cuchuco de cebada": { "kcal": 93, "prot": 2.4, "grasa": 0.2, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 21.0, "fd": 0, "calcio": 10, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 27, "unit_measure": "4 cucharas soperas colmadas" },
+  "Espaguetis de arroz, hidratados": { "kcal": 82, "prot": 0.7, "grasa": 0.2, "gs": 0.02, "gm": 0.02, "gp": 0.02, "col": 0, "chos": 18.7, "fd": 0, "calcio": 3, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 75, "unit_measure": "2/3 pocillo chocolatero" },
+  "Espaguetis de trigo, cocidos": { "kcal": 92, "prot": 3.1, "grasa": 0.5, "gs": 0.07, "gm": 0.05, "gp": 0.18, "col": 0, "chos": 18.4, "fd": 1.1, "calcio": 5, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 65, "unit_measure": "2/3 pocillo chocolatero" },
+  "Froot Loops": { "kcal": 78, "prot": 1.0, "grasa": 0.6, "gs": 0.26, "gm": 0.14, "gp": 0.18, "col": 0, "chos": 17.6, "fd": 0.4, "calcio": 2, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 20, "unit_measure": "2/3 pocillo chocolatero" },
+  "Galletas Saltinas": { "kcal": 78, "prot": 1.7, "grasa": 2.1, "gs": 0.53, "gm": 1.16, "gp": 0.30, "col": 0, "chos": 12.9, "fd": 0.5, "calcio": 2, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 24, "unit_measure": "3 tablas" },
+  "Harina de arroz blanco": { "kcal": 92, "prot": 1.5, "grasa": 0.4, "gs": 0.10, "gm": 0.11, "gp": 0.10, "col": 0, "chos": 20.0, "fd": 0.6, "calcio": 3, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "2 cucharas soperas colmadas" },
+  "Harina de maíz blanco trillado": { "kcal": 81, "prot": 2.3, "grasa": 0.9, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 18.0, "fd": 0, "calcio": 5, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "2 cucharas soperas rasas" },
+  "Harina de trigo enriquecida": { "kcal": 91, "prot": 2.6, "grasa": 0.3, "gs": 0.04, "gm": 0.02, "gp": 0.10, "col": 0, "chos": 19.1, "fd": 0.7, "calcio": 4, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "4 cucharas soperas rasas" },
+  "Macarrones, cocidos": { "kcal": 90, "prot": 3.1, "grasa": 0.4, "gs": 0.06, "gm": 0.05, "gp": 0.17, "col": 0, "chos": 18.1, "fd": 0.8, "calcio": 4, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 64, "unit_measure": "2/3 pocillo chocolatero" },
+  "Maicena (almidón de maíz)": { "kcal": 95, "prot": 0.1, "grasa": 0, "gs": 0, "gm": 0.01, "gp": 0.01, "col": 0, "chos": 22.8, "fd": 0.2, "calcio": 1, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "4 cucharas soperas rasas" },
+  "Maíz pira, crudo": { "kcal": 90, "prot": 2.3, "grasa": 1.0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 19.4, "fd": 0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 27, "unit_measure": "1 cuchara sopera colmada" },
+  "Maíz tierno o choclo, amarillo enlatado": { "kcal": 89, "prot": 2.9, "grasa": 1.1, "gs": 0.17, "gm": 0.32, "gp": 0.52, "col": 0, "chos": 20.5, "fd": 2.2, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 110, "unit_measure": "8 cucharas soperas colmadas" },
+  "Maíz tostado comercial": { "kcal": 77, "prot": 2.0, "grasa": 1.0, "gs": 0.14, "gm": 0.26, "gp": 0.45, "col": 0, "chos": 15.7, "fd": 0.2, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 21, "unit_measure": "3 cucharas soperas colmadas" },
+  "Mazamorra Antioqueña (maíz cocido)": { "kcal": 108, "prot": 3.3, "grasa": 1.3, "gs": 0.20, "gm": 0.37, "gp": 0.60, "col": 0, "chos": 25.1, "fd": 2.8, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 100, "unit_measure": "5 cucharas soperas altas" },
+  "Palitos o palitroques": { "kcal": 91, "prot": 2.6, "grasa": 2.1, "gs": 0.31, "gm": 0.79, "gp": 0.80, "col": 0, "chos": 15.0, "fd": 0.7, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 22, "unit_measure": "2 unidades" },
+  "Pan blanco": { "kcal": 59, "prot": 1.8, "grasa": 0.8, "gs": 0.18, "gm": 0.35, "gp": 0.16, "col": 0, "chos": 10.9, "fd": 0.5, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 22, "unit_measure": "1 tajada delgada" },
+  "Pan centeno": { "kcal": 91, "prot": 3.0, "grasa": 1.2, "gs": 0.22, "gm": 0.46, "gp": 0.28, "col": 0, "chos": 16.9, "fd": 2.0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 35, "unit_measure": "1 tajada mediana" },
+  "Pan de salvado de avena": { "kcal": 90, "prot": 4.0, "grasa": 1.7, "gs": 0.27, "gm": 0.60, "gp": 0.64, "col": 0, "chos": 15.1, "fd": 1.7, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 38, "unit_measure": "1 tajada mediana" },
+  "Pan integral": { "kcal": 79, "prot": 3.1, "grasa": 1.3, "gs": 0.29, "gm": 0.54, "gp": 0.32, "col": 0, "chos": 14.8, "fd": 2.2, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 32, "unit_measure": "1 tajada mediana" },
+  "Pan pita o árabe": { "kcal": 69, "prot": 2.3, "grasa": 0.3, "gs": 0.04, "gm": 0.03, "gp": 0.14, "col": 0, "chos": 13.9, "fd": 0.6, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "1/2 unidad pequeña" },
+  "Pancake (mezcla preparada con leche entera)": { "kcal": 90, "prot": 2.6, "grasa": 3.9, "gs": 0.85, "gm": 0.99, "gp": 1.78, "col": 24, "chos": 11.3, "fd": 0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 40, "unit_measure": "1 unidad mediana" },
+  "Pandequeso": { "kcal": 78, "prot": 2.9, "grasa": 2.0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 12.8, "fd": 0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 28, "unit_measure": "1 unidad pequeña" },
+  "Pandeyuca": { "kcal": 69, "prot": 3.2, "grasa": 2.4, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 9.0, "fd": 0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 20, "unit_measure": "2 unidades medianas" },
+  "Pasta corta cocida": { "kcal": 92, "prot": 3.1, "grasa": 0.5, "gs": 0.07, "gm": 0.05, "gp": 0.18, "col": 0, "chos": 18.4, "fd": 1.1, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 65, "unit_measure": "2/3 pocillo chocolatero" },
+  "Seba Seba": { "kcal": 70, "prot": 2.2, "grasa": 1.0, "gs": 0.21, "gm": 0.04, "gp": 0.02, "col": 0, "chos": 13.1, "fd": 0.6, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 24, "unit_measure": "3 unidades medianas" },
+  "Taco vacío": { "kcal": 122, "prot": 1.9, "grasa": 5.9, "gs": 0.85, "gm": 2.32, "gp": 2.21, "col": 0, "chos": 16.2, "fd": 2.0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 26, "unit_measure": "2 unidades medianas" },
+  "Tortilla de maíz": { "kcal": 67, "prot": 1.7, "grasa": 0.8, "gs": 0.10, "gm": 0.20, "gp": 0.34, "col": 0, "chos": 14.0, "fd": 1.6, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 30, "unit_measure": "1 unidad pequeña" },
+  "Tostada o calado": { "kcal": 94, "prot": 2.9, "grasa": 1.3, "gs": 0.28, "gm": 0.57, "gp": 0.26, "col": 0, "chos": 17.4, "fd": 0.8, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 32, "unit_measure": "1 unidad mediana" },
+  "Zucaritas": { "kcal": 96, "prot": 1.3, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 22.6, "fd": 0, "calcio": 0, "p": 47, "fe": 0.9, "na": 82, "k": 53, "mg": 13, "zn": 0.42, "cu": 0.05, "portion_grams": 25, "unit_measure": "2/3 pocillo chocolatero" },
+  "Arracacha": { "kcal": 90, "prot": 1.0, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 21.4, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 96, "unit_measure": "1 trozo pequeño" },
+  "Batata": { "kcal": 105, "prot": 1.7, "grasa": 0.3, "gs": 0.06, "gm": 0.01, "gp": 0.13, "col": 0, "chos": 24.3, "fd": 1.8, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 100, "unit_measure": "1 trozo pequeño" },
+  "Chuguas u ollucos": { "kcal": 90, "prot": 2.3, "grasa": 0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 20.6, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 155, "unit_measure": "9 unidades grandes" },
+  "Cubios": { "kcal": 90, "prot": 2.5, "grasa": 0.2, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 20.3, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 155, "unit_measure": "2 unidades grandes" },
+  "Harina de plátano": { "kcal": 87, "prot": 0.9, "grasa": 0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 21.0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 24, "unit_measure": "2 cucharas soperas colmadas" },
+  "Ñame": { "kcal": 90, "prot": 1.2, "grasa": 0.1, "gs": 0.02, "gm": 0.01, "gp": 0.05, "col": 0, "chos": 21.5, "fd": 3.0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 78, "unit_measure": "1 trozo pequeño" },
+  "Papa común": { "kcal": 90, "prot": 1.9, "grasa": 0.1, "gs": 0.02, "gm": 0, "gp": 0.03, "col": 0, "chos": 20.9, "fd": 2.0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 83, "unit_measure": "1 unidad mediana" },
+  "Papa criolla": { "kcal": 90, "prot": 2.7, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 20.2, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 108, "unit_measure": "3 unidades medianas" },
+  "Plátano colí o guineo": { "kcal": 99, "prot": 1.5, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 26.0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 88, "unit_measure": "1 unidad mediana" },
+  "Plátano hartón maduro": { "kcal": 90, "prot": 0.7, "grasa": 0.3, "gs": 0.09, "gm": 0.02, "gp": 0.05, "col": 0, "chos": 24.0, "fd": 1.5, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 66, "unit_measure": "1/4 unidad mediana" },
+  "Plátano verde": { "kcal": 111, "prot": 0.9, "grasa": 0.2, "gs": 0.11, "gm": 0.02, "gp": 0.05, "col": 0, "chos": 29.5, "fd": 1.8, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 78, "unit_measure": "1/2 unidad mediana" },
+  "Yuca blanca": { "kcal": 91, "prot": 0.5, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 22.0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 62, "unit_measure": "1 trozo mediano" },
+  "Raíces, Tubérculos y Plátanos adultos": {
+    "kcal": 94, "prot": 1.5, "grasa": 0.1, "gs": 0.06, "gm": 0.01, "gp": 0.06, "col": 0, "chos": 22.6, "fd": 2.0,
+    "calcio": 0, "p": 0, "fe": 0, "portion_grams": 94
+  },
+  "Arracacha (niños)": { "kcal": 56, "prot": 0.6, "grasa": 0.06, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 13.3, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 60, "unit_measure": "1 trozo pequeño" },
+  "Batata (niños)": { "kcal": 65, "prot": 1.1, "grasa": 0.2, "gs": 0.04, "gm": 0.01, "gp": 0.08, "col": 0, "chos": 15.1, "fd": 1.1, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 62, "unit_measure": "1 trozo pequeño" },
+  "Chuguas u ollucos (niños)": { "kcal": 56, "prot": 1.4, "grasa": 0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 12.8, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 96, "unit_measure": "6 unidades grandes" },
+  "Cubios (niños)": { "kcal": 56, "prot": 1.6, "grasa": 0.12, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 12.6, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 96, "unit_measure": "1 unidad grande" },
+  "Harina de plátano (niños)": { "kcal": 54, "prot": 0.6, "grasa": 0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 13.0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 15, "unit_measure": "1 cuchara sopera colmada" },
+  "Ñame (niños)": { "kcal": 56, "prot": 0.7, "grasa": 0.06, "gs": 0.01, "gm": 0.01, "gp": 0.03, "col": 0, "chos": 13.3, "fd": 1.9, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 48, "unit_measure": "1 trozo pequeño" },
+  "Papa común (niños)": { "kcal": 56, "prot": 1.2, "grasa": 0.06, "gs": 0.01, "gm": 0, "gp": 0.02, "col": 0, "chos": 13.0, "fd": 1.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 51, "unit_measure": "1 unidad pequeña" },
+  "Papa criolla (niños)": { "kcal": 56, "prot": 1.7, "grasa": 0.06, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 12.5, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 67, "unit_measure": "2 unidades medianas" },
+  "Plátano colí o guineo (niños)": { "kcal": 61, "prot": 0.9, "grasa": 0.06, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 16.1, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 55, "unit_measure": "1 unidad pequeña" },
+  "Plátano hartón maduro (niños)": { "kcal": 56, "prot": 0.4, "grasa": 0.19, "gs": 0.06, "gm": 0.01, "gp": 0.03, "col": 0, "chos": 14.9, "fd": 0.9, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 41, "unit_measure": "1/5 unidad mediana" },
+  "Plátano verde (niños)": { "kcal": 69, "prot": 0.6, "grasa": 0.12, "gs": 0.07, "gm": 0.01, "gp": 0.03, "col": 0, "chos": 18.3, "fd": 1.1, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 48, "unit_measure": "1/3 unidad mediana" },
+  "Yuca blanca (niños)": { "kcal": 56, "prot": 0.3, "grasa": 0.06, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 13.6, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 38, "unit_measure": "1 trozo pequeño" },
+  "Raíces, tubérculos y plátanos niños y niñas": {
+    "kcal": 58, "prot": 0.9, "grasa": 0.06, "gs": 0.04, "gm": 0.01, "gp": 0.04, "col": 0, "chos": 14.0, "fd": 1.2,
+    "calcio": 0, "p": 0, "fe": 0, "portion_grams": 58
+  },
+  "Almojábana (niños)": { "kcal": 69, "prot": 3.1, "grasa": 3.0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 7.2, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 24, "unit_measure": "1 unidad mediana" },
+  "Arepa redonda de maíz blanco trillado (niños)": { "kcal": 61, "prot": 1.4, "grasa": 0.2, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 13.1, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 35, "unit_measure": "1 unidad pequeña" },
+  "Arroz blanco, cocido (niños)": { "kcal": 68, "prot": 1.2, "grasa": 0.1, "gs": 0.03, "gm": 0.04, "gp": 0.03, "col": 0, "chos": 14.9, "fd": 0.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 52, "unit_measure": "4 cucharas soperas colmadas" },
+  "Arroz integral, cocido (niños)": { "kcal": 71, "prot": 1.4, "grasa": 0.5, "gs": 0.11, "gm": 0.19, "gp": 0.19, "col": 0, "chos": 14.8, "fd": 1.1, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 63, "unit_measure": "6 cucharas soperas colmadas" },
+  "Arroz parbolizado cocido (niños)": { "kcal": 68, "prot": 1.4, "grasa": 0.2, "gs": 0.04, "gm": 0.05, "gp": 0.04, "col": 0, "chos": 14.8, "fd": 0.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 60, "unit_measure": "4 cucharas soperas colmadas" },
+  "Avena en hojuelas fortificada (niños)": { "kcal": 66, "prot": 2.8, "grasa": 1.1, "gs": 0.19, "gm": 0.35, "gp": 0.40, "col": 0, "chos": 11.5, "fd": 2.0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 18, "unit_measure": "3 cucharas soperas colmadas" },
+  "Cebada perlada cocida (niños)": { "kcal": 70, "prot": 1.3, "grasa": 0.2, "gs": 0.05, "gm": 0.03, "gp": 0.12, "col": 0, "chos": 16.1, "fd": 2.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 57, "unit_measure": "4 cucharas soperas" },
+  "Choco Krispis (niños)": { "kcal": 72, "prot": 1.2, "grasa": 0.2, "gs": 0.08, "gm": 0.06, "gp": 0.10, "col": 0, "chos": 16.4, "fd": 0.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 19, "unit_measure": "1/2 pocillo chocolatero" },
+  "Corn Flakes (niños)": { "kcal": 66, "prot": 1.2, "grasa": 0.1, "gs": 0.04, "gm": 0.02, "gp": 0.07, "col": 0, "chos": 15.6, "fd": 0.5, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 18, "unit_measure": "1/2 pocillo chocolatero" },
+  "Cuchuco de cebada, crudo (niños)": { "kcal": 69, "prot": 1.8, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 15.6, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 20, "unit_measure": "3 cucharas soperas colmadas" },
+  "Espaguetis de arroz, hidratados (niños)": { "kcal": 55, "prot": 0.5, "grasa": 0.1, "gs": 0.01, "gm": 0.01, "gp": 0.01, "col": 0, "chos": 12.5, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 50, "unit_measure": "1/2 pocillo chocolatero" },
+  "Espaguetis de trigo, cocidos (niños)": { "kcal": 71, "prot": 2.4, "grasa": 0.4, "gs": 0.05, "gm": 0.04, "gp": 0.14, "col": 0, "chos": 14.2, "fd": 0.9, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 50, "unit_measure": "1/2 pocillo chocolatero" },
+  "Froot Loops (niños)": { "kcal": 78, "prot": 1.0, "grasa": 0.6, "gs": 0.26, "gm": 0.14, "gp": 0.18, "col": 0, "chos": 17.6, "fd": 0.4, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 20, "unit_measure": "2/3 pocillo chocolatero" },
+  "Galletas Saltinas (niños)": { "kcal": 66, "prot": 1.5, "grasa": 1.1, "gs": 0.47, "gm": 1.03, "gp": 0.27, "col": 0, "chos": 12.4, "fd": 0.5, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 16, "unit_measure": "2 tablas" },
+  "Harina de trigo enriquecida (niños)": { "kcal": 66, "prot": 1.9, "grasa": 0.2, "gs": 0.03, "gm": 0.02, "gp": 0.07, "col": 0, "chos": 13.7, "fd": 0.5, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 18, "unit_measure": "3 cucharas soperas colmadas" },
+  "Macarrones, cocidos (niños)": { "kcal": 63, "prot": 2.2, "grasa": 0.3, "gs": 0.05, "gm": 0.04, "gp": 0.12, "col": 0, "chos": 12.7, "fd": 0.6, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 45, "unit_measure": "1/2 pocillo chocolatero" },
+  "Maicena (almidón de maíz) (niños)": { "kcal": 76, "prot": 0.1, "grasa": 0, "gs": 0, "gm": 0, "gp": 0.01, "col": 0, "chos": 18.3, "fd": 0.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 20, "unit_measure": "2 cucharas soperas colmadas" },
+  "Maíz pira, crudo (niños)": { "kcal": 70, "prot": 1.8, "grasa": 0.8, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 15.1, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 21, "unit_measure": "1 cuchara sopera colmada" },
+  "Maíz tierno o choclo, amarillo enlatado (niños)": { "kcal": 71, "prot": 2.3, "grasa": 0.9, "gs": 0.13, "gm": 0.26, "gp": 0.41, "col": 0, "chos": 16.4, "fd": 1.8, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 88, "unit_measure": "6 cucharas soperas" },
+  "Mazamorra Antioqueña (maíz cocido) (niños)": { "kcal": 86, "prot": 2.6, "grasa": 1.0, "gs": 0.16, "gm": 0.30, "gp": 0.48, "col": 0, "chos": 20.1, "fd": 2.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 80, "unit_measure": "4 cucharas soperas altas" },
+  "Palitos o palitroques (niños)": { "kcal": 66, "prot": 1.9, "grasa": 1.5, "gs": 0.23, "gm": 0.57, "gp": 0.58, "col": 0, "chos": 10.9, "fd": 0.5, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 16, "unit_measure": "1 unidad" },
+  "Pan blanco (niños)": { "kcal": 59, "prot": 1.8, "grasa": 0.8, "gs": 0.18, "gm": 0.35, "gp": 0.16, "col": 0, "chos": 10.9, "fd": 0.5, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 22, "unit_measure": "1 tajada delgada" },
+  "Pan centeno (niños)": { "kcal": 70, "prot": 2.3, "grasa": 0.9, "gs": 0.17, "gm": 0.35, "gp": 0.22, "col": 0, "chos": 13.0, "fd": 1.6, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 27, "unit_measure": "1 tajada delgada" },
+  "Pan de salvado de avena (niños)": { "kcal": 71, "prot": 3.1, "grasa": 1.3, "gs": 0.21, "gm": 0.48, "gp": 0.51, "col": 0, "chos": 11.9, "fd": 1.4, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 30, "unit_measure": "1 tajada delgada" },
+  "Pan integral (niños)": { "kcal": 79, "prot": 3.1, "grasa": 1.3, "gs": 0.29, "gm": 0.54, "gp": 0.32, "col": 0, "chos": 14.8, "fd": 2.2, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 32, "unit_measure": "1 tajada mediana" },
+  "Pan pita o árabe (niños)": { "kcal": 69, "prot": 2.3, "grasa": 0.3, "gs": 0.04, "gm": 0.03, "gp": 0.14, "col": 0, "chos": 13.9, "fd": 0.6, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 25, "unit_measure": "1/2 unidad pequeña" },
+  "Pancake (mezcla preparada con leche entera) (niños)": { "kcal": 68, "prot": 1.9, "grasa": 2.9, "gs": 0.64, "gm": 0.74, "gp": 1.34, "col": 18, "chos": 8.5, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 30, "unit_measure": "1 unidad pequeña" },
+  "Pandequeso (niños)": { "kcal": 78, "prot": 2.9, "grasa": 2.0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 12.8, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 28, "unit_measure": "1 unidad pequeña" },
+  "Pandeyuca (niños)": { "kcal": 69, "prot": 3.2, "grasa": 2.4, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 9.0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 20, "unit_measure": "2 unidades medianas" },
+  "Pasta corta cocida (niños)": { "kcal": 71, "prot": 2.4, "grasa": 0.4, "gs": 0.05, "gm": 0.04, "gp": 0.14, "col": 0, "chos": 14.2, "fd": 0.9, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 50, "unit_measure": "1/2 pocillo chocolatero" },
+  "Seba Seba (niños)": { "kcal": 70, "prot": 2.2, "grasa": 1.0, "gs": 0.21, "gm": 0.04, "gp": 0.02, "col": 0, "chos": 13.1, "fd": 0.6, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 24, "unit_measure": "3 unidades medianas" },
+  "Taco vacío (niños)": { "kcal": 61, "prot": 0.9, "grasa": 2.9, "gs": 0.42, "gm": 1.16, "gp": 1.10, "col": 0, "chos": 8.1, "fd": 1.0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 13, "unit_measure": "1 unidad" },
+  "Tortilla de maíz (niños)": { "kcal": 67, "prot": 1.7, "grasa": 0.8, "gs": 0.10, "gm": 0.20, "gp": 0.34, "col": 0, "chos": 14.0, "fd": 1.6, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 30, "unit_measure": "1 unidad pequeña" },
+  "Tostada o calado (niños)": { "kcal": 73, "prot": 2.3, "grasa": 1.0, "gs": 0.22, "gm": 0.44, "gp": 0.21, "col": 0, "chos": 13.6, "fd": 0.6, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 25, "unit_measure": "1 unidad pequeña" },
+  "Zucaritas (niños)": { "kcal": 84, "prot": 1.1, "grasa": 0.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 19.9, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 22, "unit_measure": "1/3 pocillo chocolatero" },
+  "Cereales niños y niñas": {
+    "kcal": 70, "prot": 1.9, "grasa": 0.9, "gs": 0.16, "gm": 0.27, "gp": 0.27, "col": 1, "chos": 13.8, "fd": 0.8,
+    "calcio": 0, "p": 0, "fe": 0
+  },
+  "Aceite de ajonjolí": { "kcal": 44, "prot": 0, "grasa": 5.0, "gs": 0.71, "gm": 1.99, "gp": 2.09, "col": 0, "chos": 0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 5, "unit_measure": "1 cuchara tintera" },
+  "Aceite de girasol": { "kcal": 44, "prot": 0, "grasa": 5.0, "gs": 0.52, "gm": 0.98, "gp": 3.29, "col": 0, "chos": 0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 5, "unit_measure": "1 cuchara sopera" },
+  "Aceite de maíz": { "kcal": 44, "prot": 0, "grasa": 5.0, "gs": 0.64, "gm": 1.21, "gp": 2.94, "col": 0, "chos": 0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 5, "unit_measure": "1 cuchara sopera" },
+  "Aceite de soya": { "kcal": 44, "prot": 0, "grasa": 5.0, "gs": 0.72, "gm": 1.17, "gp": 2.90, "col": 0, "chos": 0, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 5, "unit_measure": "1 cuchara sopera" },
+  "Mayonesa regular comercial": { "kcal": 43, "prot": 0.1, "grasa": 4.8, "gs": 0.71, "gm": 1.36, "gp": 2.48, "col": 4, "chos": 0.2, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 6, "unit_measure": "1 cuchara dulcera rasa" },
+  "Salsa Ranch": { "kcal": 44, "prot": 0, "grasa": 4.4, "gs": 0.51, "gm": 1.01, "gp": 2.82, "col": 1, "chos": 1.5, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 11, "unit_measure": "1 cuchara sopera colmada" },
+  "Salsa Tartara": { "kcal": 48, "prot": 0, "grasa": 4.8, "gs": 0.80, "gm": 1.20, "gp": 2.80, "col": 4, "chos": 1.6, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 12, "unit_measure": "1 cuchara sopera colmada" },
+  "Vinagreta con grasa (Aderezos)": { "kcal": 45, "prot": 0, "grasa": 5.0, "gs": 0.91, "gm": 1.48, "gp": 2.41, "col": 0, "chos": 0.3, "fd": 0, "calcio": 0, "p": 0, "fe": 0, "portion_grams": 10, "unit_measure": "1 cuchara sopera" },
+  "Grasas poliinsaturadas": {
+    "kcal": 45, "prot": 0, "grasa": 4.9, "gs": 0.69, "gm": 1.30, "gp": 2.71, "col": 1, "chos": 0.4, "fd": 0,
+    "calcio": 0, "p": 0, "fe": 0
   },
   "Cereales menores de 2 años": {
     "kcal": 41.0,
@@ -380,15 +649,16 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 0.17,
     "cu": 0.05
   },
+  /** Promedio del grupo Leches descremadas (sin porción) */
   "Leches descremadas frescas y fermentadas": {
-    "kcal": 82.3,
-    "prot": 9.0,
-    "grasa": 0.7,
-    "gs": 0.45,
-    "gm": 0.18,
-    "gp": 0.03,
-    "col": 6.0,
-    "chos": 10.0,
+    "kcal": 74,
+    "prot": 6.4,
+    "grasa": 0.1,
+    "gs": 0.09,
+    "gm": 0.04,
+    "gp": 0.01,
+    "col": 5.0,
+    "chos": 11.3,
     "fd": 0.0,
     "calcio": 256.0,
     "p": 214.0,
@@ -399,15 +669,100 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 1.05,
     "cu": 0.02
   },
+  "Leche de vaca descremada en polvo": {
+    "kcal": 76,
+    "prot": 7.6,
+    "grasa": 0.2,
+    "gs": 0.11,
+    "gm": 0.04,
+    "gp": 0.01,
+    "col": 4.0,
+    "chos": 10.9,
+    "fd": 0.0,
+    "calcio": 256.0,
+    "p": 214.0,
+    "fe": 0.1,
+    "na": 101.0,
+    "k": 340.0,
+    "mg": 24.0,
+    "zn": 1.05,
+    "cu": 0.02,
+    "portion_grams": 21,
+    "unit_measure": "4 cucharas soperas colmadas"
+  },
+  "Leche de vaca descremada pasteurizada": {
+    "kcal": 70,
+    "prot": 6.8,
+    "grasa": 0.4,
+    "gs": 0.24,
+    "gm": 0.1,
+    "gp": 0.02,
+    "col": 4.0,
+    "chos": 9.8,
+    "fd": 0.0,
+    "calcio": 256.0,
+    "p": 214.0,
+    "fe": 0.1,
+    "na": 101.0,
+    "k": 340.0,
+    "mg": 24.0,
+    "zn": 1.05,
+    "cu": 0.02,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Yogurt de leche descremada": {
+    "kcal": 90,
+    "prot": 6.0,
+    "grasa": 0.0,
+    "gs": 0.0,
+    "gm": 0.0,
+    "gp": 0.0,
+    "col": 5.0,
+    "chos": 14.5,
+    "fd": 0.0,
+    "calcio": 256.0,
+    "p": 214.0,
+    "fe": 0.1,
+    "na": 101.0,
+    "k": 340.0,
+    "mg": 24.0,
+    "zn": 1.05,
+    "cu": 0.02,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Yogurt Griego natural": {
+    "kcal": 60,
+    "prot": 5.0,
+    "grasa": 0.0,
+    "gs": 0.0,
+    "gm": 0.0,
+    "gp": 0.0,
+    "col": 5.0,
+    "chos": 10.0,
+    "fd": 0.0,
+    "calcio": 256.0,
+    "p": 214.0,
+    "fe": 0.1,
+    "na": 101.0,
+    "k": 340.0,
+    "mg": 24.0,
+    "zn": 1.05,
+    "cu": 0.02,
+    "portion_grams": 100,
+    "unit_measure": "1 vaso pequeño"
+  },
+  /** Promedio del grupo (sin porción) */
   "Leches enteras frescas y fermentadas": {
-    "kcal": 139.1,
+    "kcal": 134,
     "prot": 6.7,
-    "grasa": 6.7,
-    "gs": 4.4,
-    "gm": 1.95,
-    "gp": 0.49,
-    "col": 26.0,
-    "chos": 13.0,
+    "grasa": 6.2,
+    "gs": 3.67,
+    "gm": 2.0,
+    "gp": 0.22,
+    "col": 23.0,
+    "chos": 13.3,
     "fd": 0.0,
     "calcio": 236.0,
     "p": 173.0,
@@ -418,16 +773,143 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 0.89,
     "cu": 0.03
   },
-  "Leches frescas y fermentadas enteras altas en calorías y azucares": {
-    "kcal": 170.7,
-    "prot": 6.4,
-    "grasa": 5.9,
-    "gs": 3.8,
-    "gm": 1.91,
-    "gp": 0.63,
+  "Kamis de leche entera": {
+    "kcal": 153,
+    "prot": 7.0,
+    "grasa": 5.0,
+    "gs": 2.0,
+    "gm": 0,
+    "gp": 0,
+    "col": 20.0,
+    "chos": 21.3,
+    "fd": 0.0,
+    "calcio": 212.0,
+    "p": 112.0,
+    "fe": 0.2,
+    "na": 96.0,
+    "k": 330.0,
+    "mg": 25.0,
+    "zn": 0.89,
+    "cu": 0.03,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Leche de cabra cruda": {
+    "kcal": 138,
+    "prot": 7.2,
+    "grasa": 8.2,
+    "gs": 5.34,
+    "gm": 2.22,
+    "gp": 0.3,
     "col": 22.0,
-    "chos": 23.0,
-    "fd": 0.4,
+    "chos": 9.0,
+    "fd": 0.0,
+    "calcio": 268.0,
+    "p": 222.0,
+    "fe": 0.2,
+    "na": 96.0,
+    "k": 330.0,
+    "mg": 25.0,
+    "zn": 0.89,
+    "cu": 0.03,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Leche de vaca entera cruda": {
+    "kcal": 120,
+    "prot": 6.3,
+    "grasa": 6.5,
+    "gs": 0,
+    "gm": 0,
+    "gp": 0,
+    "col": 0,
+    "chos": 8.2,
+    "fd": 0.0,
+    "calcio": 240.0,
+    "p": 190.0,
+    "fe": 0.4,
+    "na": 96.0,
+    "k": 330.0,
+    "mg": 25.0,
+    "zn": 0.89,
+    "cu": 0.03,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Leche de vaca entera en polvo": {
+    "kcal": 129,
+    "prot": 6.8,
+    "grasa": 6.9,
+    "gs": 4.35,
+    "gm": 2.06,
+    "gp": 0.17,
+    "col": 25.0,
+    "chos": 10.0,
+    "fd": 0.0,
+    "calcio": 237.0,
+    "p": 202.0,
+    "fe": 0.1,
+    "na": 96.0,
+    "k": 330.0,
+    "mg": 25.0,
+    "zn": 0.89,
+    "cu": 0.03,
+    "portion_grams": 26,
+    "unit_measure": "3 cucharas soperas colmadas"
+  },
+  "Leche de vaca entera pasteurizada": {
+    "kcal": 122,
+    "prot": 6.6,
+    "grasa": 6.6,
+    "gs": 4.16,
+    "gm": 1.94,
+    "gp": 0.24,
+    "col": 28.0,
+    "chos": 9.4,
+    "fd": 0.0,
+    "calcio": 238.0,
+    "p": 186.0,
+    "fe": 0.2,
+    "na": 96.0,
+    "k": 330.0,
+    "mg": 25.0,
+    "zn": 0.89,
+    "cu": 0.03,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Yogurt regular de leche entera": {
+    "kcal": 140,
+    "prot": 6.0,
+    "grasa": 4.0,
+    "gs": 2.5,
+    "gm": 1.78,
+    "gp": 0.18,
+    "col": 20.0,
+    "chos": 21.0,
+    "fd": 0.0,
+    "calcio": 222.0,
+    "p": 128.0,
+    "fe": 0.3,
+    "na": 96.0,
+    "k": 330.0,
+    "mg": 25.0,
+    "zn": 0.89,
+    "cu": 0.03,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  /** Promedio del grupo (sin porción) */
+  "Leches frescas y fermentadas enteras altas en calorías y azucares": {
+    "kcal": 179,
+    "prot": 5.8,
+    "grasa": 5.1,
+    "gs": 2.9,
+    "gm": 2.1,
+    "gp": 0.3,
+    "col": 17.0,
+    "chos": 27.2,
+    "fd": 1.6,
     "calcio": 258.0,
     "p": 169.0,
     "fe": 0.3,
@@ -436,6 +918,90 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "mg": 27.0,
     "zn": 1.03,
     "cu": 0.05
+  },
+  "Avena con leche de vaca entera comercial": {
+    "kcal": 185,
+    "prot": 4.8,
+    "grasa": 4.5,
+    "gs": 2.6,
+    "gm": 0,
+    "gp": 0,
+    "col": 13.0,
+    "chos": 32.8,
+    "fd": 1.3,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 250,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Kumis de leche entera azucarado": {
+    "kcal": 170,
+    "prot": 5.6,
+    "grasa": 5.7,
+    "gs": 3.4,
+    "gm": 0,
+    "gp": 0,
+    "col": 16.0,
+    "chos": 24.0,
+    "fd": 1.5,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Leche de vaca entera chocolatada": {
+    "kcal": 170,
+    "prot": 6.0,
+    "grasa": 5.4,
+    "gs": 3.0,
+    "gm": 2.1,
+    "gp": 0.3,
+    "col": 24.0,
+    "chos": 24.5,
+    "fd": 1.6,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 200,
+    "unit_measure": "1 caja o vaso pequeños"
+  },
+  "Yogurt de leche entera azucarado": {
+    "kcal": 190,
+    "prot": 7.0,
+    "grasa": 4.6,
+    "gs": 2.6,
+    "gm": 0,
+    "gp": 0,
+    "col": 15.0,
+    "chos": 27.6,
+    "fd": 2.0,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
   },
   "Leches frescas, fermentadas y productos lácteos menores de 2 años": {
     "kcal": 50.7,
@@ -456,15 +1022,16 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 0.38,
     "cu": 0.01
   },
+  /** Promedio del grupo Leches semidescremadas (sin porción) */
   "Leches semidescremadas frescas y fermentadas": {
-    "kcal": 94.5,
-    "prot": 5.4,
-    "grasa": 2.1,
-    "gs": 0.87,
-    "gm": 0.54,
-    "gp": 0.35,
-    "col": 5.0,
-    "chos": 13.5,
+    "kcal": 100,
+    "prot": 5.3,
+    "grasa": 2.4,
+    "gs": 1.15,
+    "gm": 0.96,
+    "gp": 0.63,
+    "col": 8.0,
+    "chos": 14.9,
     "fd": 0.8,
     "calcio": 153.0,
     "p": 143.0,
@@ -475,16 +1042,143 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 1.24,
     "cu": 0.06
   },
+  "Avena líquida con leche de vaca descremada": {
+    "kcal": 110,
+    "prot": 5.0,
+    "grasa": 1.5,
+    "gs": 0.5,
+    "gm": 0,
+    "gp": 0,
+    "col": 5.0,
+    "chos": 19.0,
+    "fd": 1.0,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 250,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Bebida de Soya comercial": {
+    "kcal": 100,
+    "prot": 7.6,
+    "grasa": 2.3,
+    "gs": 0.3,
+    "gm": 0.66,
+    "gp": 1.66,
+    "col": 0,
+    "chos": 14.3,
+    "fd": 2.6,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Leche de vaca semidescremada en polvo": {
+    "kcal": 106,
+    "prot": 7.0,
+    "grasa": 3.3,
+    "gs": 1.63,
+    "gm": 0,
+    "gp": 0,
+    "col": 12.0,
+    "chos": 12.2,
+    "fd": 0.0,
+    "calcio": 153.0,
+    "p": 143.0,
+    "fe": 0.4,
+    "na": 72.0,
+    "k": 268.0,
+    "mg": 25.0,
+    "zn": 1.24,
+    "cu": 0.06,
+    "portion_grams": 26,
+    "unit_measure": "3 cucharas soperas colmadas"
+  },
+  "Leche de vaca semidescremada pasteurizada (con o sin lactosa)": {
+    "kcal": 90,
+    "prot": 6.0,
+    "grasa": 3.0,
+    "gs": 2.0,
+    "gm": 1.12,
+    "gp": 0.14,
+    "col": 15.0,
+    "chos": 10.0,
+    "fd": 0.0,
+    "calcio": 153.0,
+    "p": 143.0,
+    "fe": 0.4,
+    "na": 72.0,
+    "k": 268.0,
+    "mg": 25.0,
+    "zn": 1.24,
+    "cu": 0.06,
+    "portion_grams": 200,
+    "unit_measure": "1 vaso pequeño"
+  },
+  "Yogurt de leche entera - Yox": {
+    "kcal": 80,
+    "prot": 3.0,
+    "grasa": 2.0,
+    "gs": 1.0,
+    "gm": 0,
+    "gp": 0,
+    "col": 5.0,
+    "chos": 14.0,
+    "fd": 0.0,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 100,
+    "unit_measure": "1 tarro pequeño"
+  },
+  "Yogurt de leche entera cuchareable": {
+    "kcal": 115,
+    "prot": 3.0,
+    "grasa": 2.5,
+    "gs": 1.5,
+    "gm": 1.1,
+    "gp": 0.1,
+    "col": 9.0,
+    "chos": 19.7,
+    "fd": 1.1,
+    "calcio": 0,
+    "p": 0,
+    "fe": 0,
+    "na": 0,
+    "k": 0,
+    "mg": 0,
+    "zn": 0,
+    "cu": 0,
+    "portion_grams": 140,
+    "unit_measure": "1 vaso pequeño"
+  },
+  /** Promedio total del grupo (sin porción) */
   "Leguminosas adultos": {
-    "kcal": 158.1,
-    "prot": 9.8,
-    "grasa": 1.7,
-    "gs": 0.25,
-    "gm": 0.32,
-    "gp": 0.94,
+    "kcal": 151,
+    "prot": 9.0,
+    "grasa": 1.8,
+    "gs": 0.31,
+    "gm": 0.35,
+    "gp": 0.96,
     "col": 0.0,
-    "chos": 25.9,
-    "fd": 7.9,
+    "chos": 24.6,
+    "fd": 7.4,
     "calcio": 50.0,
     "p": 167.0,
     "fe": 3.1,
@@ -493,6 +1187,71 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "mg": 62.0,
     "zn": 1.22,
     "cu": 0.28
+  },
+  "Arveja seca cocida": {
+    "kcal": 132, "prot": 8.5, "grasa": 0.3, "gs": 0.06, "gm": 0.03, "gp": 0.16, "col": 0, "chos": 24.5, "fd": 8.6,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 157, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol blanquillo con guiso": {
+    "kcal": 152, "prot": 9.0, "grasa": 1.1, "gs": 0.28, "gm": 0.17, "gp": 0.61, "col": 0, "chos": 26.2, "fd": 10.4,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 110, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol bola roja con plátano verde": {
+    "kcal": 150, "prot": 8.6, "grasa": 1.1, "gs": 0.2, "gm": 0.18, "gp": 0.63, "col": 0, "chos": 26.4, "fd": 7.5,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 120, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol cabecita negra con guiso": {
+    "kcal": 149, "prot": 9.1, "grasa": 1.2, "gs": 0.29, "gm": 0.18, "gp": 0.66, "col": 0, "chos": 25.1, "fd": 7.7,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 130, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol caraota con guiso": {
+    "kcal": 149, "prot": 9.1, "grasa": 1.2, "gs": 0.29, "gm": 0.18, "gp": 0.66, "col": 0, "chos": 25.1, "fd": 7.7,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 130, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol cargamanto blanco con plátano verde": {
+    "kcal": 146, "prot": 7.4, "grasa": 1.0, "gs": 0.21, "gm": 0.23, "gp": 0.5, "col": 0, "chos": 26.7, "fd": 7.9,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 110, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol cargamanto rosado con plátano verde": {
+    "kcal": 157, "prot": 8.2, "grasa": 1.0, "gs": 0.23, "gm": 0.17, "gp": 0.52, "col": 0, "chos": 28.6, "fd": 5.0,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 110, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol nima con guiso": {
+    "kcal": 149, "prot": 9.3, "grasa": 1.1, "gs": 0.24, "gm": 0.17, "gp": 0.59, "col": 0, "chos": 25.2, "fd": 8.3,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 130, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol verde con plátano verde": {
+    "kcal": 150, "prot": 8.6, "grasa": 0.8, "gs": 0.16, "gm": 0.15, "gp": 0.54, "col": 0, "chos": 26.9, "fd": 4.9,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 100, "unit_measure": "1 cucharón colmado"
+  },
+  "Frijol zaragoza con guiso": {
+    "kcal": 160, "prot": 8.1, "grasa": 2.8, "gs": 0.34, "gm": 0.62, "gp": 1.34, "col": 0, "chos": 25.3, "fd": 6.9,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 100, "unit_measure": "1 cucharón colmado"
+  },
+  "Garbanzo con guiso": {
+    "kcal": 160, "prot": 8.1, "grasa": 2.8, "gs": 0.34, "gm": 0.62, "gp": 1.34, "col": 0, "chos": 25.3, "fd": 6.9,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 100, "unit_measure": "1 cucharón colmado"
+  },
+  "Lenteja con guiso": {
+    "kcal": 152, "prot": 9.6, "grasa": 1.1, "gs": 0.19, "gm": 0.22, "gp": 0.58, "col": 0, "chos": 25.7, "fd": 8.6,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 130, "unit_measure": "1 cucharón colmado"
+  },
+  "Soya con guiso": {
+    "kcal": 158, "prot": 13.5, "grasa": 7.7, "gs": 1.14, "gm": 1.69, "gp": 4.37, "col": 0, "chos": 8.6, "fd": 5.0,
+    "calcio": 50, "p": 167, "fe": 3.1, "na": 10, "k": 534, "mg": 62, "zn": 1.22, "cu": 0.28,
+    "portion_grams": 90, "unit_measure": "1 cucharón colmado"
   },
   "Leguminosas menores de 2 años": {
     "kcal": 41.5,
@@ -513,10 +1272,11 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 0.37,
     "cu": 0.08
   },
+  /** Promedio del grupo Leguminosas niños y niñas (sin porción) */
   "Leguminosas niños": {
-    "kcal": 84.96,
+    "kcal": 85,
     "prot": 5.2,
-    "grasa": 1.04,
+    "grasa": 1.0,
     "gs": 0.14,
     "gm": 0.18,
     "gp": 0.53,
@@ -531,6 +1291,66 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "mg": 34.0,
     "zn": 0.65,
     "cu": 0.15
+  },
+  "Frijol blanquillo con guiso (niños)": {
+    "kcal": 83, "prot": 4.9, "grasa": 0.6, "gs": 0.15, "gm": 0.09, "gp": 0.33, "col": 0, "chos": 14.3, "fd": 5.7,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 60, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol bola roja con plátano verde (niños)": {
+    "kcal": 75, "prot": 4.3, "grasa": 0.55, "gs": 0.1, "gm": 0.09, "gp": 0.32, "col": 0, "chos": 13.2, "fd": 3.8,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 60, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol cabecita negra con guiso (niños)": {
+    "kcal": 75, "prot": 4.6, "grasa": 0.6, "gs": 0.15, "gm": 0.09, "gp": 0.33, "col": 0, "chos": 12.6, "fd": 3.9,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 65, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol caraota con guiso (niños)": {
+    "kcal": 75, "prot": 4.6, "grasa": 0.6, "gs": 0.15, "gm": 0.09, "gp": 0.33, "col": 0, "chos": 12.6, "fd": 3.9,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 65, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol cargamanto blanco con plátano verde (niños)": {
+    "kcal": 73, "prot": 3.7, "grasa": 0.5, "gs": 0.11, "gm": 0.12, "gp": 0.25, "col": 0, "chos": 13.4, "fd": 4.0,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 55, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol cargamanto rosado con plátano verde (niños)": {
+    "kcal": 79, "prot": 4.1, "grasa": 0.5, "gs": 0.12, "gm": 0.09, "gp": 0.26, "col": 0, "chos": 14.3, "fd": 2.5,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 55, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol nima con guiso (niños)": {
+    "kcal": 75, "prot": 4.7, "grasa": 0.55, "gs": 0.12, "gm": 0.09, "gp": 0.30, "col": 0, "chos": 12.6, "fd": 4.2,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 65, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol verde con plátano verde (niños)": {
+    "kcal": 75, "prot": 4.3, "grasa": 0.4, "gs": 0.08, "gm": 0.08, "gp": 0.27, "col": 0, "chos": 13.5, "fd": 2.5,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 50, "unit_measure": "1/2 cucharón"
+  },
+  "Frijol zaragoza con guiso (niños)": {
+    "kcal": 80, "prot": 4.1, "grasa": 1.4, "gs": 0.17, "gm": 0.31, "gp": 0.67, "col": 0, "chos": 12.7, "fd": 3.5,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 50, "unit_measure": "1/2 cucharón"
+  },
+  "Garbanzo con guiso (niños)": {
+    "kcal": 80, "prot": 4.1, "grasa": 1.4, "gs": 0.17, "gm": 0.31, "gp": 0.67, "col": 0, "chos": 12.7, "fd": 3.5,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 50, "unit_measure": "1/2 cucharón"
+  },
+  "Lenteja con guiso (niños)": {
+    "kcal": 76, "prot": 4.8, "grasa": 0.55, "gs": 0.10, "gm": 0.11, "gp": 0.29, "col": 0, "chos": 12.9, "fd": 4.3,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 65, "unit_measure": "1/2 cucharón"
+  },
+  "Soya con guiso (niños)": {
+    "kcal": 79, "prot": 6.8, "grasa": 3.9, "gs": 0.57, "gm": 0.85, "gp": 2.19, "col": 0, "chos": 4.3, "fd": 2.5,
+    "calcio": 29, "p": 92, "fe": 1.7, "na": 6, "k": 290, "mg": 34, "zn": 0.65, "cu": 0.15,
+    "portion_grams": 45, "unit_measure": "1/2 cucharón"
   },
   "Nueces adultos y niños": {
     "kcal": 56.4,
@@ -760,6 +1580,151 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "zn": 0.65,
     "cu": 0.03
   },
+  "Butifarra": {
+    "kcal": 70, "prot": 4.0, "grasa": 5.0, "gs": 2.5, "gm": 0, "gp": 0, "col": 15.0, "chos": 2.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 31, "unit_measure": "1 unidad pequeña"
+  },
+  "Cuajada de leche de vaca": {
+    "kcal": 90, "prot": 6.0, "grasa": 7.0, "gs": 5.0, "gm": 1.44, "gp": 0.15, "col": 25.0, "chos": 1.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "1 tajada pequeña semigruesa"
+  },
+  "Huevo de gallina crudo": {
+    "kcal": 75, "prot": 6.3, "grasa": 5.0, "gs": 1.55, "gm": 1.91, "gp": 0.68, "col": 213.0, "chos": 0.6, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 50, "unit_measure": "1 unidad pequeña"
+  },
+  "Huevos de codorniz crudo": {
+    "kcal": 79, "prot": 6.6, "grasa": 5.6, "gs": 1.78, "gm": 2.16, "gp": 0.66, "col": 422.0, "chos": 0.2, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 50, "unit_measure": "5 unidades pequeñas"
+  },
+  "Jamón de Cerdo (97% libre de grasa y 25% reducido en sodio)": {
+    "kcal": 50, "prot": 5.0, "grasa": 1.5, "gs": 1.0, "gm": 0.5, "gp": 0.5, "col": 20.0, "chos": 5.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 42, "unit_measure": "2 tajadas"
+  },
+  "Jamón de Pavo": {
+    "kcal": 61, "prot": 7.2, "grasa": 2.6, "gs": 0.51, "gm": 1.02, "gp": 0.51, "col": 20.0, "chos": 2.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 46, "unit_measure": "2 tajadas"
+  },
+  "Morcilla": {
+    "kcal": 72, "prot": 8.2, "grasa": 3.9, "gs": 2.1, "gm": 0, "gp": 0, "col": 0, "chos": 0.4, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 45, "unit_measure": "1 trozo pequeño"
+  },
+  "Mortadela común": {
+    "kcal": 70, "prot": 6.0, "grasa": 4.0, "gs": 1.5, "gm": 2.0, "gp": 1.0, "col": 20.0, "chos": 2.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "2 tajadas"
+  },
+  "Pepperoni": {
+    "kcal": 79, "prot": 3.7, "grasa": 7.0, "gs": 2.37, "gm": 2.74, "gp": 0.54, "col": 17.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 16, "unit_measure": "4 rodajas delgadas"
+  },
+  "Quesito": {
+    "kcal": 83, "prot": 6.5, "grasa": 5.7, "gs": 4.38, "gm": 1.44, "gp": 0.15, "col": 14.0, "chos": 1.5, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "1 tajada pequeña semigruesa"
+  },
+  "Queso Americano": {
+    "kcal": 79, "prot": 4.0, "grasa": 6.1, "gs": 3.6, "gm": 1.63, "gp": 0.24, "col": 24.0, "chos": 2.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 24, "unit_measure": "1 lonchita"
+  },
+  "Queso búfala tipo mozzarella fresco graso de pasta hilada": {
+    "kcal": 84, "prot": 4.5, "grasa": 7.5, "gs": 3.75, "gm": 3.47, "gp": 0.28, "col": 8.0, "chos": 0.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "1 tajada gruesa"
+  },
+  "Queso Campesino (fresco semiduro, graso)": {
+    "kcal": 84, "prot": 4.8, "grasa": 7.2, "gs": 4.2, "gm": 2.46, "gp": 0.5, "col": 24.0, "chos": 1.2, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "1 tajada pequeña semigruesa"
+  },
+  "Queso Cheddar": {
+    "kcal": 81, "prot": 5.0, "grasa": 6.6, "gs": 4.22, "gm": 1.88, "gp": 0.19, "col": 21.0, "chos": 0.3, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 20, "unit_measure": "1 lonchita"
+  },
+  "Queso Costeño rallado": {
+    "kcal": 64, "prot": 4.0, "grasa": 5.2, "gs": 3.12, "gm": 1.72, "gp": 0.33, "col": 20.0, "chos": 0.8, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 20, "unit_measure": "2 cucharas soperas altas"
+  },
+  "Queso de Cabra": {
+    "kcal": 73, "prot": 4.3, "grasa": 6.0, "gs": 4.13, "gm": 1.36, "gp": 0.14, "col": 16.0, "chos": 0.5, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 20, "unit_measure": "1 tajada delgada"
+  },
+  "Queso fresco de pasta hilada, semiduro, semigraso (Finesse)": {
+    "kcal": 70, "prot": 7.0, "grasa": 4.5, "gs": 2.5, "gm": 1.63, "gp": 0.37, "col": 10.0, "chos": 1.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "2 lonchitas"
+  },
+  "Queso fresco semiduro graso": {
+    "kcal": 90, "prot": 5.7, "grasa": 7.1, "gs": 3.87, "gm": 1.77, "gp": 0.33, "col": 21.0, "chos": 0.9, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 30, "unit_measure": "1 tajada pequeña semigruesa"
+  },
+  "Queso Gouda": {
+    "kcal": 71, "prot": 5.0, "grasa": 5.5, "gs": 3.52, "gm": 1.55, "gp": 0.13, "col": 23.0, "chos": 0.4, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 20, "unit_measure": "1 tajada delgada"
+  },
+  "Queso mozzarella de leche entera de vaca semiduro, semigraso": {
+    "kcal": 102, "prot": 7.5, "grasa": 7.6, "gs": 4.45, "gm": 2.21, "gp": 0.24, "col": 27.0, "chos": 0.7, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 34, "unit_measure": "2 lonchitas"
+  },
+  "Queso Parmesano rallado": {
+    "kcal": 63, "prot": 3.9, "grasa": 4.0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 2.14, "fd": 0.18,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 14, "unit_measure": "2 cucharas soperas colmadas"
+  },
+  "Queso Ricotta (de leche semidescremada)": {
+    "kcal": 77, "prot": 5.0, "grasa": 5.8, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 3.17, "fd": 0.15,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 50, "unit_measure": "2 cucharas soperas altas"
+  },
+  "Queso sabana (Edam)": {
+    "kcal": 79, "prot": 6.1, "grasa": 5.5, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 3.87, "fd": 0.15,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 22, "unit_measure": "1 tajada delgada"
+  },
+  "Queso Tipo Pera": {
+    "kcal": 84, "prot": 3.6, "grasa": 7.2, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 3.0, "fd": 0.0,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 36, "unit_measure": "1 unidad pequeña"
+  },
+  "Salami": {
+    "kcal": 82, "prot": 7.5, "grasa": 3.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 3.26, "fd": 0.28,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 25, "unit_measure": "5 rodajas delgadas medianas"
+  },
+  "Salchicha tradicional": {
+    "kcal": 67, "prot": 5.1, "grasa": 4.9, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 1.38, "fd": 0.58,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 25, "unit_measure": "1 unidad mediana"
+  },
+  "Salchicha vegetariana": {
+    "kcal": 95, "prot": 6.7, "grasa": 6.8, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 1.07, "fd": 3.4,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 37, "unit_measure": "1 unidad mediana"
+  },
+  "Salchichón cervecero": {
+    "kcal": 82, "prot": 4.1, "grasa": 6.1, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 1.36, "fd": 0.68,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 34, "unit_measure": "1 tajada gruesa"
+  },
+  "Salchichón de pollo": {
+    "kcal": 80, "prot": 4.8, "grasa": 0.0, "gs": 0, "gm": 0, "gp": 0, "col": 0, "chos": 1.6, "fd": 0.8,
+    "calcio": 0, "p": 0, "fe": 0, "na": 0, "k": 0, "mg": 0, "zn": 0, "cu": 0,
+    "portion_grams": 40, "unit_measure": "1 pieza mediana"
+  },
   "Verduras y hortalizas adultos y niños": {
     "kcal": 29.5,
     "prot": 1.2,
@@ -799,3 +1764,987 @@ export const FOOD_NUTRIENTS: Record<string, NutrientData> = {
     "cu": 0.04
   }
 };
+
+/** Lista de todos los ingredientes del PDF (tabla de composición de alimentos) */
+export const FOOD_INGREDIENTS_LIST: string[] = Object.keys(FOOD_NUTRIENTS);
+
+/** Ingredientes del grupo Leche entera fresca y fermentada (tabla PDF) */
+const LECHE_ENTERA_FRESCA_INGREDIENTS = new Set([
+  "Leches enteras frescas y fermentadas",
+  "Kamis de leche entera",
+  "Leche de cabra cruda",
+  "Leche de vaca entera cruda",
+  "Leche de vaca entera en polvo",
+  "Leche de vaca entera pasteurizada",
+  "Yogurt regular de leche entera",
+]);
+
+/** Ingredientes del grupo Leches semidescremadas frescas y fermentadas (tabla PDF) */
+const LECHE_SEMIDESCREMADA_FRESCA_INGREDIENTS = new Set([
+  "Avena líquida con leche de vaca descremada",
+  "Bebida de Soya comercial",
+  "Leche de vaca semidescremada en polvo",
+  "Leche de vaca semidescremada pasteurizada (con o sin lactosa)",
+  "Yogurt de leche entera - Yox",
+  "Yogurt de leche entera cuchareable",
+  "Leches semidescremadas frescas y fermentadas",
+]);
+
+/** Ingredientes del grupo Leches descremadas frescas y fermentadas (tabla PDF) */
+const LECHE_DESCREMADA_FRESCA_INGREDIENTS = new Set([
+  "Leche de vaca descremada en polvo",
+  "Leche de vaca descremada pasteurizada",
+  "Yogurt de leche descremada",
+  "Yogurt Griego natural",
+  "Leches descremadas frescas y fermentadas",
+]);
+
+/** Ingredientes del grupo Leches frescas y fermentadas enteras altas en calorías y azúcares (tabla PDF) */
+const LECHE_ENTERA_ALTAS_CALORIAS_INGREDIENTS = new Set([
+  "Avena con leche de vaca entera comercial",
+  "Kumis de leche entera azucarado",
+  "Leche de vaca entera chocolatada",
+  "Yogurt de leche entera azucarado",
+  "Leches frescas y fermentadas enteras altas en calorías y azucares",
+]);
+
+/** Ingredientes del grupo Cereales adultos (tabla PDF) */
+const CEREALES_ADULTOS_INGREDIENTS = new Set([
+  "Almojábana",
+  "Arepa delgada de maíz blanco trillado",
+  "Arepa redonda de maíz blanco trillado",
+  "Arroz blanco, cocido",
+  "Arroz integral, cocido",
+  "Arroz parbolizado cocido",
+  "Avena en hojuelas fortificada",
+  "Cebada perlada cocida",
+  "Choco Krispis",
+  "Corn Flakes",
+  "Cuchuco de cebada",
+  "Espaguetis de arroz, hidratados",
+  "Espaguetis de trigo, cocidos",
+  "Froot Loops",
+  "Galletas Saltinas",
+  "Harina de arroz blanco",
+  "Harina de maíz blanco trillado",
+  "Harina de trigo enriquecida",
+  "Macarrones, cocidos",
+  "Maicena (almidón de maíz)",
+  "Maíz pira, crudo",
+  "Maíz tierno o choclo, amarillo enlatado",
+  "Maíz tostado comercial",
+  "Mazamorra Antioqueña (maíz cocido)",
+  "Palitos o palitroques",
+  "Pan blanco",
+  "Pan centeno",
+  "Pan de salvado de avena",
+  "Pan integral",
+  "Pan pita o árabe",
+  "Pancake (mezcla preparada con leche entera)",
+  "Pandequeso",
+  "Pandeyuca",
+  "Pasta corta cocida",
+  "Seba Seba",
+  "Taco vacío",
+  "Tortilla de maíz",
+  "Tostada o calado",
+  "Zucaritas",
+  "Cereales adultos",
+]);
+
+/** Ingredientes del grupo Raíces, Tubérculos y Plátanos adultos (tabla PDF) */
+const RAICES_TUBERCULOS_PLATANOS_ADULTOS_INGREDIENTS = new Set([
+  "Arracacha",
+  "Batata",
+  "Chuguas u ollucos",
+  "Cubios",
+  "Harina de plátano",
+  "Ñame",
+  "Papa común",
+  "Papa criolla",
+  "Plátano colí o guineo",
+  "Plátano hartón maduro",
+  "Plátano verde",
+  "Yuca blanca",
+  "Raíces, Tubérculos y Plátanos adultos",
+]);
+
+/** Ingredientes del grupo Raíces, tubérculos y plátanos niños y niñas (tabla PDF) */
+const RAICES_TUBERCULOS_PLATANOS_NINOS_INGREDIENTS = new Set([
+  "Arracacha (niños)",
+  "Batata (niños)",
+  "Chuguas u ollucos (niños)",
+  "Cubios (niños)",
+  "Harina de plátano (niños)",
+  "Ñame (niños)",
+  "Papa común (niños)",
+  "Papa criolla (niños)",
+  "Plátano colí o guineo (niños)",
+  "Plátano hartón maduro (niños)",
+  "Plátano verde (niños)",
+  "Yuca blanca (niños)",
+  "Raíces, tubérculos y plátanos niños y niñas",
+]);
+
+/** Ingredientes del grupo Cereales niños y niñas (tabla PDF) */
+const CEREALES_NINOS_INGREDIENTS = new Set([
+  "Almojábana (niños)",
+  "Arepa redonda de maíz blanco trillado (niños)",
+  "Arroz blanco, cocido (niños)",
+  "Arroz integral, cocido (niños)",
+  "Arroz parbolizado cocido (niños)",
+  "Avena en hojuelas fortificada (niños)",
+  "Cebada perlada cocida (niños)",
+  "Choco Krispis (niños)",
+  "Corn Flakes (niños)",
+  "Cuchuco de cebada, crudo (niños)",
+  "Espaguetis de arroz, hidratados (niños)",
+  "Espaguetis de trigo, cocidos (niños)",
+  "Froot Loops (niños)",
+  "Galletas Saltinas (niños)",
+  "Harina de trigo enriquecida (niños)",
+  "Macarrones, cocidos (niños)",
+  "Maicena (almidón de maíz) (niños)",
+  "Maíz pira, crudo (niños)",
+  "Maíz tierno o choclo, amarillo enlatado (niños)",
+  "Mazamorra Antioqueña (maíz cocido) (niños)",
+  "Palitos o palitroques (niños)",
+  "Pan blanco (niños)",
+  "Pan centeno (niños)",
+  "Pan de salvado de avena (niños)",
+  "Pan integral (niños)",
+  "Pan pita o árabe (niños)",
+  "Pancake (mezcla preparada con leche entera) (niños)",
+  "Pandequeso (niños)",
+  "Pandeyuca (niños)",
+  "Pasta corta cocida (niños)",
+  "Seba Seba (niños)",
+  "Taco vacío (niños)",
+  "Tortilla de maíz (niños)",
+  "Tostada o calado (niños)",
+  "Zucaritas (niños)",
+  "Cereales niños y niñas",
+]);
+
+/** Ingredientes del grupo Grasas poliinsaturadas (tabla PDF) */
+const GRASAS_POLIINSATURADAS_INGREDIENTS = new Set([
+  "Aceite de ajonjolí",
+  "Aceite de girasol",
+  "Aceite de maíz",
+  "Aceite de soya",
+  "Mayonesa regular comercial",
+  "Salsa Ranch",
+  "Salsa Tartara",
+  "Vinagreta con grasa (Aderezos)",
+  "Grasas poliinsaturadas",
+]);
+
+/** Ingredientes del grupo Leguminosas niños y niñas (tabla PDF) */
+const LEGUMINOSAS_NINOS_INGREDIENTS = new Set([
+  "Frijol blanquillo con guiso (niños)",
+  "Frijol bola roja con plátano verde (niños)",
+  "Frijol cabecita negra con guiso (niños)",
+  "Frijol caraota con guiso (niños)",
+  "Frijol cargamanto blanco con plátano verde (niños)",
+  "Frijol cargamanto rosado con plátano verde (niños)",
+  "Frijol nima con guiso (niños)",
+  "Frijol verde con plátano verde (niños)",
+  "Frijol zaragoza con guiso (niños)",
+  "Garbanzo con guiso (niños)",
+  "Lenteja con guiso (niños)",
+  "Soya con guiso (niños)",
+  "Leguminosas niños",
+]);
+
+/** Ingredientes del grupo Leguminosas adultos (tabla PDF) */
+const LEGUMINOSAS_ADULTOS_INGREDIENTS = new Set([
+  "Arveja seca cocida",
+  "Frijol blanquillo con guiso",
+  "Frijol bola roja con plátano verde",
+  "Frijol cabecita negra con guiso",
+  "Frijol caraota con guiso",
+  "Frijol cargamanto blanco con plátano verde",
+  "Frijol cargamanto rosado con plátano verde",
+  "Frijol nima con guiso",
+  "Frijol verde con plátano verde",
+  "Frijol zaragoza con guiso",
+  "Garbanzo con guiso",
+  "Lenteja con guiso",
+  "Soya con guiso",
+  "Leguminosas adultos",
+]);
+
+/** Ingredientes del grupo Carnes crudas altas en lípidos (tabla PDF) */
+const CARNES_ALTAS_LIPIDOS_INGREDIENTS = new Set([
+  "Alas de pollo carne y piel",
+  "Bagre carne y piel",
+  "Callo o panza",
+  "Camarón especies mezcladas",
+  "Contramuslo de pollo sin hueso y con piel",
+  "Hígado de pollo",
+  "Hígado de res",
+  "Langostino especies mezcladas",
+  "Lengua de res",
+  "Sardina enlatada en salsa de tomate",
+  "Carnes crudas altas en lípidos adultos y niños",
+]);
+
+/** Ingredientes del grupo Carnes magras crudas y proteínas texturizadas (tabla PDF) */
+const CARNES_MAGRAS_INGREDIENTS = new Set([
+  "Atún enlatado en agua, sólidos",
+  "Carne de cabra o chivo",
+  "Carne de cerdo lomo o cañón magro",
+  "Carne de conejo todos los cortes",
+  "Carne de cordero diferentes cortes grasa menor 10%",
+  "Carne de Cuy o cuy",
+  "Carne de res todos los cortes magra",
+  "Carne de ternera diferentes cortes magra",
+  "Chuleta de cerdo magro",
+  "Contramuslo de pollo, carne sin piel",
+  "Muslo de pollo, carne sin piel",
+  "Pargo especies mezcladas",
+  "Pavo todas las carnes sin piel",
+  "Pechuga de pollo, carne sin piel",
+  "Proteina de soya texturizada hidratada",
+  "Proteina de trigo texturizada hidratada",
+  "Salmon rosado, crudo",
+  "Trucha arcoiris",
+  "Carnes magras crudas y proteínas texturizada adultos y niños",
+]);
+
+/** Ingredientes del grupo Sustitutos (tabla PDF) */
+const SUSTITUTOS_INGREDIENTS = new Set([
+  "Butifarra",
+  "Cuajada de leche de vaca",
+  "Huevo de gallina crudo",
+  "Huevos de codorniz crudo",
+  "Jamón de Cerdo (97% libre de grasa y 25% reducido en sodio)",
+  "Jamón de Pavo",
+  "Morcilla",
+  "Mortadela común",
+  "Pepperoni",
+  "Quesito",
+  "Queso Americano",
+  "Queso búfala tipo mozzarella fresco graso de pasta hilada",
+  "Queso Campesino (fresco semiduro, graso)",
+  "Queso Cheddar",
+  "Queso Costeño rallado",
+  "Queso de Cabra",
+  "Queso fresco de pasta hilada, semiduro, semigraso (Finesse)",
+  "Queso fresco semiduro graso",
+  "Queso Gouda",
+  "Queso mozzarella de leche entera de vaca semiduro, semigraso",
+  "Queso Parmesano rallado",
+  "Queso Ricotta (de leche semidescremada)",
+  "Queso sabana (Edam)",
+  "Queso Tipo Pera",
+  "Salami",
+  "Salchicha tradicional",
+  "Salchicha vegetariana",
+  "Salchichón cervecero",
+  "Salchichón de pollo",
+]);
+
+/** Mapeo de nombre de ingrediente -> grupo para filtrar por categoría */
+export function getIngredientGroup(ingredientName: string): string {
+  if (LECHE_ENTERA_FRESCA_INGREDIENTS.has(ingredientName)) return "Leche entera fresca y fermentada";
+  if (LECHE_SEMIDESCREMADA_FRESCA_INGREDIENTS.has(ingredientName)) return "Leche semidescremada fresca y fermentada";
+  if (LECHE_DESCREMADA_FRESCA_INGREDIENTS.has(ingredientName)) return "Leche descremada fresca y fermentada";
+  if (LECHE_ENTERA_ALTAS_CALORIAS_INGREDIENTS.has(ingredientName)) return "Leche entera alta en calorías y azúcares";
+  if (SUSTITUTOS_INGREDIENTS.has(ingredientName)) return "Sustitutos";
+  if (CARNES_MAGRAS_INGREDIENTS.has(ingredientName)) return "Carnes magras crudas y proteínas texturizadas";
+  if (CARNES_ALTAS_LIPIDOS_INGREDIENTS.has(ingredientName)) return "Carnes crudas altas en lípidos";
+  if (LEGUMINOSAS_ADULTOS_INGREDIENTS.has(ingredientName)) return "Leguminosas adultos";
+  if (LEGUMINOSAS_NINOS_INGREDIENTS.has(ingredientName)) return "Leguminosas niños y niñas";
+  if (CEREALES_ADULTOS_INGREDIENTS.has(ingredientName)) return "Cereales adultos";
+  if (RAICES_TUBERCULOS_PLATANOS_ADULTOS_INGREDIENTS.has(ingredientName)) return "Raíces, Tubérculos y Plátanos adultos";
+  if (RAICES_TUBERCULOS_PLATANOS_NINOS_INGREDIENTS.has(ingredientName)) return "Raíces, tubérculos y plátanos niños y niñas";
+  if (CEREALES_NINOS_INGREDIENTS.has(ingredientName)) return "Cereales niños y niñas";
+  if (GRASAS_POLIINSATURADAS_INGREDIENTS.has(ingredientName)) return "Grasas poliinsaturadas";
+  return "Otros";
+}
+
+/** Grupos disponibles para el selector de ingredientes */
+export const FOOD_INGREDIENT_GROUPS: string[] = [
+  "Todos",
+  "Leche entera fresca y fermentada",
+  "Leche semidescremada fresca y fermentada",
+  "Leche descremada fresca y fermentada",
+  "Leche entera alta en calorías y azúcares",
+  "Sustitutos",
+  "Carnes magras crudas y proteínas texturizadas",
+  "Carnes crudas altas en lípidos",
+  "Leguminosas adultos",
+  "Leguminosas niños y niñas",
+  "Cereales adultos",
+  "Raíces, Tubérculos y Plátanos adultos",
+  "Raíces, tubérculos y plátanos niños y niñas",
+  "Cereales niños y niñas",
+  "Grasas poliinsaturadas",
+];
+
+/** Grupos visibles en el filtro (sin "Todos"); "Todos" muestra solo ingredientes de estos grupos */
+const VISIBLE_GROUPS = new Set(FOOD_INGREDIENT_GROUPS.filter((g) => g !== "Todos"));
+
+/** Ingredientes filtrados por grupo. "Todos" = solo ingredientes de los grupos que están en el filtro */
+export function getIngredientsByGroup(group: string): string[] {
+  if (group === "Todos") {
+    return FOOD_INGREDIENTS_LIST.filter((name) => VISIBLE_GROUPS.has(getIngredientGroup(name)));
+  }
+  return FOOD_INGREDIENTS_LIST.filter((name) => getIngredientGroup(name) === group);
+}
+
+/** Orden de filas para la tabla de composición "Leche entera fresca y fermentada" (incluye Promedio al final) */
+export const LECHE_ENTERA_TABLE_ORDER: string[] = [
+  "Kamis de leche entera",
+  "Leche de cabra cruda",
+  "Leche de vaca entera cruda",
+  "Leche de vaca entera en polvo",
+  "Leche de vaca entera pasteurizada",
+  "Yogurt regular de leche entera",
+  "Leches enteras frescas y fermentadas", // Promedio
+];
+
+/** Filas para la tabla de composición del grupo Leche entera (nombre + datos por porción) */
+export interface CompositionTableRow {
+  name: string;
+  portion_grams?: number;
+  unit_measure?: string;
+  kcal: number;
+  prot: number;
+  grasa: number;
+  gs: number;
+  gm: number;
+  gp: number;
+  col: number;
+  chos: number;
+  fd: number;
+  calcio: number;
+  p: number;
+  fe: number;
+}
+
+export function getLecheEnteraCompositionRows(): CompositionTableRow[] {
+  return LECHE_ENTERA_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Leches enteras frescas y fermentadas" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla "Leche semidescremada fresca y fermentada" (incluye Promedio al final) */
+export const LECHE_SEMIDESCREMADA_TABLE_ORDER: string[] = [
+  "Avena líquida con leche de vaca descremada",
+  "Bebida de Soya comercial",
+  "Leche de vaca semidescremada en polvo",
+  "Leche de vaca semidescremada pasteurizada (con o sin lactosa)",
+  "Yogurt de leche entera - Yox",
+  "Yogurt de leche entera cuchareable",
+  "Leches semidescremadas frescas y fermentadas", // Promedio
+];
+
+export function getLecheSemidescremadaCompositionRows(): CompositionTableRow[] {
+  return LECHE_SEMIDESCREMADA_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Leches semidescremadas frescas y fermentadas" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla "Leche descremada fresca y fermentada" (incluye Promedio al final) */
+export const LECHE_DESCREMADA_TABLE_ORDER: string[] = [
+  "Leche de vaca descremada en polvo",
+  "Leche de vaca descremada pasteurizada",
+  "Yogurt de leche descremada",
+  "Yogurt Griego natural",
+  "Leches descremadas frescas y fermentadas", // Promedio
+];
+
+export function getLecheDescremadaCompositionRows(): CompositionTableRow[] {
+  return LECHE_DESCREMADA_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Leches descremadas frescas y fermentadas" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla "Leche entera alta en calorías y azúcares" (incluye Promedio al final) */
+export const LECHE_ENTERA_ALTAS_CALORIAS_TABLE_ORDER: string[] = [
+  "Avena con leche de vaca entera comercial",
+  "Kumis de leche entera azucarado",
+  "Leche de vaca entera chocolatada",
+  "Yogurt de leche entera azucarado",
+  "Leches frescas y fermentadas enteras altas en calorías y azucares", // Promedio
+];
+
+export function getLecheEnteraAltasCaloriasCompositionRows(): CompositionTableRow[] {
+  return LECHE_ENTERA_ALTAS_CALORIAS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Leches frescas y fermentadas enteras altas en calorías y azucares" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Sustitutos */
+export const SUSTITUTOS_TABLE_ORDER: string[] = [
+  "Butifarra",
+  "Cuajada de leche de vaca",
+  "Huevo de gallina crudo",
+  "Huevos de codorniz crudo",
+  "Jamón de Cerdo (97% libre de grasa y 25% reducido en sodio)",
+  "Jamón de Pavo",
+  "Morcilla",
+  "Mortadela común",
+  "Pepperoni",
+  "Quesito",
+  "Queso Americano",
+  "Queso búfala tipo mozzarella fresco graso de pasta hilada",
+  "Queso Campesino (fresco semiduro, graso)",
+  "Queso Cheddar",
+  "Queso Costeño rallado",
+  "Queso de Cabra",
+  "Queso fresco de pasta hilada, semiduro, semigraso (Finesse)",
+  "Queso fresco semiduro graso",
+  "Queso Gouda",
+  "Queso mozzarella de leche entera de vaca semiduro, semigraso",
+  "Queso Parmesano rallado",
+  "Queso Ricotta (de leche semidescremada)",
+  "Queso sabana (Edam)",
+  "Queso Tipo Pera",
+  "Salami",
+  "Salchicha tradicional",
+  "Salchicha vegetariana",
+  "Salchichón cervecero",
+  "Salchichón de pollo",
+];
+
+export function getSustitutosCompositionRows(): CompositionTableRow[] {
+  return SUSTITUTOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Carnes magras crudas y proteínas texturizadas (incluye Promedio al final) */
+export const CARNES_MAGRAS_TABLE_ORDER: string[] = [
+  "Atún enlatado en agua, sólidos",
+  "Carne de cabra o chivo",
+  "Carne de cerdo lomo o cañón magro",
+  "Carne de conejo todos los cortes",
+  "Carne de cordero diferentes cortes grasa menor 10%",
+  "Carne de Cuy o cuy",
+  "Carne de res todos los cortes magra",
+  "Carne de ternera diferentes cortes magra",
+  "Chuleta de cerdo magro",
+  "Contramuslo de pollo, carne sin piel",
+  "Muslo de pollo, carne sin piel",
+  "Pargo especies mezcladas",
+  "Pavo todas las carnes sin piel",
+  "Pechuga de pollo, carne sin piel",
+  "Proteina de soya texturizada hidratada",
+  "Proteina de trigo texturizada hidratada",
+  "Salmon rosado, crudo",
+  "Trucha arcoiris",
+  "Carnes magras crudas y proteínas texturizada adultos y niños", // Promedio
+];
+
+export function getCarnesMagrasCompositionRows(): CompositionTableRow[] {
+  return CARNES_MAGRAS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Carnes magras crudas y proteínas texturizada adultos y niños" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Carnes crudas altas en lípidos (incluye Promedio al final) */
+export const CARNES_ALTAS_LIPIDOS_TABLE_ORDER: string[] = [
+  "Alas de pollo carne y piel",
+  "Bagre carne y piel",
+  "Callo o panza",
+  "Camarón especies mezcladas",
+  "Contramuslo de pollo sin hueso y con piel",
+  "Hígado de pollo",
+  "Hígado de res",
+  "Langostino especies mezcladas",
+  "Lengua de res",
+  "Sardina enlatada en salsa de tomate",
+  "Carnes crudas altas en lípidos adultos y niños", // Promedio
+];
+
+export function getCarnesAltasLipidosCompositionRows(): CompositionTableRow[] {
+  return CARNES_ALTAS_LIPIDOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Carnes crudas altas en lípidos adultos y niños" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Leguminosas adultos (incluye Promedio al final) */
+export const LEGUMINOSAS_ADULTOS_TABLE_ORDER: string[] = [
+  "Arveja seca cocida",
+  "Frijol blanquillo con guiso",
+  "Frijol bola roja con plátano verde",
+  "Frijol cabecita negra con guiso",
+  "Frijol caraota con guiso",
+  "Frijol cargamanto blanco con plátano verde",
+  "Frijol cargamanto rosado con plátano verde",
+  "Frijol nima con guiso",
+  "Frijol verde con plátano verde",
+  "Frijol zaragoza con guiso",
+  "Garbanzo con guiso",
+  "Lenteja con guiso",
+  "Soya con guiso",
+  "Leguminosas adultos", // Promedio
+];
+
+export function getLeguminosasAdultosCompositionRows(): CompositionTableRow[] {
+  return LEGUMINOSAS_ADULTOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Leguminosas adultos" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Leguminosas niños y niñas (incluye Promedio al final) */
+export const LEGUMINOSAS_NINOS_TABLE_ORDER: string[] = [
+  "Frijol blanquillo con guiso (niños)",
+  "Frijol bola roja con plátano verde (niños)",
+  "Frijol cabecita negra con guiso (niños)",
+  "Frijol caraota con guiso (niños)",
+  "Frijol cargamanto blanco con plátano verde (niños)",
+  "Frijol cargamanto rosado con plátano verde (niños)",
+  "Frijol nima con guiso (niños)",
+  "Frijol verde con plátano verde (niños)",
+  "Frijol zaragoza con guiso (niños)",
+  "Garbanzo con guiso (niños)",
+  "Lenteja con guiso (niños)",
+  "Soya con guiso (niños)",
+  "Leguminosas niños", // Promedio
+];
+
+export function getLeguminosasNinosCompositionRows(): CompositionTableRow[] {
+  return LEGUMINOSAS_NINOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Leguminosas niños" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Raíces, tubérculos y plátanos niños y niñas (incluye Promedio al final) */
+export const RAICES_TUBERCULOS_PLATANOS_NINOS_TABLE_ORDER: string[] = [
+  "Arracacha (niños)",
+  "Batata (niños)",
+  "Chuguas u ollucos (niños)",
+  "Cubios (niños)",
+  "Harina de plátano (niños)",
+  "Ñame (niños)",
+  "Papa común (niños)",
+  "Papa criolla (niños)",
+  "Plátano colí o guineo (niños)",
+  "Plátano hartón maduro (niños)",
+  "Plátano verde (niños)",
+  "Yuca blanca (niños)",
+  "Raíces, tubérculos y plátanos niños y niñas",
+];
+
+export function getRaicesTuberculosPlatanosNinosCompositionRows(): CompositionTableRow[] {
+  return RAICES_TUBERCULOS_PLATANOS_NINOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Raíces, tubérculos y plátanos niños y niñas" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Cereales adultos (incluye Promedio al final) */
+export const CEREALES_ADULTOS_TABLE_ORDER: string[] = [
+  "Almojábana",
+  "Arepa delgada de maíz blanco trillado",
+  "Arepa redonda de maíz blanco trillado",
+  "Arroz blanco, cocido",
+  "Arroz integral, cocido",
+  "Arroz parbolizado cocido",
+  "Avena en hojuelas fortificada",
+  "Cebada perlada cocida",
+  "Choco Krispis",
+  "Corn Flakes",
+  "Cuchuco de cebada",
+  "Espaguetis de arroz, hidratados",
+  "Espaguetis de trigo, cocidos",
+  "Froot Loops",
+  "Galletas Saltinas",
+  "Harina de arroz blanco",
+  "Harina de maíz blanco trillado",
+  "Harina de trigo enriquecida",
+  "Macarrones, cocidos",
+  "Maicena (almidón de maíz)",
+  "Maíz pira, crudo",
+  "Maíz tierno o choclo, amarillo enlatado",
+  "Maíz tostado comercial",
+  "Mazamorra Antioqueña (maíz cocido)",
+  "Palitos o palitroques",
+  "Pan blanco",
+  "Pan centeno",
+  "Pan de salvado de avena",
+  "Pan integral",
+  "Pan pita o árabe",
+  "Pancake (mezcla preparada con leche entera)",
+  "Pandequeso",
+  "Pandeyuca",
+  "Pasta corta cocida",
+  "Seba Seba",
+  "Taco vacío",
+  "Tortilla de maíz",
+  "Tostada o calado",
+  "Zucaritas",
+  "Cereales adultos",
+];
+
+export function getCerealesAdultosCompositionRows(): CompositionTableRow[] {
+  return CEREALES_ADULTOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Cereales adultos" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Raíces, Tubérculos y Plátanos adultos (incluye Promedio al final) */
+export const RAICES_TUBERCULOS_PLATANOS_ADULTOS_TABLE_ORDER: string[] = [
+  "Arracacha",
+  "Batata",
+  "Chuguas u ollucos",
+  "Cubios",
+  "Harina de plátano",
+  "Ñame",
+  "Papa común",
+  "Papa criolla",
+  "Plátano colí o guineo",
+  "Plátano hartón maduro",
+  "Plátano verde",
+  "Yuca blanca",
+  "Raíces, Tubérculos y Plátanos adultos",
+];
+
+export function getRaicesTuberculosPlatanosAdultosCompositionRows(): CompositionTableRow[] {
+  return RAICES_TUBERCULOS_PLATANOS_ADULTOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Raíces, Tubérculos y Plátanos adultos" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Cereales niños y niñas (incluye Promedio al final) */
+export const CEREALES_NINOS_TABLE_ORDER: string[] = [
+  "Almojábana (niños)",
+  "Arepa redonda de maíz blanco trillado (niños)",
+  "Arroz blanco, cocido (niños)",
+  "Arroz integral, cocido (niños)",
+  "Arroz parbolizado cocido (niños)",
+  "Avena en hojuelas fortificada (niños)",
+  "Cebada perlada cocida (niños)",
+  "Choco Krispis (niños)",
+  "Corn Flakes (niños)",
+  "Cuchuco de cebada, crudo (niños)",
+  "Espaguetis de arroz, hidratados (niños)",
+  "Espaguetis de trigo, cocidos (niños)",
+  "Froot Loops (niños)",
+  "Galletas Saltinas (niños)",
+  "Harina de trigo enriquecida (niños)",
+  "Macarrones, cocidos (niños)",
+  "Maicena (almidón de maíz) (niños)",
+  "Maíz pira, crudo (niños)",
+  "Maíz tierno o choclo, amarillo enlatado (niños)",
+  "Mazamorra Antioqueña (maíz cocido) (niños)",
+  "Palitos o palitroques (niños)",
+  "Pan blanco (niños)",
+  "Pan centeno (niños)",
+  "Pan de salvado de avena (niños)",
+  "Pan integral (niños)",
+  "Pan pita o árabe (niños)",
+  "Pancake (mezcla preparada con leche entera) (niños)",
+  "Pandequeso (niños)",
+  "Pandeyuca (niños)",
+  "Pasta corta cocida (niños)",
+  "Seba Seba (niños)",
+  "Taco vacío (niños)",
+  "Tortilla de maíz (niños)",
+  "Tostada o calado (niños)",
+  "Zucaritas (niños)",
+  "Cereales niños y niñas",
+];
+
+export function getCerealesNinosCompositionRows(): CompositionTableRow[] {
+  return CEREALES_NINOS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Cereales niños y niñas" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Orden de filas para la tabla Grasas poliinsaturadas (incluye Promedio al final) */
+export const GRASAS_POLIINSATURADAS_TABLE_ORDER: string[] = [
+  "Aceite de ajonjolí",
+  "Aceite de girasol",
+  "Aceite de maíz",
+  "Aceite de soya",
+  "Mayonesa regular comercial",
+  "Salsa Ranch",
+  "Salsa Tartara",
+  "Vinagreta con grasa (Aderezos)",
+  "Grasas poliinsaturadas",
+];
+
+export function getGrasasPoliinsaturadasCompositionRows(): CompositionTableRow[] {
+  return GRASAS_POLIINSATURADAS_TABLE_ORDER.map((name) => {
+    const data = FOOD_NUTRIENTS[name];
+    if (!data) return null;
+    return {
+      name: name === "Grasas poliinsaturadas" ? "Promedio" : name,
+      portion_grams: data.portion_grams,
+      unit_measure: data.unit_measure,
+      kcal: data.kcal,
+      prot: data.prot,
+      grasa: data.grasa,
+      gs: data.gs,
+      gm: data.gm,
+      gp: data.gp,
+      col: data.col,
+      chos: data.chos,
+      fd: data.fd,
+      calcio: data.calcio ?? 0,
+      p: data.p ?? 0,
+      fe: data.fe ?? 0,
+    };
+  }).filter((r): r is CompositionTableRow => r !== null);
+}
+
+/** Devuelve una fila de tabla de composición para un ingrediente por nombre (para mostrar en listas de selección) */
+export function getCompositionRowForIngredient(name: string): CompositionTableRow | null {
+  const data = FOOD_NUTRIENTS[name];
+  if (!data) return null;
+  return {
+    name,
+    portion_grams: data.portion_grams,
+    unit_measure: data.unit_measure,
+    kcal: data.kcal,
+    prot: data.prot,
+    grasa: data.grasa,
+    gs: data.gs,
+    gm: data.gm,
+    gp: data.gp,
+    col: data.col,
+    chos: data.chos,
+    fd: data.fd,
+    calcio: data.calcio ?? 0,
+    p: data.p ?? 0,
+    fe: data.fe ?? 0,
+  };
+}
