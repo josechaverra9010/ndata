@@ -24,6 +24,18 @@ import {
   getRaicesTuberculosPlatanosAdultosCompositionRows,
   getRaicesTuberculosPlatanosNinosCompositionRows,
   getCerealesNinosCompositionRows,
+  getFrutasCompositionRows,
+  getVerdurasCompositionRows,
+  getNuecesCompositionRows,
+  getSemillasCompositionRows,
+  getAzucaresDulcesCompositionRows,
+  getAzucaresNinosCompositionRows,
+  getMecatosCompositionRows,
+  getBebidasAlcoholicasCompositionRows,
+  getBebidasNoAlcoholicasCompositionRows,
+  getProductosReduccionGrasaCompositionRows,
+  getGrasasSaturadasCompositionRows,
+  getGrasasMonoinsaturadasCompositionRows,
   getGrasasPoliinsaturadasCompositionRows,
   type CompositionTableRow,
 } from "@/lib/foodNutrients";
@@ -106,6 +118,19 @@ export default function AdminCompositionTable() {
   const rowsRaicesTuberculosPlatanos = getRaicesTuberculosPlatanosAdultosCompositionRows();
   const rowsRaicesTuberculosPlatanosNinos = getRaicesTuberculosPlatanosNinosCompositionRows();
   const rowsCerealesNinos = getCerealesNinosCompositionRows();
+  const rowsFrutas = getFrutasCompositionRows();
+  const rowsVerduras = getVerdurasCompositionRows();
+  const rowsNueces = getNuecesCompositionRows();
+  const rowsSemillas = getSemillasCompositionRows();
+  const rowsAzucaresDulces = getAzucaresDulcesCompositionRows();
+  const rowsAzucaresNinos = getAzucaresNinosCompositionRows();
+  const rowsMecatos = getMecatosCompositionRows();
+  const rowsBebidasAlcoholicas = getBebidasAlcoholicasCompositionRows();
+  const rowsBebidasNoAlcoholicas = getBebidasNoAlcoholicasCompositionRows();
+  const rowsProductosReduccionGrasa = getProductosReduccionGrasaCompositionRows();
+  const rowsGrasasSaturadas = getGrasasSaturadasCompositionRows();
+  const rowsGrasasMonoinsaturadas = getGrasasMonoinsaturadasCompositionRows();
+  const rowsGrasasPoliinsaturadas = getGrasasPoliinsaturadasCompositionRows();
 
   return (
     <AdminLayout>
@@ -132,6 +157,18 @@ export default function AdminCompositionTable() {
             <TabsTrigger value="raices-tuberculos-platanos" className="text-xs sm:text-sm flex-1 min-w-0">Raíces, tubérculos y plátanos</TabsTrigger>
             <TabsTrigger value="raices-tuberculos-platanos-ninos" className="text-xs sm:text-sm flex-1 min-w-0">Raíces, tubérculos y plátanos (niños)</TabsTrigger>
             <TabsTrigger value="cereales-ninos" className="text-xs sm:text-sm flex-1 min-w-0">Cereales niños</TabsTrigger>
+            <TabsTrigger value="frutas" className="text-xs sm:text-sm flex-1 min-w-0">Frutas</TabsTrigger>
+            <TabsTrigger value="verduras" className="text-xs sm:text-sm flex-1 min-w-0">Verduras y hortalizas</TabsTrigger>
+            <TabsTrigger value="nueces" className="text-xs sm:text-sm flex-1 min-w-0">Nueces</TabsTrigger>
+            <TabsTrigger value="semillas" className="text-xs sm:text-sm flex-1 min-w-0">Semillas</TabsTrigger>
+            <TabsTrigger value="azucares-dulces" className="text-xs sm:text-sm flex-1 min-w-0">Azúcares y dulces</TabsTrigger>
+            <TabsTrigger value="azucares-ninos" className="text-xs sm:text-sm flex-1 min-w-0">Azúcares niños</TabsTrigger>
+            <TabsTrigger value="mecatos" className="text-xs sm:text-sm flex-1 min-w-0">Mecatos</TabsTrigger>
+            <TabsTrigger value="bebidas-alcoholicas" className="text-xs sm:text-sm flex-1 min-w-0">Bebidas alcohólicas</TabsTrigger>
+            <TabsTrigger value="bebidas-no-alcoholicas" className="text-xs sm:text-sm flex-1 min-w-0">Bebidas no alcohólicas</TabsTrigger>
+            <TabsTrigger value="productos-reduccion-grasa" className="text-xs sm:text-sm flex-1 min-w-0">Prod. reduc. grasa</TabsTrigger>
+            <TabsTrigger value="grasas-saturadas" className="text-xs sm:text-sm flex-1 min-w-0">Grasas saturadas</TabsTrigger>
+            <TabsTrigger value="grasas-monoinsaturadas" className="text-xs sm:text-sm flex-1 min-w-0">Grasas monoinsaturadas</TabsTrigger>
             <TabsTrigger value="grasas-poliinsaturadas" className="text-xs sm:text-sm flex-1 min-w-0">Grasas poliinsaturadas</TabsTrigger>
           </TabsList>
           <TabsContent value="entera" className="mt-4">
@@ -261,6 +298,126 @@ export default function AdminCompositionTable() {
               </CardHeader>
               <CardContent className="p-0">
                 <CompositionTable rows={rowsCerealesNinos} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="frutas" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Frutas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsFrutas} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="verduras" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Verduras y hortalizas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsVerduras} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="nueces" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Nueces</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsNueces} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="semillas" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Semillas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsSemillas} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="azucares-dulces" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Azúcares y dulces adultos</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsAzucaresDulces} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="azucares-ninos" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Azúcares y dulces niños y niñas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsAzucaresNinos} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="mecatos" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Mecatos</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsMecatos} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="bebidas-alcoholicas" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Bebidas alcohólicas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsBebidasAlcoholicas} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="bebidas-no-alcoholicas" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Bebidas no alcohólicas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsBebidasNoAlcoholicas} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="productos-reduccion-grasa" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Productos con reducción de grasa</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsProductosReduccionGrasa} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="grasas-saturadas" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Grasas saturadas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsGrasasSaturadas} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="grasas-monoinsaturadas" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Grasas monoinsaturadas</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <CompositionTable rows={rowsGrasasMonoinsaturadas} />
               </CardContent>
             </Card>
           </TabsContent>

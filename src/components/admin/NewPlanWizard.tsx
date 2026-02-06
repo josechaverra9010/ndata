@@ -27,11 +27,11 @@ import {
 } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Users, Clock, AlertCircle, PieChart } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Clock, AlertCircle, PieChart } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FOOD_NUTRIENTS, getCompositionRowForIngredient } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getCompositionRowForIngredient } from "@/lib/foodNutrients";
 
 interface NewPlanWizardProps {
   open: boolean;
@@ -67,8 +67,8 @@ const PHASES = [
   }
 ];
 
-// Grupos de alimentos dinámicos desde FOOD_NUTRIENTS
-const GRUPOS_ALIMENTOS = Object.keys(FOOD_NUTRIENTS);
+// Grupos de alimentos de Fase 3 según EVANUT 4.1 (solo los del Excel)
+const GRUPOS_ALIMENTOS = EVANUT_GRUPOS_ALIMENTOS;
 
 const PLAN_WIZARD_DRAFT_KEY = "ndata_plan_wizard_draft";
 
@@ -171,8 +171,14 @@ function getDefaultFormData() {
     comidas_dia: "3",
     ingredientes_f4: {} as Record<string, any>,
     observaciones: "",
-    weekly_menu_id: ""
+    weekly_menu_id: "",
+    patient_id: "" as string | number,
   };
+}
+
+function getDraftKey(patientIdOrFormPatient: number | string | undefined | null): string {
+  const id = patientIdOrFormPatient === "" || patientIdOrFormPatient == null ? 0 : patientIdOrFormPatient;
+  return `${PLAN_WIZARD_DRAFT_KEY}_${id}`;
 }
 
 function mergeFormDataWithDefaults(saved: any): any {
@@ -216,6 +222,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   // Guardar gramos base de Fase 4 (sin multiplicador) y multiplicadores por ingrediente
   const [baseIngredientsF4, setBaseIngredientsF4] = useState<Record<string, any>>({});
   const [ingredientMultipliers, setIngredientMultipliers] = useState<Record<string, any>>({});
+  const [patientsList, setPatientsList] = useState<{ id: number; name: string }[]>([]);
+  const [loadingPatientsList, setLoadingPatientsList] = useState(false);
   const { toast } = useToast();
 
   const currentPhaseData = PHASES.find(p => p.id === currentPhase) || PHASES[0];
@@ -294,37 +302,58 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       const edad = computeAgeYears(patient?.fecha_nacimiento);
       const pal = mapNivelActividadToPAL(patient?.nivel_actividad);
       const pesoObjetivo = patient?.peso_objetivo != null ? String(patient.peso_objetivo) : "";
+      const factorActividad = patient?.pal_factor ? String(patient.pal_factor) : (pal || "1.55");
 
-      setFormData((prev: any) => {
-        const next = {
-          ...prev,
-          peso_actual: pesoActual,
-          altura,
-          genero,
-          edad,
-          peso_objetivo: pesoObjetivo,
-          peso_referencia_f2: pesoObjetivo,
-          factor_actividad: patient?.pal_factor ? String(patient.pal_factor) : (pal || "1.55"), // Priorizar manual, luego mapeado, luego default
-        };
-        return next;
+      // Calcular todos los valores derivados con los datos del paciente (un solo setFormData para evitar estado desfasado)
+      let imc = "";
+      let pesoSaludable = "";
+      let pesoAjustado = "";
+      let tmb = "";
+      let requerimientoEnergetico = "";
+
+      const pesoNum = parseFloat(pesoActual);
+      const alturaNum = parseFloat(altura);
+      if (!isNaN(pesoNum) && !isNaN(alturaNum) && alturaNum > 0) {
+        const alturaMetros = alturaNum / 100;
+        const imcVal = pesoNum / (alturaMetros * alturaMetros);
+        imc = imcVal.toFixed(2);
+        pesoSaludable = (25 * alturaMetros * alturaMetros).toFixed(2);
+        pesoAjustado = ((pesoNum - 25 * alturaMetros * alturaMetros) * 0.25 + 25 * alturaMetros * alturaMetros).toFixed(2);
+      }
+
+      const tmbComputed = computeTmbValue(pesoObjetivo || pesoActual, edad, genero);
+      if (tmbComputed != null) {
+        tmb = tmbComputed.toFixed(2);
+        const factorNum = parseFloat(factorActividad) || 1.55;
+        requerimientoEnergetico = String(Math.round(tmbComputed * factorNum));
+      }
+
+      setFormData((prev: any) => ({
+        ...prev,
+        patient_id: pid,
+        peso_actual: pesoActual,
+        altura,
+        genero,
+        edad,
+        peso_objetivo: pesoObjetivo,
+        peso_referencia_f2: pesoObjetivo,
+        factor_actividad: factorActividad,
+        imc: imc || prev.imc,
+        peso_saludable: pesoSaludable || prev.peso_saludable,
+        peso_ajustado: pesoAjustado || prev.peso_ajustado,
+        tmb: tmb || prev.tmb,
+        requerimiento_energetico: requerimientoEnergetico || prev.requerimiento_energetico,
+      }));
+
+      toast({
+        title: "Datos cargados",
+        description: `Se cargaron los datos de ${patient?.nombres || "el paciente"}`,
       });
-
-      // Disparar cálculos con valores locales (evitar estado desfasado)
-      const tmbComputed = computeTmbValue(pesoObjetivo, edad, genero);
-      if (pesoActual && altura) {
-        calculateIMC(pesoActual, altura);
-      }
-      if (pesoObjetivo && edad && genero) {
-        calculateTMB(pesoObjetivo, edad, genero);
-      }
-      if (pal && tmbComputed != null) {
-        calculateRequerimientoEnergetico(String(tmbComputed), pal);
-      }
     } catch (error: any) {
       console.error("Error prefill patient:", error);
       toast({
         title: "Error",
-        description: error?.message || "No se pudo autocompletar con los datos del paciente",
+        description: error?.message || "No se pudo cargar los datos del paciente",
         variant: "destructive",
       });
     } finally {
@@ -332,14 +361,41 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     }
   };
 
-  // Al abrir: restaurar borrador si existe; si no, empezar desde cero y opcionalmente prefill con paciente
+  // Cargar lista de pacientes para el selector de Fase 1 (cuando se abre el wizard)
+  useEffect(() => {
+    if (!open || currentPhase !== 1) return;
+    setLoadingPatientsList(true);
+    const token = localStorage.getItem("userToken");
+    fetch(`${API_URL}/patients`, {
+      headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+    })
+      .then((r) => r.ok ? r.json() : [])
+      .then((list: { id: number; nombres?: string; apellidos?: string; name?: string }[]) => {
+        setPatientsList(
+          (list || []).map((p) => ({
+            id: p.id,
+            name: [p.nombres, p.apellidos].filter(Boolean).join(" ") || (p as any).name || `Paciente ${p.id}`,
+          }))
+        );
+      })
+      .catch(() => setPatientsList([]))
+      .finally(() => setLoadingPatientsList(false));
+  }, [open, currentPhase]);
+
+  // Al abrir: restaurar borrador del paciente actual si existe; si no, empezar desde cero y opcionalmente prefill
   useEffect(() => {
     if (!open) return;
+    const draftKey = getDraftKey(patientId);
     try {
-      const raw = localStorage.getItem(PLAN_WIZARD_DRAFT_KEY);
+      const raw = localStorage.getItem(draftKey);
       const draft = raw ? JSON.parse(raw) : null;
       if (draft && typeof draft.currentPhase === "number" && draft.formData) {
-        setFormData(mergeFormDataWithDefaults(draft.formData));
+        const merged = mergeFormDataWithDefaults(draft.formData);
+        // Asegurar que el borrador cargado tenga el patient_id correcto (por si es antiguo o se abrió con paciente)
+        const mergedWithPatient = patientId != null
+          ? { ...merged, patient_id: merged.patient_id || patientId }
+          : merged;
+        setFormData(mergedWithPatient);
         setCurrentPhase(Math.min(4, Math.max(1, draft.currentPhase)));
         setCompletedPhases(Array.isArray(draft.completedPhases) ? draft.completedPhases : []);
         toast({
@@ -359,7 +415,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     }
   }, [open, patientId]);
 
-  // Persistir borrador mientras el modal está abierto (cada cambio de fase o formulario)
+  // Persistir borrador del paciente actual mientras el modal está abierto
   useEffect(() => {
     if (!open) return;
     try {
@@ -368,7 +424,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
         currentPhase,
         completedPhases,
       };
-      localStorage.setItem(PLAN_WIZARD_DRAFT_KEY, JSON.stringify(payload));
+      const draftKey = getDraftKey(formData.patient_id);
+      localStorage.setItem(draftKey, JSON.stringify(payload));
     } catch (e) {
       console.warn("Error saving plan wizard draft:", e);
     }
@@ -854,15 +911,23 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       return;
     }
 
+    const calories = parseInt(formData.requerimiento_energetico) || 0;
+    const proteinG = parseFloat(formData.proteinas_gramos_f2) || 0;
+    const carbsG = parseFloat(formData.cho_gramos_f2) || 0;
+    const fatG = parseFloat(formData.grasas_gramos_f2) || 0;
+
     const planData = {
       name: formData.nombre_plan || "Plan Nutricional",
       description: formData.descripcion,
-      calories: parseInt(formData.requerimiento_energetico) || 0,
+      calories,
       duration: formData.duracion,
       category: formData.categoria,
       color: formData.color,
       tipo: formData.tipo_plan || "adulto",
       meals_per_day: parseInt(formData.comidas_dia) || 3,
+      protein_target: Math.round(proteinG),
+      carbs_target: Math.round(carbsG),
+      fat_target: Math.round(fatG),
 
       // Datos de las 4 fases
       fase_1: {
@@ -983,8 +1048,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
         // El padre solo necesita actualizar la lista, no crear el plan de nuevo
         onCreatePlan(newPlan);
 
-        // ASIGNACIÓN AUTOMÁTICA AL PACIENTE
-        if (patientId) {
+        // ASIGNACIÓN AUTOMÁTICA AL PACIENTE (prop o paciente seleccionado en fase 1)
+        const effectivePatientId = patientId ?? (formData.patient_id ? Number(formData.patient_id) : null);
+        if (effectivePatientId) {
           try {
             const startDate = new Date().toISOString().split('T')[0];
             let endDate = null;
@@ -1006,7 +1072,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                 ...(token ? { "Authorization": `Bearer ${token}` } : {}),
               },
               body: JSON.stringify({
-                patient_id: patientId,
+                patient_id: effectivePatientId,
                 meal_plan_id: planId,
                 start_date: startDate,
                 end_date: endDate,
@@ -1025,8 +1091,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
           }
         }
 
-        // Limpiar borrador y reset form
-        localStorage.removeItem(PLAN_WIZARD_DRAFT_KEY);
+        // Limpiar borrador de este paciente y reset form
+        localStorage.removeItem(getDraftKey(patientId ?? formData.patient_id));
         setFormData(getDefaultFormData());
         setCurrentPhase(1);
         setCompletedPhases([]);
@@ -1131,6 +1197,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                 <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
               </CardHeader>
               <CardContent className="space-y-4">
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="peso_actual">Peso Actual (kg)</Label>

@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { UserRole } from '@/lib/auth';
+import { LoadingScreen } from '@/components/LoadingScreen';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -14,7 +15,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <LoadingScreen message="Cargando" />
       </div>
     );
   }

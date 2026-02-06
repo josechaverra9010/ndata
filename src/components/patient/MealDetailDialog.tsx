@@ -29,6 +29,19 @@ interface MealDetailDialogProps {
   loading?: boolean;
 }
 
+function normalizeList<T>(val: unknown, stringKeys?: string[]): T[] {
+  if (val == null) return [];
+  if (Array.isArray(val)) return val as T[];
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return [];
+    if (trimmed.includes("\n")) return trimmed.split("\n").map((s) => s.trim()).filter(Boolean) as T[];
+    if (trimmed.includes(",")) return trimmed.split(",").map((s) => s.trim()).filter(Boolean) as T[];
+    return [trimmed] as T[];
+  }
+  return [];
+}
+
 export function MealDetailDialog({
   open,
   onOpenChange,
@@ -41,6 +54,12 @@ export function MealDetailDialog({
   const imgSrc = meal?.image
     ? (getImageUrl ? getImageUrl(meal.image) : meal.image)
     : "";
+  const ingredients = Array.isArray(meal?.ingredients)
+    ? meal.ingredients
+    : normalizeList((meal as Record<string, unknown>)?.ingredients ?? (meal as Record<string, unknown>)?.ingredientes);
+  const instructions = Array.isArray(meal?.instructions)
+    ? meal.instructions
+    : normalizeList<string>((meal as Record<string, unknown>)?.instructions ?? (meal as Record<string, unknown>)?.instrucciones ?? (meal as Record<string, unknown>)?.steps);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -161,9 +180,9 @@ export function MealDetailDialog({
                       <h3 className="font-bold text-foreground tracking-tight">Preparación</h3>
                     </div>
 
-                    {meal.instructions && meal.instructions.length > 0 ? (
+                    {instructions.length > 0 ? (
                       <div className="space-y-4">
-                        {meal.instructions.map((step, idx) => (
+                        {instructions.map((step, idx) => (
                           <div key={idx} className="flex gap-4 group">
                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary text-xs font-black shadow-sm group-hover:bg-primary group-hover:text-white transition-colors">
                               {idx + 1}

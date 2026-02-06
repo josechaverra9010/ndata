@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { PatientLayout } from "@/layouts/PatientLayout";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,14 @@ interface DashboardStats {
     percentage: number;
     change: number;
     trend: string;
+  };
+  macronutrients?: {
+    protein_percentage: number;
+    carbs_percentage: number;
+    fat_percentage: number;
+    protein_grams: number;
+    carbs_grams: number;
+    fat_grams: number;
   };
 }
 
@@ -137,17 +146,19 @@ export default function PatientDashboard() {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     })
       .then((r) => r.ok ? r.json() : null)
-      .then((recipe: { name?: string; ingredients?: string[]; instructions?: string[]; image?: string } | null) => {
+      .then((recipe: { name?: string; ingredients?: string[]; instructions?: string[]; image?: string; Ingredients?: string[]; Instructions?: string[] } | null) => {
         if (cancelled) return;
         setLoadingMealDetail(false);
         if (recipe) {
+          const ing = recipe.ingredients ?? (recipe as { Ingredients?: string[] }).Ingredients;
+          const inst = recipe.instructions ?? (recipe as { Instructions?: string[] }).Instructions;
           setMealDetailForModal({
             ...selectedMeal,
             receta: recipe.name ?? selectedMeal.receta,
             food: recipe.name ?? selectedMeal.food,
             description: recipe.name ?? selectedMeal.description,
-            ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : selectedMeal.ingredients ?? [],
-            instructions: Array.isArray(recipe.instructions) ? recipe.instructions : selectedMeal.instructions ?? [],
+            ingredients: Array.isArray(ing) ? ing : (selectedMeal.ingredients ?? []),
+            instructions: Array.isArray(inst) ? inst : (selectedMeal.instructions ?? []),
             image: recipe.image ?? selectedMeal.image,
           });
         }
@@ -349,10 +360,7 @@ export default function PatientDashboard() {
     return (
       <PatientLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center space-y-4">
-            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-            <p className="text-muted-foreground">Cargando tu dashboard...</p>
-          </div>
+          <LoadingScreen message="Cargando" />
         </div>
       </PatientLayout>
     );
@@ -580,17 +588,17 @@ export default function PatientDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground font-semibold">
-                        {(dashboardData?.stats as any)?.macronutrients?.protein_percentage || 30}%
+                        {stats.macronutrients?.protein_percentage ?? 30}%
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        ({(dashboardData?.stats as any)?.macronutrients?.protein_grams || 0}g)
+                        ({stats.macronutrients?.protein_grams ?? 0}g)
                       </span>
                     </div>
                   </div>
                   <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
-                      style={{ width: `${(dashboardData?.stats as any)?.macronutrients?.protein_percentage || 30}%` }}
+                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 animate-progress-fill transition-all duration-500"
+                      style={{ ['--progress-end' as string]: `${stats.macronutrients?.protein_percentage ?? 30}%` } as React.CSSProperties}
                     />
                   </div>
                 </div>
@@ -604,17 +612,17 @@ export default function PatientDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground font-semibold">
-                        {(dashboardData?.stats as any)?.macronutrients?.carbs_percentage || 45}%
+                        {stats.macronutrients?.carbs_percentage ?? 45}%
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        ({(dashboardData?.stats as any)?.macronutrients?.carbs_grams || 0}g)
+                        ({stats.macronutrients?.carbs_grams ?? 0}g)
                       </span>
                     </div>
                   </div>
                   <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-500"
-                      style={{ width: `${(dashboardData?.stats as any)?.macronutrients?.carbs_percentage || 45}%` }}
+                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 animate-progress-fill transition-all duration-500"
+                      style={{ ['--progress-end' as string]: `${stats.macronutrients?.carbs_percentage ?? 45}%` } as React.CSSProperties}
                     />
                   </div>
                 </div>
@@ -628,17 +636,17 @@ export default function PatientDashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground font-semibold">
-                        {(dashboardData?.stats as any)?.macronutrients?.fat_percentage || 25}%
+                        {stats.macronutrients?.fat_percentage ?? 25}%
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        ({(dashboardData?.stats as any)?.macronutrients?.fat_grams || 0}g)
+                        ({stats.macronutrients?.fat_grams ?? 0}g)
                       </span>
                     </div>
                   </div>
                   <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
-                      style={{ width: `${(dashboardData?.stats as any)?.macronutrients?.fat_percentage || 25}%` }}
+                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 animate-progress-fill transition-all duration-500"
+                      style={{ ['--progress-end' as string]: `${stats.macronutrients?.fat_percentage ?? 25}%` } as React.CSSProperties}
                     />
                   </div>
                 </div>
@@ -647,7 +655,9 @@ export default function PatientDashboard() {
                 <div className="pt-4 border-t border-border">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Meta diaria de calorías</span>
-                    <span className="font-semibold text-foreground">{stats.calories.target} kcal</span>
+                    <span className="font-semibold text-foreground">
+                      {stats.calories.target > 0 ? `${stats.calories.target} kcal` : "Sin meta asignada"}
+                    </span>
                   </div>
                 </div>
               </div>

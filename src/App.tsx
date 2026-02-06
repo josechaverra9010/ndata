@@ -35,7 +35,9 @@ import SuperadminNutritionists from "./pages/superadmin/SuperadminNutritionists"
 import SuperadminOrganizations from "./pages/superadmin/SuperadminOrganizations";
 import SuperadminBilling from "./pages/superadmin/SuperadminBilling";
 import SuperadminSettings from "./pages/superadmin/SuperadminSettings";
+import SuperadminRecipes from "./pages/superadmin/SuperadminRecipes";
 import ResetPassword from "./pages/ResetPassword";
+import RegisterNutritionist from "./pages/RegisterNutritionist";
 
 const queryClient = new QueryClient();
 
@@ -51,6 +53,7 @@ const App = () => (
               {/* Auth */}
               <Route path="/auth" element={<Auth />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/register-nutritionist" element={<RegisterNutritionist />} />
 
               {/* Admin Routes */}
               <Route path="/" element={<ProtectedRoute allowedRoles={['admin']}><Index /></ProtectedRoute>} />
@@ -80,6 +83,7 @@ const App = () => (
               <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminDashboard /></ProtectedRoute>} />
               <Route path="/superadmin/users" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminUsers /></ProtectedRoute>} />
               <Route path="/superadmin/nutritionists" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminNutritionists /></ProtectedRoute>} />
+              <Route path="/superadmin/recipes" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminRecipes /></ProtectedRoute>} />
               <Route path="/superadmin/organizations" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminOrganizations /></ProtectedRoute>} />
               <Route path="/superadmin/billing" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminBilling /></ProtectedRoute>} />
               <Route path="/superadmin/settings" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminSettings /></ProtectedRoute>} />

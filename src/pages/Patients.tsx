@@ -2,11 +2,13 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { AdminLayout } from "@/layouts/AdminLayout";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Filter, Mail, Phone, Loader2, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList } from "lucide-react";
+import { Search, Plus, Filter, Mail, Phone, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList, Users, UserCheck, Clock } from "lucide-react";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { NewPatientDialog } from "@/components/admin/NewPatientDialog";
 import { PatientDetailsDialog } from "@/components/admin/PatientDetailsDialog";
 import { ScheduleAppointmentDialog } from "@/components/admin/ScheduleAppointmentDialog";
@@ -258,16 +260,23 @@ const Patients = () => {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between animate-fade-in">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Pacientes</h1>
-            <p className="text-muted-foreground">
-              Gestiona la información de tus pacientes
-              {patients.length > 0 && ` (${patients.length} total${patients.length !== 1 ? 'es' : ''})`}
-            </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/20">
+              <Users className="h-7 w-7 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Pacientes</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Gestiona la información de tus pacientes
+                {patients.length > 0 && (
+                  <span className="font-medium text-foreground/80"> · {patients.length} total</span>
+                )}
+              </p>
+            </div>
           </div>
           <Button
-            className="gradient-primary border-0"
+            className="gradient-primary border-0 shadow-md hover:shadow-lg transition-shadow shrink-0"
             onClick={() => {
               setSelectedPatient(null);
               setNewPatientOpen(true);
@@ -280,39 +289,44 @@ const Patients = () => {
         </div>
 
         {/* Search and filters */}
-        <div className="flex items-center gap-4 animate-slide-up">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-10 bg-card border-border"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              disabled={loading}
-            />
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2" disabled={loading}>
-                <Filter className="h-4 w-4" />
-                {statusFilter ? `Estado: ${statusFilter}` : "Filtros"}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setStatusFilter(null)}>
-                Todos
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusFilter("activo")}>
-                Activos
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusFilter("pendiente")}>
-                Pendientes
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusFilter("inactivo")}>
-                Inactivos
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <Card className="animate-slide-up border-border/80 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  className="pl-10 h-10 rounded-lg bg-muted/30 border-border focus-visible:ring-2 focus-visible:ring-primary/20"
+                  placeholder="Buscar por nombre o email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2 h-10 rounded-lg shrink-0" disabled={loading}>
+                    <Filter className="h-4 w-4" />
+                    {statusFilter ? `Estado: ${statusFilter}` : "Filtros"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[160px]">
+                  <DropdownMenuItem onClick={() => setStatusFilter(null)}>
+                    Todos
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setStatusFilter("activo")}>
+                    Activos
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setStatusFilter("pendiente")}>
+                    Pendientes
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setStatusFilter("inactivo")}>
+                    Inactivos
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Error Alert */}
         {error && (
@@ -334,175 +348,197 @@ const Patients = () => {
 
         {/* Patients grid o Loader */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-            <p className="text-muted-foreground">Cargando pacientes...</p>
-          </div>
+          <LoadingScreen message="Cargando" />
         ) : filteredPatients.length === 0 ? (
-          <div className="text-center py-12 bg-card rounded-xl border border-border">
-            <div className="mx-auto w-16 h-16 mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <Search className="h-8 w-8 text-primary" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">
-              {searchQuery || statusFilter
-                ? "No se encontraron pacientes"
-                : "No hay pacientes registrados"}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {searchQuery || statusFilter
-                ? "Intenta ajustar los filtros de búsqueda"
-                : "Comienza creando tu primer paciente"}
-            </p>
-            {!searchQuery && !statusFilter && (
-              <Button onClick={() => {
-                setSelectedPatient(null);
-                setNewPatientOpen(true);
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Paciente
-              </Button>
-            )}
-          </div>
+          <Card className="border-border/80 shadow-sm overflow-hidden">
+            <div className="h-1 w-full bg-gradient-to-r from-primary/40 to-primary/20" />
+            <CardContent className="text-center py-14 px-6">
+              <div className="mx-auto w-16 h-16 mb-4 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Search className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">
+                {searchQuery || statusFilter
+                  ? "No se encontraron pacientes"
+                  : "No hay pacientes registrados"}
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
+                {searchQuery || statusFilter
+                  ? "Intenta con otro término o quita el filtro de estado."
+                  : "Comienza agregando tu primer paciente para gestionar su nutrición."}
+              </p>
+              {!searchQuery && !statusFilter && (
+                <Button
+                  className="shadow-md"
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    setNewPatientOpen(true);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear Paciente
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {filteredPatients.map((patient, index) => (
-              <div
+              <Card
                 key={patient.id}
-                className="group rounded-xl border border-border bg-card p-5 shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1 animate-slide-up cursor-pointer"
+                className="group overflow-hidden rounded-xl border-border bg-card shadow-sm transition-all duration-300 hover:shadow-lg hover:border-primary/20 cursor-pointer animate-slide-up"
                 style={{ animationDelay: `${index * 50}ms` }}
                 onClick={() => handlePatientClick(patient)}
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-12 w-12 border-2 border-primary/20">
-                      <AvatarImage
-                        src={patient.foto_perfil || ""}
-                        alt={`${patient.nombres} ${patient.apellidos}`}
-                      />
-                      <AvatarFallback className="bg-primary/10 text-primary">
-                        {patient.nombres[0]}{patient.apellidos[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-semibold text-foreground">
-                        {patient.nombres} {patient.apellidos}
-                      </p>
-                      <Badge
-                        variant="outline"
-                        className={statusStyles[patient.status] || statusStyles.activo}
-                      >
-                        {patient.status}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground block mt-1">
-                        {patient.edad_formateada || "Edad no registrada"}
-                      </span>
+                <div className="h-1 w-full bg-gradient-to-r from-primary to-primary/60" />
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-12 w-12 border-2 border-primary/20 ring-2 ring-background">
+                        <AvatarImage
+                          src={patient.foto_perfil || ""}
+                          alt={`${patient.nombres} ${patient.apellidos}`}
+                        />
+                        <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
+                          {patient.nombres[0]}{patient.apellidos[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate">
+                          {patient.nombres} {patient.apellidos}
+                        </p>
+                        <Badge
+                          variant="outline"
+                          className={`mt-1 text-xs capitalize ${statusStyles[patient.status] || statusStyles.activo}`}
+                        >
+                          {patient.status}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground block mt-1">
+                          {patient.edad_formateada || "Edad no registrada"}
+                        </span>
+                      </div>
+                    </div>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-70 group-hover:opacity-100">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuItem onClick={(e) => handlePatientClick(patient)}>
+                            <Search className="mr-2 h-4 w-4" />
+                            Ver detalles
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleEdit(patient)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleSchedule(patient)}>
+                            <Calendar className="mr-2 h-4 w-4" />
+                            Agendar cita
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleViewPlans(patient)}>
+                            <ClipboardList className="mr-2 h-4 w-4" />
+                            Ver planes
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleCreatePlan(patient, e)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Crear plan nutricional
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={(e) => handleDeleteClick(patient)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={(e) => handlePatientClick(patient)}>
-                          <Search className="mr-2 h-4 w-4" />
-                          Ver detalles
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => handleEdit(patient)}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Editar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => handleSchedule(patient)}>
-                          <Calendar className="mr-2 h-4 w-4" />
-                          Agendar cita
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => handleViewPlans(patient)}>
-                          <ClipboardList className="mr-2 h-4 w-4" />
-                          Ver planes
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => handleCreatePlan(patient, e)}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Crear plan nutricional
-                        </DropdownMenuItem>
-                        {/*<DropdownMenuItem onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPatient(patient);
-                          setAssignOpen(true);
-                        }}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Crear y asignar plan
-                        </DropdownMenuItem>*/}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={(e) => handleDeleteClick(patient)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Eliminar
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
 
-                <div className="space-y-3 mb-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Mail className="h-4 w-4 flex-shrink-0" />
-                    <span className="truncate">{patient.email}</span>
+                  <div className="space-y-2.5 mb-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Mail className="h-4 w-4 flex-shrink-0 text-muted-foreground/80" />
+                      <span className="truncate">{patient.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Phone className="h-4 w-4 flex-shrink-0 text-muted-foreground/80" />
+                      <span>{patient.telefono || "No registrado"}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Phone className="h-4 w-4 flex-shrink-0" />
-                    <span>{patient.telefono || "No registrado"}</span>
-                  </div>
-                </div>
 
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Actividad: {patient.nivel_actividad || "N/A"}
+                  <div className="space-y-2 mb-4 p-3 rounded-lg bg-muted/40">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Actividad: {patient.nivel_actividad || "N/A"}
+                      </span>
+                      <span className="font-semibold text-foreground tabular-nums">{patient.progreso}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary/80 animate-progress-fill"
+                        style={{ '--progress-end': `${Math.min(100, patient.progreso)}%` } as React.CSSProperties}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-border/80">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5" />
+                      Próxima cita
                     </span>
-                    <span className="font-medium text-foreground">{patient.progreso}%</span>
+                    <span className="text-sm font-medium text-foreground">
+                      {patient.proxima_cita}
+                    </span>
                   </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full gradient-primary transition-all duration-500"
-                      style={{ width: `${patient.progreso}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-border">
-                  <span className="text-xs text-muted-foreground">Próxima cita:</span>
-                  <span className="text-sm font-medium text-foreground">
-                    {patient.proxima_cita}
-                  </span>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
 
         {/* Estadísticas rápidas */}
         {!loading && patients.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-3 animate-fade-in">
-            <div className="bg-card rounded-lg p-4 border border-border">
-              <div className="text-sm text-muted-foreground mb-1">Total Pacientes</div>
-              <div className="text-2xl font-bold">{patients.length}</div>
-            </div>
-            <div className="bg-card rounded-lg p-4 border border-border">
-              <div className="text-sm text-muted-foreground mb-1">Pacientes Activos</div>
-              <div className="text-2xl font-bold">
-                {patients.filter(p => p.status === "activo").length}
-              </div>
-            </div>
-            <div className="bg-card rounded-lg p-4 border border-border">
-              <div className="text-sm text-muted-foreground mb-1">Pendientes</div>
-              <div className="text-2xl font-bold">
-                {patients.filter(p => p.status === "pendiente").length}
-              </div>
-            </div>
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 animate-fade-in">
+            <Card className="border-border/80 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-primary/10">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Total Pacientes</p>
+                  <p className="text-2xl font-bold tracking-tight">{patients.length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-emerald-500/10">
+                  <UserCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Activos</p>
+                  <p className="text-2xl font-bold tracking-tight">
+                    {patients.filter(p => p.status === "activo").length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/80 shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-amber-500/10">
+                  <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Pendientes</p>
+                  <p className="text-2xl font-bold tracking-tight">
+                    {patients.filter(p => p.status === "pendiente").length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>

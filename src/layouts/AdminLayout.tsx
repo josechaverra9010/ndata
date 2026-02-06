@@ -35,7 +35,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   const checkUpcomingAppointments = async () => {
     try {
-      const response = await axios.get(`${API_URL}/dashboard/upcoming-appointments`);
+      const token = localStorage.getItem("userToken");
+      const response = await axios.get(`${API_URL}/dashboard/upcoming-appointments`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const appointments: UpcomingAppointment[] = response.data;
 
       const now = new Date();

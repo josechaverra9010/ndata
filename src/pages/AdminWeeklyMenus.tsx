@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { AdminLayout } from "@/layouts/AdminLayout";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
-    Search, Plus, Calendar, ChefHat, Clock, Flame, Users,
+    Search, Plus, Calendar, ChefHat, Clock, Flame, LayoutGrid,
     Edit, Trash2, Copy, MoreVertical, Apple, Coffee, Sandwich,
     Moon, Salad, Filter, Loader2, X, Check
 } from "lucide-react";
@@ -561,12 +562,11 @@ const AdminWeeklyMenus = () => {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-                <div className="text-center">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-                    <p className="text-muted-foreground">Cargando menús semanales...</p>
+            <AdminLayout>
+                <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+                    <LoadingScreen message="Cargando" />
                 </div>
-            </div>
+            </AdminLayout>
         );
     }
 
@@ -654,17 +654,6 @@ const AdminWeeklyMenus = () => {
                     </Card>
                     <Card>
                         <CardContent className="p-4 flex items-center gap-3">
-                            <div className="p-2 bg-green-500/10 rounded-lg">
-                                <Users className="h-5 w-5 text-green-500" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold">{stats.total_assigned_patients}</p>
-                                <p className="text-xs text-muted-foreground">Pacientes asignados</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="p-4 flex items-center gap-3">
                             <div className="p-2 bg-orange-500/10 rounded-lg">
                                 <Flame className="h-5 w-5 text-orange-500" />
                             </div>
@@ -682,6 +671,17 @@ const AdminWeeklyMenus = () => {
                             <div>
                                 <p className="text-2xl font-bold">{stats.total_recipes_used}</p>
                                 <p className="text-xs text-muted-foreground">Recetas utilizadas</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4 flex items-center gap-3">
+                            <div className="p-2 bg-violet-500/10 rounded-lg">
+                                <LayoutGrid className="h-5 w-5 text-violet-500" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-bold">4</p>
+                                <p className="text-xs text-muted-foreground">Semanas por menú</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -736,21 +736,16 @@ const AdminWeeklyMenus = () => {
 
                                 <Badge variant="outline" className="mb-4">{menu.category}</Badge>
 
-                                <div className="grid grid-cols-3 gap-3 mb-4">
+                                <div className="grid grid-cols-2 gap-3 mb-4">
                                     <div className="text-center p-2 bg-muted/50 rounded-lg">
                                         <Flame className="h-4 w-4 mx-auto mb-1 text-orange-500" />
                                         <p className="text-sm font-semibold">{menu.total_calories}</p>
                                         <p className="text-xs text-muted-foreground">kcal/día</p>
                                     </div>
                                     <div className="text-center p-2 bg-muted/50 rounded-lg">
-                                        <Users className="h-4 w-4 mx-auto mb-1 text-primary" />
-                                        <p className="text-sm font-semibold">{menu.assigned_patients}</p>
-                                        <p className="text-xs text-muted-foreground">pacientes</p>
-                                    </div>
-                                    <div className="text-center p-2 bg-muted/50 rounded-lg">
                                         <Clock className="h-4 w-4 mx-auto mb-1 text-blue-500" />
-                                        <p className="text-sm font-semibold">7</p>
-                                        <p className="text-xs text-muted-foreground">días</p>
+                                        <p className="text-sm font-semibold">4</p>
+                                        <p className="text-xs text-muted-foreground">semanas</p>
                                     </div>
                                 </div>
 
@@ -1081,9 +1076,9 @@ const AdminWeeklyMenus = () => {
                                         </Card>
                                         <Card>
                                             <CardContent className="p-4 text-center">
-                                                <Users className="h-6 w-6 mx-auto mb-2 text-green-500" />
-                                                <p className="text-2xl font-bold">{selectedMenu.assigned_patients}</p>
-                                                <p className="text-xs text-muted-foreground">pacientes asignados</p>
+                                                <LayoutGrid className="h-6 w-6 mx-auto mb-2 text-violet-500" />
+                                                <p className="text-2xl font-bold">4</p>
+                                                <p className="text-xs text-muted-foreground">semanas</p>
                                             </CardContent>
                                         </Card>
                                     </div>

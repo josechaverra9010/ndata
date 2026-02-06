@@ -11,13 +11,14 @@ import {
   CreditCard,
   Settings,
   LogOut,
-  Shield
+  ChefHat,
 } from "lucide-react";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/superadmin" },
   { icon: Users, label: "Usuarios", path: "/superadmin/users" },
   { icon: UserCog, label: "Nutricionistas", path: "/superadmin/nutritionists" },
+  { icon: ChefHat, label: "Biblioteca de Recetas", path: "/superadmin/recipes" },
   { icon: Building2, label: "Organizaciones", path: "/superadmin/organizations" },
   { icon: CreditCard, label: "Facturación", path: "/superadmin/billing" },
 ];

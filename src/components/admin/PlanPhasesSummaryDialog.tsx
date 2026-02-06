@@ -22,7 +22,7 @@ import {
   AlertCircle,
   Loader2
 } from "lucide-react";
-import { FOOD_NUTRIENTS } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS } from "@/lib/foodNutrients";
 
 interface PlanPhasesSummaryDialogProps {
   plan: any; // Using any for flexibility with the plan structure
@@ -30,7 +30,7 @@ interface PlanPhasesSummaryDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const GRUPOS_ALIMENTOS = Object.keys(FOOD_NUTRIENTS);
+const GRUPOS_ALIMENTOS = EVANUT_GRUPOS_ALIMENTOS;
 
 export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhasesSummaryDialogProps) {
   const [fullPlan, setFullPlan] = useState<any>(null);
