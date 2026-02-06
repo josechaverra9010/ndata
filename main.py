@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File
-=======
-from fastapi import FastAPI, HTTPException, Depends, status, Form, Body
->>>>>>> 785c2f71b1c6478b477c099bf178eaef88f0b759
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -13,7 +9,6 @@ from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import inspect, text
 from passlib.context import CryptContext
-<<<<<<< HEAD
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, date
@@ -22,21 +17,13 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from storage_utils import storage_manager
 from jose import JWTError, jwt
-=======
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
-from typing import Optional, List
-from datetime import datetime, timedelta
->>>>>>> 785c2f71b1c6478b477c099bf178eaef88f0b759
 import jwt
 import os
 import json
 import smtplib
-<<<<<<< HEAD
-=======
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
->>>>>>> 785c2f71b1c6478b477c099bf178eaef88f0b759
 import requests
 import copy
 import html
