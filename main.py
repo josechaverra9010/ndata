@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File
+=======
+from fastapi import FastAPI, HTTPException, Depends, status, Form, Body
+>>>>>>> 785c2f71b1c6478b477c099bf178eaef88f0b759
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,6 +13,7 @@ from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import inspect, text
 from passlib.context import CryptContext
+<<<<<<< HEAD
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, date
@@ -17,10 +22,21 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from storage_utils import storage_manager
 from jose import JWTError, jwt
+=======
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
+from typing import Optional, List
+from datetime import datetime, timedelta
+>>>>>>> 785c2f71b1c6478b477c099bf178eaef88f0b759
 import jwt
 import os
 import json
 import smtplib
+<<<<<<< HEAD
+=======
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from urllib.parse import quote
+>>>>>>> 785c2f71b1c6478b477c099bf178eaef88f0b759
 import requests
 import copy
 import html
@@ -65,6 +81,11 @@ def ensure_schema_migrations():
         if "nutritionist_id" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN nutritionist_id INTEGER NULL"))
+    if "meal_plans" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("meal_plans")}
+        if "tipo" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE meal_plans ADD COLUMN tipo VARCHAR(50) DEFAULT 'adulto'"))
 
 ensure_schema_migrations()
 
@@ -273,82 +294,102 @@ def validate_password_strength(password: str) -> bool:
 
 
 # ==================== FUNCIÓN DE ENVÍO DE EMAIL ====================
+# Colores y estilos alineados con la identidad NutriData (index.css / tailwind)
+# Primary: verde #7a9b76, fondo crema #faf5f0, texto #352d26, acento #c9a96a
+
+def _email_styles():
+    """Estilos base de los correos (identidad NutriData)."""
+    return """
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; line-height: 1.6; color: #352d26; background: #f0ebe5; }
+        .wrapper { max-width: 600px; margin: 0 auto; padding: 24px 16px; }
+        .card { background: #faf5f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(53, 45, 38, 0.08); }
+        .brand { background: linear-gradient(135deg, #7a9b76 0%, #85a881 100%); padding: 28px 24px; text-align: center; }
+        .brand img { max-height: 44px; width: auto; display: inline-block; }
+        .brand-title { color: #ffffff; font-size: 22px; font-weight: 700; margin: 12px 0 0 0; letter-spacing: -0.02em; }
+        .content { padding: 32px 28px; color: #352d26; }
+        .content p { margin: 0 0 16px 0; font-size: 15px; }
+        .content .lead { font-size: 16px; color: #352d26; }
+        .btn { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #7a9b76 0%, #85a881 100%); color: #ffffff !important; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px; margin: 8px 0 20px 0; box-shadow: 0 2px 8px rgba(122, 155, 118, 0.35); }
+        .btn:hover { opacity: 0.95; }
+        .muted { color: #6b6159; font-size: 14px; }
+        .footer { text-align: center; padding: 20px 24px; color: #6b6159; font-size: 12px; border-top: 1px solid #ddd5cc; background: #faf5f0; }
+        .link-fallback { word-break: break-all; background: #ede8e3; padding: 12px 14px; border-radius: 8px; font-size: 13px; color: #6b6159; margin: 12px 0; }
+        .highlight { background: rgba(122, 155, 118, 0.12); padding: 2px 6px; border-radius: 4px; }
+    """
+
+
+def _email_layout(inner_body: str, title: str, frontend_url: str):
+    """Estructura HTML común: logo, marca, contenido, pie."""
+    logo_url = os.getenv("EMAIL_LOGO_URL", "https://utridata.com/logo-light.png")
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>{_email_styles()}</style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="card">
+            <div class="brand">
+                <img src="{logo_url}" alt="NutriData" width="160" height="44" />
+                <p class="brand-title">NutriData</p>
+            </div>
+            <div class="content">
+                {inner_body}
+            </div>
+            <div class="footer">
+                <p style="margin:0;">Este es un correo automático. No respondas a este mensaje.</p>
+                <p style="margin:8px 0 0 0;"><a href="{frontend_url}" style="color:#7a9b76;text-decoration:none;">Ir a la plataforma</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+
 
 def send_reset_email(to_email: str, reset_token: str, user_name: str):
     """
-    Enviar email de recuperación de contraseña
+    Enviar email de recuperación de contraseña (estilo NutriData).
     """
     try:
         smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
         sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
         sender_password = os.getenv("SMTP_PASSWORD", "")
-        
-        # URL del frontend (ajustar según entorno)
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        reset_link = f"{frontend_url}/reset-password?token={reset_token}"
-        
-        # Crear mensaje
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080").rstrip("/")
+        reset_link = f"{frontend_url}/reset-password?token={quote(reset_token, safe='')}"
+
         message = MIMEMultipart("alternative")
         message["Subject"] = "Recuperación de Contraseña - NutriData"
         message["From"] = f"NutriData <{sender_email}>"
         message["To"] = to_email
-        
-        # Contenido HTML del email
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                .button {{ display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🔐 Recuperación de Contraseña</h1>
-                </div>
-                <div class="content">
-                    <p>Hola <strong>{user_name}</strong>,</p>
-                    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en NutriData.</p>
-                    <p>Haz clic en el siguiente botón para crear una nueva contraseña:</p>
-                    <p style="text-align: center;">
-                        <a href="{reset_link}" class="button">Restablecer Contraseña</a>
-                    </p>
-                    <p>O copia y pega este enlace en tu navegador:</p>
-                    <p style="word-break: break-all; background: #e9ecef; padding: 10px; border-radius: 5px;">
-                        {reset_link}
-                    </p>
-                    <p><strong>Este enlace expirará en 1 hora.</strong></p>
-                    <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
-                    <p>Saludos,<br>El equipo de NutriData</p>
-                </div>
-                <div class="footer">
-                    <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        
-        # Adjuntar HTML
+
+        inner = f"""
+                <p class="lead">Hola <strong>{user_name}</strong>,</p>
+                <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en NutriData.</p>
+                <p>Haz clic en el botón para crear una nueva contraseña:</p>
+                <p style="text-align: center;">
+                    <a href="{reset_link}" class="btn">Restablecer contraseña</a>
+                </p>
+                <p class="muted">O copia y pega este enlace en tu navegador:</p>
+                <p class="link-fallback">{reset_link}</p>
+                <p><strong>Este enlace expirará en 1 hora.</strong></p>
+                <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+                <p>Saludos,<br><strong>El equipo de NutriData</strong></p>
+                """
+        html_content = _email_layout(inner, "Recuperación de Contraseña", frontend_url)
         html_part = MIMEText(html_content, "html")
         message.attach(html_part)
-        
-        # Enviar email
+
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, to_email, message.as_string())
-        
+
         print(f"✅ Email de recuperación enviado a: {to_email}")
         return True
-        
     except Exception as e:
         print(f"❌ Error al enviar email: {str(e)}")
         return False
@@ -356,7 +397,7 @@ def send_reset_email(to_email: str, reset_token: str, user_name: str):
 
 def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str, start_date: str):
     """
-    Enviar email al paciente cuando se le asigna un plan nutricional.
+    Enviar email al paciente cuando se le asigna un plan nutricional (estilo NutriData).
     """
     try:
         smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -364,48 +405,24 @@ def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str,
         sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
         sender_password = os.getenv("SMTP_PASSWORD", "")
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        plan_link = f"{frontend_url}/patient/my-plan"
+        plan_link = f"{frontend_url.rstrip('/')}/patient/my-plan"
 
         message = MIMEMultipart("alternative")
         message["Subject"] = "Te han asignado un plan nutricional - NutriData"
         message["From"] = f"NutriData <{sender_email}>"
         message["To"] = to_email
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                .button {{ display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🍏 Plan nutricional asignado</h1>
-                </div>
-                <div class="content">
-                    <p>Hola <strong>{patient_name}</strong>,</p>
-                    <p>Tu nutricionista te ha asignado un nuevo plan nutricional: <strong>{plan_name}</strong>.</p>
-                    <p><strong>Fecha de inicio:</strong> {start_date}</p>
-                    <p>Puedes revisar tu plan y menú en la aplicación:</p>
-                    <p style="text-align: center;">
-                        <a href="{plan_link}" class="button">Ver mi plan</a>
-                    </p>
-                    <p>Saludos,<br>El equipo de NutriData</p>
-                </div>
-                <div class="footer">
-                    <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        inner = f"""
+                <p class="lead">Hola <strong>{patient_name}</strong>,</p>
+                <p>Tu nutricionista te ha asignado un nuevo plan nutricional: <span class="highlight"><strong>{plan_name}</strong></span>.</p>
+                <p><strong>Fecha de inicio:</strong> {start_date}</p>
+                <p>Revisa tu plan y menú en la aplicación:</p>
+                <p style="text-align: center;">
+                    <a href="{plan_link}" class="btn">Ver mi plan</a>
+                </p>
+                <p>Saludos,<br><strong>El equipo de NutriData</strong></p>
+                """
+        html_content = _email_layout(inner, "Plan nutricional asignado", frontend_url)
         html_part = MIMEText(html_content, "html")
         message.attach(html_part)
 
@@ -418,6 +435,51 @@ def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str,
         return True
     except Exception as e:
         print(f"❌ Error al enviar email de asignación: {str(e)}")
+        return False
+
+
+def send_nutritionist_invite_email(to_email: str, name: str, registration_link: str):
+    """
+    Enviar email al nutricionista con el enlace para completar su registro (estilo NutriData).
+    """
+    try:
+        smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
+        sender_password = os.getenv("SMTP_PASSWORD", "")
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+
+        message = MIMEMultipart("alternative")
+        message["Subject"] = "Completa tu registro en NutriData"
+        message["From"] = f"NutriData <{sender_email}>"
+        message["To"] = to_email
+
+        inner = f"""
+                <p class="lead">Hola <strong>{name}</strong>,</p>
+                <p>Has sido agregado/a como nutricionista en la plataforma NutriData.</p>
+                <p>Para activar tu cuenta, haz clic en el botón y elige una contraseña:</p>
+                <p style="text-align: center;">
+                    <a href="{registration_link}" class="btn">Completar registro</a>
+                </p>
+                <p class="muted">O copia y pega este enlace en tu navegador:</p>
+                <p class="link-fallback">{registration_link}</p>
+                <p><strong>Este enlace es válido por 7 días.</strong></p>
+                <p>Después podrás iniciar sesión con tu correo y la contraseña que elijas.</p>
+                <p>Saludos,<br><strong>El equipo de NutriData</strong></p>
+                """
+        html_content = _email_layout(inner, "Registro de nutricionista", frontend_url)
+        html_part = MIMEText(html_content, "html")
+        message.attach(html_part)
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, to_email, message.as_string())
+
+        print(f"✅ Email de invitación de nutricionista enviado a: {to_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Error al enviar email de invitación: {str(e)}")
         return False
 
 
@@ -560,6 +622,8 @@ class RecipeDB(Base):
     tags = Column(JSON, default=[])
     image = Column(String(255), nullable=True)
     isFavorite = Column(Integer, default=0)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_public = Column(Integer, default=0)  # 0=privada, 1=pública. Solo superadmin puede cambiar.
 
 # NUEVOS MODELOS PARA MEAL PLANS
 
@@ -572,6 +636,8 @@ class MealPlanDB(Base):
     duration = Column(String(50))
     category = Column(String(50))
     color = Column(String(20), default="primary")
+    # Tipo de plan: adulto, pediatria, gestante, gestante_adolescente, hospitalizado, deportista
+    tipo = Column(String(50), default="adulto")
     
     protein_target = Column(Integer)
     carbs_target = Column(Integer)
@@ -644,6 +710,29 @@ class DailyMealAssignmentDB(Base):
 
 # Actualizar tablas
 Base.metadata.create_all(bind=engine)
+
+# Migración: añadir created_by_id a recipes y weekly_menus_complete si no existe
+def _add_created_by_columns():
+    from sqlalchemy import text
+    for table, col in [("recipes", "created_by_id"), ("weekly_menus_complete", "created_by_id")]:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} INTEGER"))
+                conn.commit()
+        except Exception:
+            pass  # Columna ya existe
+
+def _add_recipe_is_public():
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE recipes ADD COLUMN is_public INTEGER DEFAULT 0"))
+            conn.commit()
+    except Exception:
+        pass  # Columna ya existe
+
+_add_created_by_columns()
+_add_recipe_is_public()
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -783,20 +872,35 @@ class NoteCreate(BaseModel):
 
 class RecipeBase(BaseModel):
     name: str
-    description: Optional[str]
-    category: str
-    prepTime: int
-    cookTime: int
-    servings: int
-    calories: int
-    protein: int
-    carbs: int
-    fat: int
-    ingredients: List[str]
-    instructions: List[str]
-    tags: List[str]
-    image: Optional[str]
+    description: Optional[str] = None
+    category: Optional[str] = None
+    prepTime: int = 0
+    cookTime: int = 0
+    servings: int = 1
+    calories: int = 0
+    protein: int = 0
+    carbs: int = 0
+    fat: int = 0
+    ingredients: List[str] = []
+    instructions: List[str] = []
+    tags: List[str] = []
+    image: Optional[str] = None
     isFavorite: bool = False
+
+    @field_validator("ingredients", "instructions", "tags", mode="before")
+    @classmethod
+    def ensure_list(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, (list, tuple)):
+            return list(v)
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return list(parsed) if isinstance(parsed, (list, tuple)) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return []
 
 class RecipeCreate(RecipeBase):
     pass
@@ -836,6 +940,7 @@ class MealPlanCreate(BaseModel):
     duration: str
     category: str
     color: str = "primary"
+    tipo: str = "adulto"  # adulto, pediatria, gestante, gestante_adolescente, hospitalizado, deportista
     protein_target: Optional[int] = 0
     carbs_target: Optional[int] = 0
     fat_target: Optional[int] = 0
@@ -853,6 +958,7 @@ class MealPlanResponse(BaseModel):
     duration: str
     category: str
     color: str
+    tipo: Optional[str] = "adulto"
     protein_target: Optional[int]
     carbs_target: Optional[int]
     fat_target: Optional[int]
@@ -991,6 +1097,7 @@ class AppointmentStatusUpdate(BaseModel):
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
 ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 class Token(BaseModel):
     access_token: str
@@ -1034,6 +1141,20 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     return user
+
+def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optional), db: Session = Depends(get_db)):
+    """Devuelve el usuario si hay token válido; si no, None (no lanza 401)."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            return None
+        user = db.query(UserDB).filter(UserDB.email == email).first()
+        return user
+    except JWTError:
+        return None
 
 def require_admin_or_superadmin(current_user: UserDB = Depends(get_current_user)):
     if current_user.role not in ["admin", "superadmin"]:
@@ -1324,11 +1445,15 @@ class PatientProgressDetails(BaseModel):
     weekly_adherence: int
     trend: str
     last_update: str
+    progress_percentage: int = 0
     edad_formateada: Optional[str] = None
     metrics: List[dict]
+    metricsHistory: Optional[List[dict]] = None
     achievements: List[str]
+    achievementsList: Optional[List[dict]] = None
     notes: List[str]
-    
+    notesList: Optional[List[dict]] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 class AdminProfileDB(Base):
@@ -1563,6 +1688,7 @@ class WeeklyMenuCompleteDB(Base):
     is_active = Column(Integer, default=1)
     created_at = Column(String(50))
     updated_at = Column(String(50))
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 # ==================== SUPPORT TICKET MODEL ====================
 
@@ -2321,8 +2447,8 @@ def forgot_password(data: ForgotPasswordSchema, db: Session = Depends(get_db)):
             print(f"{'='*60}\n")
         else:
             # Si falla el envío, imprimir el link en consola como fallback
-            frontend_url = os.getenv("FRONTEND_URL", "/")
-            reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080").rstrip("/")
+            reset_link = f"{frontend_url}/reset-password?token={quote(reset_token, safe='')}"
             print(f"\n{'='*60}")
             print(f"⚠️  ERROR AL ENVIAR EMAIL - LINK DE RESPALDO")
             print(f"{'='*60}")
@@ -2379,175 +2505,117 @@ def reset_password(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Token inválido")
 
 
-# ==================== DASHBOARD ENDPOINTS ====================
-
-@app.get("/api/dashboard/stats")
-def get_dashboard_stats(db: Session = Depends(get_db)):
-    # 1. Total Pacientes
-    total_patients = db.query(UserDB).filter(UserDB.role == "patient").count()
-    
-    # 2. Total Planes
-    total_plans = db.query(MealPlanDB).count()
-    
-    # 3. Citas de la semana (simulado con total appointments por ahora)
-    total_appointments = db.query(AppointmentDB).count()
-    
-    # 4. Progreso promedio
-    # Calcular promedio de todos los pacientes
-    patients = db.query(UserDB).filter(UserDB.role == "patient").all()
-    total_progreso = 0
-    count_progreso = 0
-    
-    for p in patients:
-        prog = calcular_progreso(p.peso_actual, p.peso_objetivo, p.peso_inicial)
-        total_progreso += prog
-        count_progreso += 1
-        
-    avg_progress = int(total_progreso / count_progreso) if count_progreso > 0 else 0
-    
-    return {
-        "patients": {
-            "total": total_patients,
-            "change": "+2% este mes", 
-            "change_type": "positive"
-        },
-        "plans": {
-            "total": total_plans,
-            "change": "+5% este mes",
-            "change_type": "positive"
-        },
-        "appointments": {
-            "total": total_appointments,
-            "change": f"{total_appointments} programadas",
-            "change_type": "neutral"
-        },
-        "progress": {
-            "average": avg_progress,
-            "change": "+1% vs mes anterior",
-            "change_type": "positive"
+@app.get("/api/auth/validate-invite")
+def validate_invite_token(token: str, db: Session = Depends(get_db)):
+    """
+    Validar token de invitación de nutricionista. Devuelve nombre y email para mostrar en el formulario de registro.
+    No requiere autenticación.
+    """
+    if not token or not token.strip():
+        raise HTTPException(status_code=400, detail="Token requerido")
+    try:
+        payload = jwt.decode(token.strip(), SECRET_KEY, algorithms=["HS256"])
+        if payload.get("type") != "nutritionist_invite":
+            raise HTTPException(status_code=400, detail="Token inválido")
+        user_id = payload.get("user_id")
+        user = db.query(UserDB).filter(UserDB.id == user_id, UserDB.role == "admin").first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Invitación no encontrada")
+        if user.status != "pendiente":
+            raise HTTPException(status_code=400, detail="Esta invitación ya fue utilizada")
+        return {
+            "valid": True,
+            "email": user.email,
+            "name": f"{user.nombres or ''} {user.apellidos or ''}".strip() or user.email
         }
-    }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="El enlace ha expirado. Pide un nuevo enlace al administrador.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Enlace inválido")
 
-@app.get("/api/dashboard/recent-patients")
-def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
-    # Ordenar por id descendente como proxy de "reciente" ya que created_at es string
-    # Lo ideal sería parsear created_at o usar un campo datetime real
-    patients = db.query(UserDB).filter(UserDB.role == "patient")\
-        .order_by(UserDB.id.desc())\
-        .limit(limit)\
-        .all()
-        
-    results = []
-    for p in patients:
-        # Buscar plan activo
-        active_plan = db.query(PatientMealPlanDB).filter(
-            PatientMealPlanDB.patient_id == p.id,
-            PatientMealPlanDB.status == "active"
-        ).first()
-        
-        plan_name = "Sin plan"
-        if active_plan:
-            # Cargar nombre del plan
-            meal_plan = db.query(MealPlanDB).filter(MealPlanDB.id == active_plan.meal_plan_id).first()
-            if meal_plan:
-                plan_name = meal_plan.name
-        
-        results.append({
-            "id": p.id,
-            "name": f"{p.nombres} {p.apellidos}",
-            "avatar": get_avatar_url(p.foto_perfil),
-            "email": p.email,
-            "plan": plan_name,
-            "status": p.status,
-            "joined": str(p.created_at).split(" ")[0] if p.created_at else "N/A",
-            "registered_at": p.created_at
-        })
-    
-    return results
 
-@app.get("/api/dashboard/upcoming-appointments")
-def get_upcoming_appointments(limit: int = 5, db: Session = Depends(get_db)):
-    # Obtener citas futuras
-    today = datetime.now().date()
-    appointments = db.query(AppointmentDB)\
-        .filter(AppointmentDB.date >= today)\
-        .order_by(AppointmentDB.date.asc(), AppointmentDB.time.asc())\
-        .limit(limit)\
-        .all()
-        
-    results = []
-    for appt in appointments:
-        patient = db.query(UserDB).filter(UserDB.id == appt.patient_id).first()
-        avatar = get_avatar_url(patient.foto_perfil) if patient else None
-        
-        # Formatear fecha para label (ej: "Hoy", "Mañana" o "12 Oct")
-        date_obj = appt.date # es date object
-        diff = (date_obj - today).days
-        
-        if diff == 0:
-            date_label = "Hoy"
-        elif diff == 1:
-            date_label = "Mañana"
-        else:
-            date_label = date_obj.strftime("%d %b")
-            
-        results.append({
-            "id": appt.id,
-            "patient_id": appt.patient_id,
-            "patient_name": appt.patient_name,
-            "patient_avatar": avatar,
-            "date": str(appt.date),
-            "date_label": date_label,
-            "time": appt.time,
-            "duration": appt.duration,
-            "type": appt.type,
-            "status": appt.status,
-            "notes": appt.notes,
-            "meeting_link": appt.meeting_link
-        })
-        
-    return results
+@app.post("/api/auth/complete-invite")
+def complete_invite_registration(
+    body: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Completar registro de nutricionista invitado: establecer contraseña y activar cuenta.
+    No requiere autenticación.
+    """
+    token = body.get("token")
+    password = body.get("password")
+    if not token or not password:
+        raise HTTPException(status_code=400, detail="Token y contraseña son requeridos")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+    try:
+        payload = jwt.decode(token.strip(), SECRET_KEY, algorithms=["HS256"])
+        if payload.get("type") != "nutritionist_invite":
+            raise HTTPException(status_code=400, detail="Token inválido")
+        user_id = payload.get("user_id")
+        user = db.query(UserDB).filter(UserDB.id == user_id, UserDB.role == "admin").first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        if user.status != "pendiente":
+            raise HTTPException(status_code=400, detail="Esta invitación ya fue utilizada")
+        user.password = pwd_context.hash(password)
+        user.status = "activo"
+        db.commit()
+        return {"success": True, "message": "Cuenta activada. Ya puedes iniciar sesión."}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="El enlace ha expirado. Pide un nuevo enlace al administrador.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Enlace inválido")
+
+
+# ==================== DASHBOARD ENDPOINTS ====================
+# Nota: stats, recent-patients, upcoming-appointments están definidos más abajo
+# con get_current_user para filtrar por nutricionista (solo sus pacientes).
 
 @app.get("/api/dashboard/chart-data")
-def get_dashboard_chart_data(db: Session = Depends(get_db)):
-    # Generar datos para los últimos 6 meses dinámicamente
-    
-    # 1. Definir rango de fechas (últimos 6 meses hasta hoy)
+def get_dashboard_chart_data(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Datos para el gráfico de actividad. Si es admin, solo consultas y asignaciones de sus pacientes."""
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=180) # Aproximadamente 6 meses
+    start_date = end_date - timedelta(days=180)
     
-    # 2. Inicializar estructura de datos para los últimos 6 meses
+    my_patient_ids = []
+    if current_user.role == "admin":
+        my_patient_ids = [r.id for r in db.query(UserDB.id).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == current_user.id
+        ).all()]
+    
     chart_data = []
     current_month = start_date
     while current_month <= end_date:
         key = current_month.strftime("%Y-%m")
-        month_name = current_month.strftime("%b").capitalize() # Ene, Feb, etc. (depende de locale, pero ok)
-        
-        # Mapeo manual para asegurar nombres en español si locale no está configurado
         meses_es = {
             "Jan": "Ene", "Feb": "Feb", "Mar": "Mar", "Apr": "Abr", "May": "May", "Jun": "Jun",
             "Jul": "Jul", "Aug": "Ago", "Sep": "Sep", "Oct": "Oct", "Nov": "Nov", "Dec": "Dic"
         }
         en_month = current_month.strftime("%b")
         es_month = meses_es.get(en_month, en_month)
-        
-        chart_data.append({
-            "key": key,
-            "name": es_month,
-            "consultas": 0,
-            "planes": 0
-        })
-        # Avanzar al siguiente mes
-        # Truco: sumar 32 días y volver al día 1
+        chart_data.append({"key": key, "name": es_month, "consultas": 0, "planes": 0})
         next_month = current_month + timedelta(days=32)
         current_month = next_month.replace(day=1)
     
-    # 3. Consultar y agregar Citas (Appointments)
-    # AppointmentDB.date es Date
-    appointments = db.query(AppointmentDB).filter(
+    # Citas: solo de pacientes del nutricionista si es admin
+    q_app = db.query(AppointmentDB).filter(
         AppointmentDB.date >= start_date.date(),
         AppointmentDB.date <= end_date.date()
-    ).all()
+    )
+    if current_user.role == "admin":
+        if not my_patient_ids:
+            appointments = []
+        else:
+            q_app = q_app.filter(AppointmentDB.patient_id.in_(my_patient_ids))
+            appointments = q_app.all()
+    else:
+        appointments = q_app.all()
     
     for app in appointments:
         app_key = app.date.strftime("%Y-%m")
@@ -2555,37 +2623,47 @@ def get_dashboard_chart_data(db: Session = Depends(get_db)):
             if item["key"] == app_key:
                 item["consultas"] += 1
                 break
-                
-    # 4. Consultar y agregar Planes (MealPlans)
-    # MealPlanDB.created_at es String "YYYY-MM-DD HH:MM:SS"
-    # Necesitamos filtrar en python o intentar casting. Por seguridad, traemos todo (asumiendo no son millones) 
-    # o filtramos crudamente por string si el formato es consistente.
-    # El formato es "%Y-%m-%d %H:%M:%S" según UserDB defaults, asumimos igual para MealPlanDB.
-    all_plans = db.query(MealPlanDB).all()
     
-    for plan in all_plans:
-        if plan.created_at:
-            try:
-                # Parsear string fecha
-                # Puede ser solo fecha o fecha hora
-                if " " in plan.created_at:
-                    plan_date = datetime.strptime(plan.created_at, "%Y-%m-%d %H:%M:%S")
-                else:
-                    plan_date = datetime.strptime(plan.created_at, "%Y-%m-%d")
-                
-                if start_date <= plan_date <= end_date:
-                    plan_key = plan_date.strftime("%Y-%m")
-                    for item in chart_data:
-                        if item["key"] == plan_key:
-                            item["planes"] += 1
-                            break
-            except ValueError:
-                continue # Ignorar fechas mal formadas
+    # Planes: si es admin, contar asignaciones a sus pacientes (PatientMealPlanDB); si no, planes creados
+    if current_user.role == "admin" and my_patient_ids:
+        assignments = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.patient_id.in_(my_patient_ids)
+        ).all()
+        for a in assignments:
+            dt = None
+            if getattr(a, "assigned_date", None):
+                try:
+                    dt = datetime.strptime(str(a.assigned_date)[:10], "%Y-%m-%d")
+                except ValueError:
+                    pass
+            if not dt and getattr(a, "start_date", None):
+                try:
+                    dt = datetime.strptime(str(a.start_date)[:10], "%Y-%m-%d")
+                except ValueError:
+                    pass
+            if dt and start_date <= dt <= end_date:
+                plan_key = dt.strftime("%Y-%m")
+                for item in chart_data:
+                    if item["key"] == plan_key:
+                        item["planes"] += 1
+                        break
+    else:
+        all_plans = db.query(MealPlanDB).all()
+        for plan in all_plans:
+            if plan.created_at:
+                try:
+                    plan_date = datetime.strptime(plan.created_at[:10], "%Y-%m-%d") if len(plan.created_at or "") >= 10 else None
+                    if plan_date and start_date <= plan_date <= end_date:
+                        plan_key = plan_date.strftime("%Y-%m")
+                        for item in chart_data:
+                            if item["key"] == plan_key:
+                                item["planes"] += 1
+                                break
+                except (ValueError, TypeError):
+                    continue
 
-    # Limpiar keys auxiliares
     for item in chart_data:
         del item["key"]
-        
     return chart_data
 
 
@@ -2637,17 +2715,156 @@ def update_profile(data: ProfileUpdateSchema, db: Session = Depends(get_db)):
 
 # ==================== ENDPOINTS DE RECETAS ====================
 
-@app.get("/api/recipes", response_model=List[RecipeResponse])
-def get_recipes(db: Session = Depends(get_db)):
-    recipes = db.query(RecipeDB).all()
-    return [RecipeResponse.from_db(recipe) for recipe in recipes]
+def _recipe_to_response(recipe: RecipeDB) -> dict:
+    """Convierte RecipeDB a dict asegurando ingredients e instructions como listas de strings."""
+    def item_to_str(item, text_keys=None):
+        """Convierte un item (string, dict, etc.) a string. text_keys para ingredientes/instrucciones."""
+        if item is None:
+            return ""
+        if isinstance(item, str):
+            return item.strip()
+        if isinstance(item, (int, float, bool)):
+            return str(item)
+        if isinstance(item, dict):
+            # Caso especial: ingredientes con nombre y porción (ej. {"name": "Arroz", "portion": "50g"})
+            name_val = item.get("name")
+            portion_val = item.get("portion")
+            if name_val is not None and portion_val:
+                combined = f"{name_val}: {portion_val}".strip()
+                if combined:
+                    return combined
 
-@app.get("/api/recipes/{recipe_id}", response_model=RecipeResponse)
-def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
+            keys = text_keys or ["ingredient", "Ingredient", "name", "text", "title", "item", "step", "Step", "instruction", "Instruction"]
+            for k in keys:
+                if k in item and item[k] is not None:
+                    s = str(item[k]).strip()
+                    if s:
+                        return s
+            return ""
+        return str(item).strip()
+
+    def to_list(val, text_keys=None):
+        if val is None:
+            return []
+        if isinstance(val, (list, tuple)):
+            out = []
+            for item in val:
+                s = item_to_str(item, text_keys)
+                if s:
+                    # Si el string tiene varias líneas o comas, expandir
+                    if "\n" in s:
+                        out.extend(x.strip() for x in s.split("\n") if x.strip())
+                    elif "," in s and not s.strip().startswith("["):
+                        out.extend(x.strip() for x in s.split(",") if x.strip())
+                    else:
+                        out.append(s)
+            return out
+        if isinstance(val, str):
+            val = val.strip()
+            if not val:
+                return []
+            try:
+                p = json.loads(val)
+                if isinstance(p, (list, tuple)):
+                    return to_list(p, text_keys)
+                if isinstance(p, (str, int, float, bool)):
+                    return [str(p)]
+                if isinstance(p, dict):
+                    s = item_to_str(p, text_keys)
+                    return [s] if s else []
+                return []
+            except (json.JSONDecodeError, TypeError):
+                if "\n" in val:
+                    return [x.strip() for x in val.split("\n") if x.strip()]
+                if "," in val:
+                    return [x.strip() for x in val.split(",") if x.strip()]
+                return [val]
+        return []
+
+    ing_keys = ["ingredient", "Ingredient", "name", "text", "title", "item"]
+    inst_keys = ["step", "Step", "instruction", "Instruction", "name", "text", "title"]
+    return {
+        "id": recipe.id,
+        "name": recipe.name,
+        "description": recipe.description or "",
+        "category": recipe.category or "",
+        "prepTime": getattr(recipe, "prepTime", 0) or 0,
+        "cookTime": getattr(recipe, "cookTime", 0) or 0,
+        "servings": recipe.servings or 1,
+        "calories": recipe.calories or 0,
+        "protein": recipe.protein or 0,
+        "carbs": recipe.carbs or 0,
+        "fat": recipe.fat or 0,
+        "ingredients": to_list(recipe.ingredients, ing_keys),
+        "instructions": to_list(recipe.instructions, inst_keys),
+        "tags": to_list(getattr(recipe, "tags", None)),
+        "image": recipe.image,
+        "isFavorite": bool(getattr(recipe, "isFavorite", 0)),
+        "is_public": bool(getattr(recipe, "is_public", 0)),
+    }
+
+
+def _recipe_query_for_user(db: Session, current_user: Optional[UserDB]):
+    """Query de recetas según rol:
+    - superadmin: ve todas
+    - admin/nutricionista: las que él creó + las públicas
+    - patient/sin usuario: solo públicas"""
+    q = db.query(RecipeDB)
+    role = getattr(current_user, "role", None) if current_user else None
+    if role == "superadmin":
+        pass  # todas
+    elif role == "admin":
+        q = q.filter((RecipeDB.created_by_id == current_user.id) | (RecipeDB.is_public == 1))
+    else:
+        q = q.filter(RecipeDB.is_public == 1)
+    return q
+
+
+def _authorize_recipe_access(recipe: RecipeDB, current_user: UserDB):
+    """Verifica si el usuario puede acceder a la receta (ver, editar, favorito, etc). Lanza 403 si no."""
+    role = getattr(current_user, "role", None) if current_user else None
+    if role == "superadmin":
+        return
+    elif role == "admin":
+        is_owner = recipe.created_by_id == current_user.id
+        is_public = bool(getattr(recipe, "is_public", 0))
+        if not is_owner and not is_public:
+            raise HTTPException(status_code=403, detail="No autorizado a acceder a esta receta")
+    else:
+        if not getattr(recipe, "is_public", 0):
+            raise HTTPException(status_code=403, detail="Receta privada")
+
+
+@app.get("/api/recipes")
+def get_recipes(
+    db: Session = Depends(get_db),
+    current_user: Optional[UserDB] = Depends(get_current_user_optional)
+):
+    query = _recipe_query_for_user(db, current_user)
+    recipes = query.all()
+    return [_recipe_to_response(r) for r in recipes]
+
+@app.get("/api/recipes/{recipe_id}")
+def get_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserDB] = Depends(get_current_user_optional)
+):
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
-    return RecipeResponse.from_db(recipe)
+    role = getattr(current_user, "role", None) if current_user else None
+    if role == "superadmin":
+        pass  # puede ver todas
+    elif role == "admin":
+        is_owner = recipe.created_by_id == current_user.id
+        is_public = bool(getattr(recipe, "is_public", 0))
+        if not is_owner and not is_public:
+            raise HTTPException(status_code=403, detail="No autorizado a ver esta receta")
+    else:
+        if not getattr(recipe, "is_public", 0):
+            raise HTTPException(status_code=403, detail="Receta privada")
+    return _recipe_to_response(recipe)
 
 @app.post("/api/recipes", response_model=RecipeResponse)
 async def create_recipe(
@@ -2666,7 +2883,8 @@ async def create_recipe(
     tags: str = Form(...),         # JSON string
     isFavorite: bool = Form(False),
     image: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     image_url = None
     if image:
@@ -2695,6 +2913,7 @@ async def create_recipe(
         instructions_list = [i.strip() for i in instructions.split("\n") if i.strip()]
         tags_list = [t.strip() for t in tags.split(",") if t.strip()]
 
+    creator_id = current_user.id if current_user else None
     new_recipe = RecipeDB(
         name=name,
         description=description,
@@ -2710,7 +2929,9 @@ async def create_recipe(
         instructions=instructions_list,
         tags=tags_list,
         isFavorite=1 if isFavorite else 0,
-        image=image_url
+        image=image_url,
+        created_by_id=creator_id,
+        is_public=0  # nuevas recetas privadas por defecto
     )
     db.add(new_recipe)
     db.commit()
@@ -2787,21 +3008,29 @@ async def update_recipe(
     return RecipeResponse.from_db(recipe)
 
 @app.delete("/api/recipes/{recipe_id}")
-def delete_recipe(recipe_id: int, db: Session = Depends(get_db)):
+def delete_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
-    
+    _authorize_recipe_access(recipe, current_user)
     db.delete(recipe)
     db.commit()
     return {"success": True, "message": "Receta eliminada"}
 
 @app.patch("/api/recipes/{recipe_id}/favorite")
-def toggle_recipe_favorite(recipe_id: int, db: Session = Depends(get_db)):
+def toggle_recipe_favorite(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
-    
+    _authorize_recipe_access(recipe, current_user)
     recipe.isFavorite = not recipe.isFavorite
     db.commit()
     return {"success": True, "isFavorite": recipe.isFavorite}
@@ -2827,6 +3056,7 @@ def get_meal_plans(db: Session = Depends(get_db)):
             "duration": plan.duration,
             "category": plan.category,
             "color": plan.color,
+            "tipo": getattr(plan, "tipo", None) or "adulto",
             "protein_target": plan.protein_target,
             "carbs_target": plan.carbs_target,
             "fat_target": plan.fat_target,
@@ -3886,31 +4116,28 @@ def get_available_slots(date: str, db: Session = Depends(get_db)):
     }
 
 def calculate_trend(metrics: List[ProgressMetricDB]) -> str:
-    """Calcula la tendencia del peso basándose en las últimas mediciones"""
+    """Calcula la tendencia del peso basándose en las últimas mediciones.
+    up = subió de peso (Subiendo), down = bajó de peso (Bajando).
+    """
     if len(metrics) < 2:
         return "stable"
-    
-    # Tomar las últimas 3 mediciones
-    recent_metrics = sorted(metrics, key=lambda x: x.date)[-3:]
-    
+    # Obtener las 3 mediciones más recientes y ordenarlas de más antigua a más reciente
+    by_date_id = sorted(metrics, key=lambda x: (x.date, x.id or 0))
+    last_three = by_date_id[-3:]
+    recent_metrics = sorted(last_three, key=lambda x: (x.date, x.id or 0))
     if len(recent_metrics) < 2:
         return "stable"
-    
-    # Calcular la diferencia promedio
-    weight_changes = []
-    for i in range(1, len(recent_metrics)):
-        change = recent_metrics[i].weight - recent_metrics[i-1].weight
-        weight_changes.append(change)
-    
+    # Diferencia = peso más reciente - peso anterior (positivo = subió de peso)
+    weight_changes = [
+        recent_metrics[i].weight - recent_metrics[i - 1].weight
+        for i in range(1, len(recent_metrics))
+    ]
     avg_change = sum(weight_changes) / len(weight_changes)
-    
-    # Umbral de 0.3 kg para considerar cambio significativo
     if avg_change > 0.3:
         return "up"
-    elif avg_change < -0.3:
+    if avg_change < -0.3:
         return "down"
-    else:
-        return "stable"
+    return "stable"
 
 def calculate_weekly_adherence(patient_id: int, db: Session) -> int:
     """Calcula la adherencia de la semana actual basada en comidas completadas"""
@@ -3955,15 +4182,16 @@ def get_initial_weight(patient_id: int, db: Session) -> Optional[float]:
 def get_patients_progress(
     search: Optional[str] = None,
     trend: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
-    Obtener resumen de progreso de todos los pacientes
-    - search: Término de búsqueda para filtrar por nombre
-    - trend: Filtrar por tendencia (up, down, stable)
+    Obtener resumen de progreso de pacientes.
+    Si el usuario es admin (nutricionista), solo sus pacientes asignados.
     """
-    # Obtener todos los pacientes con planes activos
     query = db.query(UserDB).filter(UserDB.role == "patient")
+    if current_user.role == "admin":
+        query = query.filter(UserDB.nutritionist_id == current_user.id)
     
     if search:
         query = query.filter(
@@ -3999,6 +4227,9 @@ def get_patients_progress(
         goal_weight = patient.peso_objetivo or current_weight
         
         trend_value = calculate_trend(metrics)
+        # Si el perfil tiene peso actual distinto a la última métrica, usar esa comparación para la tendencia
+        if metrics and patient.peso_actual is not None and abs(patient.peso_actual - metrics[0].weight) >= 0.3:
+            trend_value = "up" if patient.peso_actual > metrics[0].weight else "down"
         adherence = calculate_weekly_adherence(patient.id, db)
         
         last_update = metrics[0].date.strftime("%Y-%m-%d") if metrics else datetime.now().strftime("%Y-%m-%d")
@@ -4035,6 +4266,10 @@ def get_patient_progress_details(
 ):
     """Obtener detalles completos del progreso de un paciente"""
     authorize_patient_access(patient_id, current_user, db)
+    
+    patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
     # Obtener plan activo
     active_plan_assignment = db.query(PatientMealPlanDB).filter(
@@ -4112,10 +4347,13 @@ def get_patient_progress_details(
     goal_weight = patient.peso_objetivo or current_weight
     
     trend_value = calculate_trend(metrics)
+    # Si el perfil tiene peso actual distinto a la última métrica, tendencia por comparación directa
+    if metrics and patient.peso_actual is not None and abs(patient.peso_actual - metrics[-1].weight) >= 0.3:
+        trend_value = "up" if patient.peso_actual > metrics[-1].weight else "down"
     adherence = calculate_weekly_adherence(patient_id, db)
-    
     last_update = metrics[-1].date.strftime("%Y-%m-%d") if metrics else datetime.now().strftime("%Y-%m-%d")
-    
+    progress_percentage = calcular_progreso(current_weight, goal_weight, initial_weight)
+
     return {
         "id": patient.id,
         "name": f"{patient.nombres} {patient.apellidos}",
@@ -4128,8 +4366,9 @@ def get_patient_progress_details(
         "weekly_adherence": adherence,
         "trend": trend_value,
         "last_update": last_update,
+        "progress_percentage": progress_percentage,
         "metrics": metrics_data,
-        "metricsHistory": metrics_data, # Frontend expects both
+        "metricsHistory": metrics_data,
         "achievements": achievements_list,
         "achievementsList": achievements_list_detailed,
         "notes": notes_list,
@@ -4137,8 +4376,13 @@ def get_patient_progress_details(
     }
 
 @app.post("/api/progress/metrics", response_model=ProgressMetricResponse)
-def create_progress_metric(metric_data: ProgressMetricCreate, db: Session = Depends(get_db)):
+def create_progress_metric(
+    metric_data: ProgressMetricCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Crear una nueva métrica de progreso para un paciente"""
+    authorize_patient_access(metric_data.patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == metric_data.patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4194,11 +4438,17 @@ def create_progress_metric(metric_data: ProgressMetricCreate, db: Session = Depe
     }
 
 @app.put("/api/progress/metrics/{metric_id}", response_model=ProgressMetricResponse)
-def update_progress_metric(metric_id: int, metric_data: ProgressMetricCreate, db: Session = Depends(get_db)):
+def update_progress_metric(
+    metric_id: int,
+    metric_data: ProgressMetricCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Actualizar una métrica de progreso por ID"""
     metric = db.query(ProgressMetricDB).filter(ProgressMetricDB.id == metric_id).first()
     if not metric:
         raise HTTPException(status_code=404, detail="Métrica no encontrada")
+    authorize_patient_access(metric.patient_id, current_user, db)
     
     try:
         metric_date = datetime.strptime(metric_data.date, "%Y-%m-%d").date()
@@ -4244,9 +4494,29 @@ def update_progress_metric(metric_id: int, metric_data: ProgressMetricCreate, db
         "notes": metric.notes
     }
 
+@app.delete("/api/progress/metrics/{metric_id}")
+def delete_progress_metric(
+    metric_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Eliminar una métrica de progreso"""
+    metric = db.query(ProgressMetricDB).filter(ProgressMetricDB.id == metric_id).first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="Métrica no encontrada")
+    authorize_patient_access(metric.patient_id, current_user, db)
+    db.delete(metric)
+    db.commit()
+    return {"success": True, "message": "Métrica eliminada"}
+
 @app.get("/api/progress/metrics/{patient_id}", response_model=List[ProgressMetricResponse])
-def get_patient_metrics(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_metrics(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Obtener todas las métricas de un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     metrics = db.query(ProgressMetricDB).filter(
         ProgressMetricDB.patient_id == patient_id
     ).order_by(ProgressMetricDB.date.asc()).all()
@@ -4266,8 +4536,13 @@ def get_patient_metrics(patient_id: int, db: Session = Depends(get_db)):
     ]
 
 @app.post("/api/progress/achievements", response_model=AchievementResponse)
-def create_achievement(achievement_data: AchievementCreate, db: Session = Depends(get_db)):
+def create_achievement(
+    achievement_data: AchievementCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Crear un nuevo logro para un paciente"""
+    authorize_patient_access(achievement_data.patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == achievement_data.patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4299,8 +4574,13 @@ def create_achievement(achievement_data: AchievementCreate, db: Session = Depend
     }
 
 @app.get("/api/progress/achievements/{patient_id}", response_model=List[AchievementResponse])
-def get_patient_achievements(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_achievements(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Obtener todos los logros de un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     achievements = db.query(AchievementDB).filter(
         AchievementDB.patient_id == patient_id
     ).order_by(AchievementDB.achieved_date.desc()).all()
@@ -4318,19 +4598,28 @@ def get_patient_achievements(patient_id: int, db: Session = Depends(get_db)):
     ]
 
 @app.delete("/api/progress/achievements/{achievement_id}")
-def delete_achievement(achievement_id: int, db: Session = Depends(get_db)):
+def delete_achievement(
+    achievement_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Eliminar un logro"""
     achievement = db.query(AchievementDB).filter(AchievementDB.id == achievement_id).first()
     if not achievement:
         raise HTTPException(status_code=404, detail="Logro no encontrado")
-    
+    authorize_patient_access(achievement.patient_id, current_user, db)
     db.delete(achievement)
     db.commit()
     return {"success": True, "message": "Logro eliminado"}
 
 @app.post("/api/progress/notes", response_model=NutritionistNoteResponse)
-def create_nutritionist_note(note_data: NutritionistNoteCreate, db: Session = Depends(get_db)):
+def create_nutritionist_note(
+    note_data: NutritionistNoteCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Crear una nueva nota del nutricionista"""
+    authorize_patient_access(note_data.patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == note_data.patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
@@ -4360,8 +4649,13 @@ def create_nutritionist_note(note_data: NutritionistNoteCreate, db: Session = De
     }
 
 @app.get("/api/progress/notes/{patient_id}", response_model=List[NutritionistNoteResponse])
-def get_patient_notes(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_notes(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Obtener todas las notas del nutricionista para un paciente"""
+    authorize_patient_access(patient_id, current_user, db)
     notes = db.query(NutritionistNoteDB).filter(
         NutritionistNoteDB.patient_id == patient_id
     ).order_by(NutritionistNoteDB.created_at.desc()).all()
@@ -4383,33 +4677,52 @@ def get_patient_notes(patient_id: int, db: Session = Depends(get_db)):
     return results
 
 @app.delete("/api/progress/notes/{note_id}")
-def delete_nutritionist_note(note_id: int, db: Session = Depends(get_db)):
+def delete_nutritionist_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """Eliminar una nota del nutricionista"""
     note = db.query(NutritionistNoteDB).filter(NutritionistNoteDB.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Nota no encontrada")
-    
+    authorize_patient_access(note.patient_id, current_user, db)
     db.delete(note)
     db.commit()
     return {"success": True, "message": "Nota eliminada"}
 
 @app.get("/api/progress/stats")
-def get_progress_stats(db: Session = Depends(get_db)):
-    """Obtener estadísticas generales de progreso"""
-    # Total de pacientes activos
-    total_patients = db.query(PatientMealPlanDB).filter(
-        PatientMealPlanDB.status == "active"
-    ).count()
+def get_progress_stats(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Obtener estadísticas de progreso. Si es admin, solo de sus pacientes."""
+    if current_user.role == "admin":
+        my_patient_ids = [r.id for r in db.query(UserDB.id).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == current_user.id
+        ).all()]
+        if not my_patient_ids:
+            return {
+                "total_patients": 0,
+                "avg_adherence": 0,
+                "patients_on_track": 0,
+                "total_weight_lost": 0
+            }
+        total_patients = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.status == "active",
+            PatientMealPlanDB.patient_id.in_(my_patient_ids)
+        ).count()
+        all_patients = db.query(UserDB).filter(UserDB.id.in_(my_patient_ids)).all()
+    else:
+        total_patients = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.status == "active"
+        ).count()
+        all_patients = db.query(UserDB).filter(UserDB.role == "patient").all()
     
-    # Adherencia promedio
-    all_patients = db.query(UserDB).filter(UserDB.role == "patient").all()
     adherence_values = [calculate_weekly_adherence(p.id, db) for p in all_patients]
     avg_adherence = int(sum(adherence_values) / len(adherence_values)) if adherence_values else 0
-    
-    # Pacientes en objetivo (adherencia >= 80%)
     patients_on_track = len([a for a in adherence_values if a >= 80])
-    
-    # Peso total perdido
     total_weight_lost = 0
     for patient in all_patients:
         initial_weight = get_initial_weight(patient.id, db)
@@ -4426,46 +4739,67 @@ def get_progress_stats(db: Session = Depends(get_db)):
     }
 
 @app.get("/api/dashboard/stats")
-def get_dashboard_stats(db: Session = Depends(get_db)):
+def get_dashboard_stats(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
-    Obtener estadísticas generales del dashboard
+    Obtener estadísticas generales del dashboard.
+    Si el usuario es admin (nutricionista), solo se cuentan sus pacientes asignados.
     """
-    # Pacientes activos
-    total_patients = db.query(UserDB).filter(
-        UserDB.role == "patient",
-        UserDB.status == "activo"
-    ).count()
+    # Para nutricionista (admin): solo sus pacientes
+    patient_filter = [UserDB.role == "patient", UserDB.status == "activo"]
+    if current_user.role == "admin":
+        patient_filter.append(UserDB.nutritionist_id == current_user.id)
     
-    # Para el cambio de pacientes, simplemente mostrar el total
-    # Ya que UserDB no tiene created_at
-    patients_change = 12  # Valor por defecto
+    total_patients = db.query(UserDB).filter(*patient_filter).count()
+    patients_change = 12
     
-    # Planes activos
-    active_plans = db.query(PatientMealPlanDB).filter(
-        PatientMealPlanDB.status == "active"
-    ).count()
+    # Planes activos (solo de sus pacientes si es admin)
+    my_patient_ids = []
+    if current_user.role == "admin":
+        my_patient_ids = [r.id for r in db.query(UserDB.id).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == current_user.id
+        ).all()]
+        active_plans = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.status == "active",
+            PatientMealPlanDB.patient_id.in_(my_patient_ids)
+        ).count() if my_patient_ids else 0
+    else:
+        active_plans = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.status == "active"
+        ).count()
     
-    # Citas esta semana
     today = datetime.now().date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     
-    appointments_this_week = db.query(AppointmentDB).filter(
-        AppointmentDB.date >= week_start,
-        AppointmentDB.date <= week_end
-    ).count()
+    if current_user.role == "admin" and my_patient_ids:
+        appointments_this_week = db.query(AppointmentDB).filter(
+            AppointmentDB.date >= week_start,
+            AppointmentDB.date <= week_end,
+            AppointmentDB.patient_id.in_(my_patient_ids)
+        ).count()
+        appointments_today = db.query(AppointmentDB).filter(
+            AppointmentDB.date == today,
+            AppointmentDB.status == "pendiente",
+            AppointmentDB.patient_id.in_(my_patient_ids)
+        ).count()
+    elif current_user.role == "admin":
+        appointments_this_week = 0
+        appointments_today = 0
+    else:
+        appointments_this_week = db.query(AppointmentDB).filter(
+            AppointmentDB.date >= week_start,
+            AppointmentDB.date <= week_end
+        ).count()
+        appointments_today = db.query(AppointmentDB).filter(
+            AppointmentDB.date == today,
+            AppointmentDB.status == "pendiente"
+        ).count()
     
-    appointments_today = db.query(AppointmentDB).filter(
-        AppointmentDB.date == today,
-        AppointmentDB.status == "pendiente"
-    ).count()
-    
-    # Progreso promedio
-    all_active_patients = db.query(UserDB).filter(
-        UserDB.role == "patient",
-        UserDB.status == "activo"
-    ).all()
-    
+    all_active_patients = db.query(UserDB).filter(*patient_filter).all()
     progress_values = []
     for patient in all_active_patients:
         if patient.peso_actual and patient.peso_objetivo:
@@ -4499,14 +4833,19 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     }
 
 @app.get("/api/dashboard/recent-patients")
-def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
+def get_recent_patients(
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
-    Obtener pacientes registrados recientemente
-    Nota: Como UserDB no tiene created_at, ordenamos por ID (últimos registrados)
+    Obtener pacientes registrados recientemente.
+    Si el usuario es admin (nutricionista), solo sus pacientes asignados.
     """
-    recent_patients = db.query(UserDB).filter(
-        UserDB.role == "patient"
-    ).order_by(UserDB.id.desc()).limit(limit).all()
+    query = db.query(UserDB).filter(UserDB.role == "patient")
+    if current_user.role == "admin":
+        query = query.filter(UserDB.nutritionist_id == current_user.id)
+    recent_patients = query.order_by(UserDB.id.desc()).limit(limit).all()
     
     results = []
     for patient in recent_patients:
@@ -4537,23 +4876,35 @@ def get_recent_patients(limit: int = 5, db: Session = Depends(get_db)):
     
     return results
 @app.get("/api/dashboard/upcoming-appointments")
-def get_upcoming_appointments(limit: int = 5, db: Session = Depends(get_db)):
+def get_upcoming_appointments(
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
-    Obtener próximas citas programadas
+    Obtener próximas citas programadas.
+    Si el usuario es admin (nutricionista), solo citas de sus pacientes asignados.
     """
     today = datetime.now().date()
-    
-    upcoming = db.query(AppointmentDB).filter(
+    query = db.query(AppointmentDB).filter(
         AppointmentDB.date >= today,
         AppointmentDB.status != "cancelada"
-    ).order_by(
+    )
+    if current_user.role == "admin":
+        my_patient_ids = [r.id for r in db.query(UserDB.id).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == current_user.id
+        ).all()]
+        if not my_patient_ids:
+            return []
+        query = query.filter(AppointmentDB.patient_id.in_(my_patient_ids))
+    upcoming = query.order_by(
         AppointmentDB.date.asc(),
         AppointmentDB.time.asc()
     ).limit(limit).all()
     
     results = []
     for appointment in upcoming:
-        # Obtener información del paciente
         patient = db.query(UserDB).filter(UserDB.id == appointment.patient_id).first()
         
         # Calcular si es hoy o mañana
@@ -7241,7 +7592,25 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
     # 2. Calcular estadísticas de calorías
     completed_meals = [m for m in today_meals if m["completed"]]
     total_calories_consumed = sum(m["calories"] for m in completed_meals)
-    total_calories_target = sum(m["calories"] for m in today_meals)
+    total_calories_from_today_meals = sum(m["calories"] for m in today_meals)
+    
+    # Obtener plan activo para meta de calorías y macronutrientes
+    active_plan_assignment = db.query(PatientMealPlanDB).filter(
+        PatientMealPlanDB.patient_id == patient_id,
+        PatientMealPlanDB.status == "active"
+    ).first()
+    plan = None
+    if active_plan_assignment:
+        plan = db.query(MealPlanDB).filter(
+            MealPlanDB.id == active_plan_assignment.meal_plan_id
+        ).first()
+    
+    # Meta diaria: priorizar plan.calories para que siempre haya meta cuando hay plan
+    daily_calorie_target = 0
+    if plan and (plan.calories or 0) > 0:
+        daily_calorie_target = plan.calories
+    elif total_calories_from_today_meals > 0:
+        daily_calorie_target = total_calories_from_today_meals
     
     # 3. Seguimiento de agua
     water_tracking = db.query(WaterTrackingDB).filter(
@@ -7289,6 +7658,7 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
     ).order_by(AppointmentDB.date.asc(), AppointmentDB.time.asc()).first()
     
     # 6. Calcular distribución de macronutrientes del plan activo
+    total_calories_for_macros = daily_calorie_target or 2000
     macronutrients = {
         "protein_percentage": 30,
         "carbs_percentage": 45,
@@ -7298,30 +7668,47 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
         "fat_grams": 0
     }
     
-    # Obtener plan activo del paciente
-    active_plan_assignment = db.query(PatientMealPlanDB).filter(
-        PatientMealPlanDB.patient_id == patient_id,
-        PatientMealPlanDB.status == "active"
-    ).first()
-    
-    if active_plan_assignment:
-        # Buscar el plan nutricional
-        plan = db.query(MealPlanDB).filter(
-            MealPlanDB.id == active_plan_assignment.meal_plan_id
-        ).first()
-        
-        if plan:
-            # Calcular gramos basados en calorías totales
-            # 1g proteína = 4 kcal, 1g carbohidratos = 4 kcal, 1g grasa = 9 kcal
-            total_calories = plan.calories or total_calories_target or 2000
-            
-            protein_calories = total_calories * (macronutrients["protein_percentage"] / 100)
-            carbs_calories = total_calories * (macronutrients["carbs_percentage"] / 100)
-            fat_calories = total_calories * (macronutrients["fat_percentage"] / 100)
-            
-            macronutrients["protein_grams"] = round(protein_calories / 4, 1)
-            macronutrients["carbs_grams"] = round(carbs_calories / 4, 1)
-            macronutrients["fat_grams"] = round(fat_calories / 9, 1)
+    if plan:
+        # Usar objetivos del plan si existen (protein_target, carbs_target, fat_target)
+        p_g = (plan.protein_target or 0)
+        c_g = (plan.carbs_target or 0)
+        f_g = (plan.fat_target or 0)
+        if p_g or c_g or f_g:
+            macronutrients["protein_grams"] = round(p_g, 1)
+            macronutrients["carbs_grams"] = round(c_g, 1)
+            macronutrients["fat_grams"] = round(f_g, 1)
+            # Calcular porcentajes desde gramos (1g prot=4kcal, 1g cho=4kcal, 1g grasa=9kcal)
+            total_kcal = p_g * 4 + c_g * 4 + f_g * 9
+            if total_kcal > 0:
+                macronutrients["protein_percentage"] = round((p_g * 4 / total_kcal) * 100)
+                macronutrients["carbs_percentage"] = round((c_g * 4 / total_kcal) * 100)
+                macronutrients["fat_percentage"] = round((f_g * 9 / total_kcal) * 100)
+        else:
+            # Fallback: usar fase_2 si existe
+            fase_2 = (plan.fase_2 or {}) if isinstance(plan.fase_2, dict) else {}
+            pct_prot = int(fase_2.get("proteinas_amdr_f2") or fase_2.get("proteinas_amdr") or 30)
+            pct_cho = int(fase_2.get("cho_amdr_f2") or fase_2.get("cho_amdr") or 45)
+            pct_fat = int(fase_2.get("grasas_gs_amdr") or 25)
+            if pct_prot or pct_cho or pct_fat:
+                macronutrients["protein_percentage"] = pct_prot
+                macronutrients["carbs_percentage"] = pct_cho
+                macronutrients["fat_percentage"] = pct_fat
+            total_calories_for_macros = plan.calories or daily_calorie_target or 2000
+            protein_cal = total_calories_for_macros * (macronutrients["protein_percentage"] / 100)
+            carbs_cal = total_calories_for_macros * (macronutrients["carbs_percentage"] / 100)
+            fat_cal = total_calories_for_macros * (macronutrients["fat_percentage"] / 100)
+            macronutrients["protein_grams"] = round(protein_cal / 4, 1)
+            macronutrients["carbs_grams"] = round(carbs_cal / 4, 1)
+            macronutrients["fat_grams"] = round(fat_cal / 9, 1)
+    else:
+        # Sin plan: mostrar distribución por defecto (30/45/25) con gramos para 2000 kcal
+        total_calories_for_macros = 2000
+        protein_cal = total_calories_for_macros * 0.30
+        carbs_cal = total_calories_for_macros * 0.45
+        fat_cal = total_calories_for_macros * 0.25
+        macronutrients["protein_grams"] = round(protein_cal / 4, 1)
+        macronutrients["carbs_grams"] = round(carbs_cal / 4, 1)
+        macronutrients["fat_grams"] = round(fat_cal / 9, 1)
     
     next_appointment_data = None
     if next_appointment:
@@ -7362,8 +7749,8 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
             "edad_formateada": calcular_edad_detallada(patient.fecha_nacimiento),
             "calories": {
                 "consumed": total_calories_consumed,
-                "target": total_calories_target,
-                "percentage": int((total_calories_consumed / total_calories_target * 100)) if total_calories_target > 0 else 0
+                "target": daily_calorie_target,
+                "percentage": int((total_calories_consumed / daily_calorie_target * 100)) if daily_calorie_target > 0 else 0
             },
             "water": {
                 "consumed_ml": water_consumed,
@@ -7594,7 +7981,8 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
 
     # NUEVO: Si los datos vienen como una lista (posiblemente de semanas)
     if isinstance(day_menu, list):
-        idx = (active_plan.current_week - 1) if active_plan else 0
+        week_num = (active_plan.current_week if active_plan else 1) or 1
+        idx = max(0, week_num - 1)
         if len(day_menu) > idx:
             day_menu = day_menu[idx]
         elif len(day_menu) > 0:
@@ -7605,9 +7993,23 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
     # NUEVO: Si los datos vienen como una lista de "meals" (formato del Admin Panel)
     if isinstance(day_menu, dict) and "meals" in day_menu and isinstance(day_menu["meals"], list):
         new_day_menu = {}
+        type_to_standard = {
+            "desayuno": "breakfast", "breakfast": "breakfast",
+            "snack_am": "morning_snack", "morning_snack": "morning_snack", "media_manana": "morning_snack", "merienda_manana": "morning_snack",
+            "almuerzo": "lunch", "comida": "lunch", "lunch": "lunch",
+            "snack_pm": "afternoon_snack", "afternoon_snack": "afternoon_snack", "media_tarde": "afternoon_snack", "merienda": "afternoon_snack", "merienda_tarde": "afternoon_snack",
+            "cena": "dinner", "dinner": "dinner",
+        }
         for m in day_menu["meals"]:
-            if isinstance(m, dict) and "type" in m:
-                new_day_menu[m["type"]] = m
+            if not isinstance(m, dict):
+                continue
+            t = (m.get("type") or m.get("meal_type") or "").strip().lower()
+            if not t:
+                continue
+            new_day_menu[t] = m
+            standard = type_to_standard.get(t)
+            if standard and standard != t:
+                new_day_menu[standard] = m
         day_menu = new_day_menu
 
     # Estructura de comidas
@@ -7664,7 +8066,7 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
             # Extraer descripción con múltiples variaciones de nombres de campo
             description = get_field_value(
                 meal_data,
-                ["receta", "recipe", "name", "nombre", "descripcion", "description", "titulo", "title"],
+                ["receta", "recipe", "recipe_name", "name", "nombre", "descripcion", "description", "titulo", "title"],
                 meal_info["name"]  # Usar el nombre del tipo de comida como fallback
             )
             
@@ -7697,18 +8099,60 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
             )
             
             # Fallback para ingredientes e instrucciones si no están en el JSON (retrocompatibilidad)
-            ingredients = meal_data.get("ingredients") or []
-            instructions = meal_data.get("instructions") or []
-            image = meal_data.get("image")
-            
-            recipe_id = meal_data.get("recipe_id")
-            if (not ingredients or not instructions) and recipe_id:
-                from sqlalchemy import text
+            ingredients = get_field_value(meal_data, ["ingredients", "ingredientes"], None) or []
+            instructions = get_field_value(meal_data, ["instructions", "instrucciones", "steps", "pasos"], None) or []
+            image = get_field_value(meal_data, ["image", "imagen", "image_url"], None)
+
+            recipe_id_raw = meal_data.get("recipe_id") or meal_data.get("id_receta") or meal_data.get("recipeId") or meal_data.get("id")
+            if recipe_id_raw is None and isinstance(meal_data.get("recipe"), dict):
+                recipe_id_raw = meal_data["recipe"].get("id") or meal_data["recipe"].get("recipe_id")
+            try:
+                recipe_id = int(recipe_id_raw) if recipe_id_raw is not None and str(recipe_id_raw).strip() != "" else None
+            except (TypeError, ValueError):
+                recipe_id = None
+            recipe = None
+            if recipe_id:
                 recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+            if not recipe and description and str(description).strip() and str(description) != meal_info["name"]:
+                recipe = db.query(RecipeDB).filter(RecipeDB.name == str(description).strip()).first()
                 if recipe:
-                    if not ingredients: ingredients = recipe.ingredients
-                    if not instructions: instructions = recipe.instructions
-                    if not image: image = recipe.image
+                    recipe_id = recipe.id
+            if recipe:
+                recipe_dict = _recipe_to_response(recipe)
+                if not ingredients:
+                    ingredients = recipe_dict.get("ingredients") or []
+                if not instructions:
+                    instructions = recipe_dict.get("instructions") or []
+                if not image:
+                    image = recipe_dict.get("image")
+                if not description or description == meal_info["name"]:
+                    description = recipe_dict.get("name") or description
+                if not calories and recipe_dict.get("calories"):
+                    calories = recipe_dict.get("calories")
+                if not protein and recipe_dict.get("protein") is not None:
+                    protein = recipe_dict.get("protein")
+                if not carbs and recipe_dict.get("carbs") is not None:
+                    carbs = recipe_dict.get("carbs")
+                if not fat and recipe_dict.get("fat") is not None:
+                    fat = recipe_dict.get("fat")
+
+            # Normalizar ingredientes/instrucciones a lista (por si vienen como JSON string del menú)
+            if not isinstance(ingredients, (list, tuple)):
+                if isinstance(ingredients, str):
+                    try:
+                        ingredients = json.loads(ingredients) if ingredients.strip() else []
+                    except (json.JSONDecodeError, TypeError):
+                        ingredients = [ingredients] if ingredients.strip() else []
+                else:
+                    ingredients = []
+            if not isinstance(instructions, (list, tuple)):
+                if isinstance(instructions, str):
+                    try:
+                        instructions = json.loads(instructions) if instructions.strip() else []
+                    except (json.JSONDecodeError, TypeError):
+                        instructions = [instructions] if instructions.strip() else []
+                else:
+                    instructions = []
 
             result.append({
                 "meal_type": meal_info["id"],
@@ -7717,13 +8161,17 @@ def get_patient_today_meals(patient_id: int, date: datetime.date, db: Session) -
                 "calories": int(calories) if calories else 0,
                 "completed": bool(tracked.completed) if tracked else False,
                 "description": str(description),
+                "receta": str(description),
+                "food": str(description),
+                "meal": meal_info["name"],
                 "protein": int(protein) if protein else 0,
                 "carbs": int(carbs) if carbs else 0,
                 "fat": int(fat) if fat else 0,
                 "ingredients": list(ingredients) if isinstance(ingredients, list) else [],
                 "instructions": list(instructions) if isinstance(instructions, list) else [],
                 "image": get_avatar_url(image),  # Procesar URL de imagen
-                "type": meal_info["id"] # Alias for consistency
+                "type": meal_info["id"], # Alias for consistency
+                "recipe_id": recipe_id,
             })
     
     # Aplicar ingredientes personalizados si existen en fase_4
@@ -7927,17 +8375,135 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
     nutritionist = db.query(UserDB).filter(UserDB.role == "admin").first()
     doctor_name = f"{nutritionist.nombres} {nutritionist.apellidos}" if nutritionist else "Nutricionista"
     
+    # Calcular metas de calorías y macros desde el plan (para devolver stats siempre)
+    target_calories = plan.calories or 0
+    target_protein_g = plan.protein_target if (plan.protein_target is not None and plan.protein_target > 0) else None
+    target_carbs_g = plan.carbs_target if (plan.carbs_target is not None and plan.carbs_target > 0) else None
+    target_fat_g = plan.fat_target if (plan.fat_target is not None and plan.fat_target > 0) else None
+    
+    # Parse fase_2 and fase_1 if they are JSON strings
+    fase_2 = plan.fase_2
+    if isinstance(fase_2, str):
+        try:
+            fase_2 = json.loads(fase_2)
+        except:
+            fase_2 = {}
+    elif not isinstance(fase_2, dict):
+        fase_2 = {}
+    
+    fase_1 = plan.fase_1
+    if isinstance(fase_1, str):
+        try:
+            fase_1 = json.loads(fase_1)
+        except:
+            fase_1 = {}
+    elif not isinstance(fase_1, dict):
+        fase_1 = {}
+    
+    # Log for debugging (can be removed later)
+    print(f"[DEBUG] Plan ID: {plan.id}, Name: {plan.name}")
+    print(f"[DEBUG] Direct fields - calories: {plan.calories}, protein: {plan.protein_target}, carbs: {plan.carbs_target}, fat: {plan.fat_target}")
+    print(f"[DEBUG] fase_2 keys: {list(fase_2.keys()) if fase_2 else 'None'}")
+    print(f"[DEBUG] fase_1 keys: {list(fase_1.keys()) if fase_1 else 'None'}")
+    
+    # Extract from fase_2 or fase_1 if direct fields are not available
+    if target_calories <= 0 or (target_protein_g is None and target_carbs_g is None and target_fat_g is None):
+        if target_calories <= 0:
+            try:
+                # Try multiple possible field names
+                cal_value = (
+                    fase_2.get("total_calorias") or 
+                    fase_2.get("calorias_totales") or
+                    fase_2.get("total_calorias_f2") or
+                    fase_1.get("requerimiento_energetico") or
+                    fase_1.get("calorias_totales") or
+                    0
+                )
+                target_calories = int(float(cal_value) if cal_value else 0)
+                print(f"[DEBUG] Extracted calories from fase: {target_calories}")
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] Error extracting calories: {e}")
+                target_calories = 0
+        
+        if target_protein_g is None:
+            try:
+                prot_value = (
+                    fase_2.get("proteinas_gramos_f2") or 
+                    fase_2.get("proteinas_gramos") or
+                    fase_2.get("proteina_gramos") or
+                    0
+                )
+                target_protein_g = int(float(prot_value) if prot_value else 0)
+                print(f"[DEBUG] Extracted protein from fase: {target_protein_g}")
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] Error extracting protein: {e}")
+                target_protein_g = 0
+        
+        if target_carbs_g is None:
+            try:
+                carbs_value = (
+                    fase_2.get("cho_gramos_f2") or 
+                    fase_2.get("cho_gramos") or
+                    fase_2.get("carbohidratos_gramos") or
+                    0
+                )
+                target_carbs_g = int(float(carbs_value) if carbs_value else 0)
+                print(f"[DEBUG] Extracted carbs from fase: {target_carbs_g}")
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] Error extracting carbs: {e}")
+                target_carbs_g = 0
+        
+        if target_fat_g is None:
+            try:
+                fat_value = (
+                    fase_2.get("grasas_gramos_f2") or 
+                    fase_2.get("grasas_gramos") or
+                    fase_2.get("grasa_gramos") or
+                    0
+                )
+                target_fat_g = int(float(fat_value) if fat_value else 0)
+                print(f"[DEBUG] Extracted fat from fase: {target_fat_g}")
+            except (TypeError, ValueError) as e:
+                print(f"[DEBUG] Error extracting fat: {e}")
+                target_fat_g = 0
+    
+    # Final fallback: calculate from calories if still None or 0
+    if target_protein_g is None or target_protein_g == 0:
+        target_protein_g = int(target_calories * 0.20 / 4) if target_calories else 0
+        print(f"[DEBUG] Using calculated protein: {target_protein_g}")
+    if target_carbs_g is None or target_carbs_g == 0:
+        target_carbs_g = int(target_calories * 0.50 / 4) if target_calories else 0
+        print(f"[DEBUG] Using calculated carbs: {target_carbs_g}")
+    if target_fat_g is None or target_fat_g == 0:
+        target_fat_g = int(target_calories * 0.30 / 9) if target_calories else 0
+        print(f"[DEBUG] Using calculated fat: {target_fat_g}")
+    
+    print(f"[DEBUG] Final values - calories: {target_calories}, protein: {target_protein_g}g, carbs: {target_carbs_g}g, fat: {target_fat_g}g")
+
+    
+    def _plan_stats():
+        return {
+            "calories": {"target": target_calories},
+            "protein": {"target": target_protein_g},
+            "carbs": {"target": target_carbs_g},
+            "fat": {"target": target_fat_g}
+        }
+    
     # Obtener TODOS los menús semanales del plan
     all_weekly_menus = db.query(WeeklyMenuDB).filter(
         WeeklyMenuDB.meal_plan_id == plan.id
     ).all()
     
-    # Si no hay menús (caso raro), retornar vacío
+    # Si no hay menús (caso raro), retornar con stats para que las tarjetas muestren datos
     if not all_weekly_menus:
          return {
             "has_plan": True,
             "plan_name": plan.name,
             "doctor": doctor_name,
+            "start_date": active_assignment.start_date,
+            "duration": getattr(plan, "duration", None),
+            "current_week": getattr(active_assignment, "current_week", 1),
+            "stats": _plan_stats(),
             "message": "Tu nutricionista aún no ha cargado el menú para esta semana."
         }
 
@@ -8092,7 +8658,7 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
     current_week_data = full_plan_by_week.get(active_assignment.current_week, {})
     if not current_week_data and 1 in full_plan_by_week:
          current_week_data = full_plan_by_week[1]
-    
+
     return {
         "has_plan": True,
         "plan_name": plan.name,
@@ -8100,12 +8666,7 @@ def get_patient_weekly_plan(patient_id: int, db: Session = Depends(get_db)):
         "start_date": active_assignment.start_date,
         "duration": plan.duration,
         "current_week": active_assignment.current_week,
-        "stats": {
-            "calories": {"target": plan.calories},
-            "protein": {"target": int(plan.calories * (plan.protein_target or 20) / 100 / 4)},
-            "carbs": {"target": int(plan.calories * (plan.carbs_target or 50) / 100 / 4)},
-            "fat": {"target": int(plan.calories * (plan.fat_target or 30) / 100 / 9)}
-        },
+        "stats": _plan_stats(),
         "week_plan": current_week_data, # Legacy support
         "all_weeks": full_plan_by_week # New full data
     }
@@ -8669,12 +9230,19 @@ def _internal_initialize_meals(patient_id: int, meal_date: date, db: Session, ac
     return True
 
 @app.get("/api/dashboard/top-patients-progress")
-def get_top_patients_progress(limit: int = 3, db: Session = Depends(get_db)):
+def get_top_patients_progress(
+    limit: int = 3,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
-    Obtener los pacientes con mejor progreso para el dashboard del admin
+    Obtener los pacientes con mejor progreso para el dashboard del admin.
+    Si el usuario es admin (nutricionista), solo sus pacientes asignados.
     """
-    # Obtener todos los pacientes activos
-    patients = db.query(UserDB).filter(UserDB.role == "patient").all()
+    query = db.query(UserDB).filter(UserDB.role == "patient")
+    if current_user.role == "admin":
+        query = query.filter(UserDB.nutritionist_id == current_user.id)
+    patients = query.all()
     
     patient_progress_list = []
     
@@ -8693,21 +9261,18 @@ def get_top_patients_progress(limit: int = 3, db: Session = Depends(get_db)):
             MealPlanDB.id == active_plan.meal_plan_id
         ).first()
         
-        # Calcular progreso
+        # Calcular progreso (dirección correcta: perder vs ganar)
         peso_inicial = patient.peso_inicial or patient.peso_actual
         peso_actual = patient.peso_actual
         peso_objetivo = patient.peso_objetivo
         
-        if not peso_inicial or not peso_actual or not peso_objetivo:
+        if peso_inicial is None or peso_actual is None or peso_objetivo is None:
             continue
         
-        # Calcular cambio de peso y porcentaje de meta
-        peso_cambio = peso_inicial - peso_actual
-        meta_total = abs(peso_inicial - peso_objetivo)
-        progreso_porcentaje = int((abs(peso_cambio) / meta_total * 100)) if meta_total > 0 else 0
-        
-        # Limitar a 100%
-        progreso_porcentaje = min(progreso_porcentaje, 100)
+        # Cambio de peso: positivo = subió, negativo = bajó (para mostrar +21 kg / -85 kg)
+        peso_cambio = peso_actual - peso_inicial
+        # Porcentaje de meta usando la misma lógica que el resto (solo cuenta si va en la dirección correcta)
+        progreso_porcentaje = calcular_progreso(peso_actual, peso_objetivo, peso_inicial)
         
         patient_progress_list.append({
             "id": patient.id,
@@ -9035,28 +9600,39 @@ def search_foods(
     }
 
 def calculate_weekly_totals(week_data: List[dict]) -> dict:
-    """Calcular totales y promedios de un menú semanal"""
+    """Calcular totales y promedios de un menú semanal (kcal/día = promedio por día con comidas)."""
     total_calories = 0
     total_protein = 0
     total_carbs = 0
     total_fat = 0
-    meal_count = 0
+    days_with_meals = 0
     
     for day in week_data:
+        day_calories = 0
+        day_protein = 0
+        day_carbs = 0
+        day_fat = 0
         for meal in day.get("meals", []):
-            # Contar comidas que tienen valores nutricionales
-            if meal.get("recipe_id") or meal.get("calories", 0) > 0:
-                total_calories += meal.get("calories", 0)
-                total_protein += meal.get("protein", 0)
-                total_carbs += meal.get("carbs", 0)
-                total_fat += meal.get("fat", 0)
-                meal_count += 1
+            # Considerar comida si tiene receta (recipe, recipe_id, recipe_name) o calorías
+            has_recipe = meal.get("recipe") or meal.get("recipe_id") or meal.get("recipe_name")
+            if has_recipe or meal.get("calories", 0) > 0:
+                day_calories += meal.get("calories", 0)
+                day_protein += meal.get("protein", 0)
+                day_carbs += meal.get("carbs", 0)
+                day_fat += meal.get("fat", 0)
+        if day_calories > 0 or day_protein > 0 or day_carbs > 0 or day_fat > 0:
+            days_with_meals += 1
+            total_calories += day_calories
+            total_protein += day_protein
+            total_carbs += day_carbs
+            total_fat += day_fat
     
+    n = days_with_meals if days_with_meals > 0 else 1
     return {
-        "total_calories": total_calories,
-        "avg_protein": total_protein // meal_count if meal_count > 0 else 0,
-        "avg_carbs": total_carbs // meal_count if meal_count > 0 else 0,
-        "avg_fat": total_fat // meal_count if meal_count > 0 else 0
+        "total_calories": total_calories // n,
+        "avg_protein": total_protein // n,
+        "avg_carbs": total_carbs // n,
+        "avg_fat": total_fat // n
     }
 
 def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
@@ -9129,16 +9705,19 @@ def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
                 "meals": day_meals.get("meals", []) if isinstance(day_meals, dict) else []
             })
     
+    # Recalcular totales desde week_data para que kcal/día salga siempre correcto
+    computed = calculate_weekly_totals(week_data)
+    
     return {
         "id": menu.id,
         "name": menu.name,
         "description": menu.description,
         "category": menu.category,
         "week": week_data,
-        "total_calories": menu.total_calories,
-        "avg_protein": menu.avg_protein,
-        "avg_carbs": menu.avg_carbs,
-        "avg_fat": menu.avg_fat,
+        "total_calories": computed["total_calories"],
+        "avg_protein": computed["avg_protein"],
+        "avg_carbs": computed["avg_carbs"],
+        "avg_fat": computed["avg_fat"],
         "assigned_patients": menu.assigned_patients,
         "is_active": menu.is_active,
         "created_at": menu.created_at
@@ -9146,16 +9725,30 @@ def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
 
 # ==================== ENDPOINTS PARA WEEKLY MENUS ====================
 
+def _menu_query_for_user(db: Session, current_user: Optional[UserDB]):
+    """Query de menús: si es admin solo los creados por él; superadmin/sin usuario ven todos."""
+    q = db.query(WeeklyMenuCompleteDB).filter(WeeklyMenuCompleteDB.is_active == 1)
+    if current_user and getattr(current_user, "role", None) == "admin":
+        q = q.filter(WeeklyMenuCompleteDB.created_by_id == current_user.id)
+    return q
+
+def _authorize_menu_access(menu: WeeklyMenuCompleteDB, current_user: UserDB):
+    """Si es admin solo puede acceder a menús creados por él; superadmin puede todo."""
+    if getattr(current_user, "role", None) == "admin":
+        if menu.created_by_id is not None and menu.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No autorizado a modificar este menú")
+
 @app.get("/api/weekly-menus")
 def get_weekly_menus(
     search: Optional[str] = None,
     category: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[UserDB] = Depends(get_current_user_optional)
 ):
     """
     Obtener todos los menús semanales con filtros opcionales
     """
-    query = db.query(WeeklyMenuCompleteDB).filter(WeeklyMenuCompleteDB.is_active == 1)
+    query = _menu_query_for_user(db, current_user)
     
     if search:
         query = query.filter(
@@ -9171,7 +9764,11 @@ def get_weekly_menus(
     return [serialize_weekly_menu(menu) for menu in menus]
 
 @app.get("/api/weekly-menus/{menu_id}")
-def get_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
+def get_weekly_menu(
+    menu_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[UserDB] = Depends(get_current_user_optional)
+):
     """
     Obtener un menú semanal específico
     """
@@ -9181,17 +9778,84 @@ def get_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
     
     if not menu:
         raise HTTPException(status_code=404, detail="Menú no encontrado")
+    if current_user and getattr(current_user, "role", None) == "admin":
+        if menu.created_by_id is not None and menu.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No autorizado a ver este menú")
     
     return serialize_weekly_menu(menu)
 
 @app.post("/api/weekly-menus")
 def create_weekly_menu(
     menu_data: WeeklyMenuCompleteCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
     Crear un nuevo menú semanal
     """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Mapear días en español a inglés
+    days_map = {
+        "Lunes": "monday",
+        "Martes": "tuesday",
+        "Miércoles": "wednesday",
+        "Jueves": "thursday",
+        "Viernes": "friday",
+        "Sábado": "saturday",
+        "Domingo": "sunday"
+    }
+    
+    # Preparar datos de la semana
+    # Inicializar estructura de listas para 4 semanas
+    week_dict = {
+        "monday": [{}, {}, {}, {}],
+        "tuesday": [{}, {}, {}, {}],
+        "wednesday": [{}, {}, {}, {}],
+        "thursday": [{}, {}, {}, {}],
+        "friday": [{}, {}, {}, {}],
+        "saturday": [{}, {}, {}, {}],
+        "sunday": [{}, {}, {}, {}]
+    }
+    
+    for day_data in menu_data.week:
+        day_key = days_map.get(day_data.day)
+        week_idx = (day_data.week - 1) if day_data.week else 0
+        
+        if day_key and 0 <= week_idx < 4:
+            week_dict[day_key][week_idx] = {
+                "meals": [meal.model_dump() for meal in day_data.meals]
+            }
+    
+    # Calcular totales
+    totals = calculate_weekly_totals([
+        {"meals": [m.model_dump() for m in d.meals]} 
+        for d in menu_data.week
+    ])
+    
+    creator_id = current_user.id if getattr(current_user, "role", None) in ("admin", "superadmin") else None
+    new_menu = WeeklyMenuCompleteDB(
+        name=menu_data.name,
+        description=menu_data.description,
+        category=menu_data.category,
+        monday=week_dict.get("monday", {}),
+        tuesday=week_dict.get("tuesday", {}),
+        wednesday=week_dict.get("wednesday", {}),
+        thursday=week_dict.get("thursday", {}),
+        friday=week_dict.get("friday", {}),
+        saturday=week_dict.get("saturday", {}),
+        sunday=week_dict.get("sunday", {}),
+        total_calories=totals["total_calories"],
+        avg_protein=totals["avg_protein"],
+        avg_carbs=totals["avg_carbs"],
+        avg_fat=totals["avg_fat"],
+        assigned_patients=0,
+        is_active=1,
+        created_at=now,
+        updated_at=now,
+        created_by_id=creator_id
+    )
+    
     try:
         print(f"📝 Creando menú semanal: {menu_data.name}")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -9286,7 +9950,8 @@ def create_weekly_menu(
 def update_weekly_menu(
     menu_id: int,
     menu_data: WeeklyMenuCompleteUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
     Actualizar un menú semanal existente
@@ -9297,6 +9962,7 @@ def update_weekly_menu(
     
     if not menu:
         raise HTTPException(status_code=404, detail="Menú no encontrado")
+    _authorize_menu_access(menu, current_user)
     
     # Actualizar campos básicos
     if menu_data.name:
@@ -9368,7 +10034,11 @@ def update_weekly_menu(
         raise HTTPException(status_code=500, detail=f"Error al actualizar menú: {str(e)}")
 
 @app.delete("/api/weekly-menus/{menu_id}")
-def delete_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
+def delete_weekly_menu(
+    menu_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Eliminar un menú semanal
     """
@@ -9378,6 +10048,7 @@ def delete_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
     
     if not menu:
         raise HTTPException(status_code=404, detail="Menú no encontrado")
+    _authorize_menu_access(menu, current_user)
     
     # Verificar si tiene pacientes asignados
     if menu.assigned_patients > 0:
@@ -9399,7 +10070,11 @@ def delete_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error al eliminar menú: {str(e)}")
 
 @app.post("/api/weekly-menus/{menu_id}/duplicate")
-def duplicate_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
+def duplicate_weekly_menu(
+    menu_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
     """
     Duplicar un menú semanal
     """
@@ -9409,9 +10084,11 @@ def duplicate_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
     
     if not original:
         raise HTTPException(status_code=404, detail="Menú no encontrado")
+    _authorize_menu_access(original, current_user)
     
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    creator_id = current_user.id if getattr(current_user, "role", None) in ("admin", "superadmin") else None
     duplicate = WeeklyMenuCompleteDB(
         name=f"{original.name} (Copia)",
         description=original.description,
@@ -9430,7 +10107,8 @@ def duplicate_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
         assigned_patients=0,
         is_active=1,
         created_at=now,
-        updated_at=now
+        updated_at=now,
+        created_by_id=creator_id
     )
     
     try:
@@ -9918,16 +10596,17 @@ def delete_meal_plan(plan_id: int, db: Session = Depends(get_db)):
 Base.metadata.create_all(bind=engine)
 
 # --- Endpoint para que el Dialog del Front pueda listar los menús ---
-@app.get("/api/weekly-menus")
 @app.get("/api/weekly-menus-complete")
-def get_all_weekly_menus(db: Session = Depends(get_db)):
+def get_all_weekly_menus(
+    db: Session = Depends(get_db),
+    current_user: Optional[UserDB] = Depends(get_current_user_optional)
+):
     """
     Obtener todos los menús semanales completos para el diálogo de asignación
     """
     try:
-        menus = db.query(WeeklyMenuCompleteDB).filter(
-            WeeklyMenuCompleteDB.is_active == 1
-        ).all()
+        query = _menu_query_for_user(db, current_user)
+        menus = query.all()
         
         result = []
         for menu in menus:
@@ -10259,6 +10938,56 @@ def superadmin_get_stats(db: Session = Depends(get_db)):
         "new_users_this_month": new_users_this_month
     }
 
+
+@app.get("/api/superadmin/recipes")
+def superadmin_get_all_recipes(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Biblioteca de recetas: todas las recetas creadas por todos los nutricionistas (solo superadmin)."""
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="Solo el superadmin puede acceder a la biblioteca de recetas")
+    recipes = db.query(RecipeDB).order_by(RecipeDB.id.desc()).all()
+    result = []
+    for r in recipes:
+        creator_name = None
+        if getattr(r, "created_by_id", None):
+            creator = db.query(UserDB).filter(UserDB.id == r.created_by_id).first()
+            if creator:
+                creator_name = f"{creator.nombres or ''} {creator.apellidos or ''}".strip() or creator.email
+        out = _recipe_to_response(r)
+        out["created_by_id"] = getattr(r, "created_by_id", None)
+        out["created_by_name"] = creator_name
+        out["is_public"] = bool(getattr(r, "is_public", 0))
+        result.append(out)
+    return result
+
+
+@app.patch("/api/superadmin/recipes/{recipe_id}/visibility")
+def superadmin_toggle_recipe_visibility(
+    recipe_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    is_public = body.get("is_public", False)
+    """Solo superadmin puede marcar recetas como públicas o privadas."""
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="Solo el superadmin puede cambiar la visibilidad")
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    recipe.is_public = 1 if is_public else 0
+    db.commit()
+    db.refresh(recipe)
+    out = _recipe_to_response(recipe)
+    out["is_public"] = bool(recipe.is_public)
+    out["created_by_id"] = getattr(recipe, "created_by_id", None)
+    creator = db.query(UserDB).filter(UserDB.id == recipe.created_by_id).first() if recipe.created_by_id else None
+    out["created_by_name"] = (f"{creator.nombres or ''} {creator.apellidos or ''}".strip() or creator.email) if creator else None
+    return out
+
+
 # ==================== ENDPOINTS SUPERADMIN - NUTRICIONISTAS ====================
 
 @app.get("/api/superadmin/nutritionists", response_model=List[NutritionistResponse])
@@ -10353,11 +11082,16 @@ def superadmin_get_nutritionist_details(nutritionist_id: int, db: Session = Depe
 @app.post("/api/superadmin/nutritionists/invite")
 def superadmin_invite_nutritionist(
     invite_data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
 ):
     """
-    Invitar a un nuevo nutricionista al sistema
+    Agregar nutricionista, generar enlace de registro y enviar correo al nutricionista
+    con dicho enlace para que complete su registro. También se devuelve el enlace por si
+    el superadmin quiere copiarlo o el correo no llegara.
     """
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="Solo el superadmin puede invitar nutricionistas")
     email = invite_data.get("email")
     name = invite_data.get("name")
     specialty = invite_data.get("specialty")
@@ -10365,21 +11099,19 @@ def superadmin_invite_nutritionist(
     if not email or not name:
         raise HTTPException(status_code=400, detail="Email y nombre son requeridos")
     
-    # Verificar si el email ya existe
     existing = db.query(UserDB).filter(UserDB.email == email).first()
     if existing:
         raise HTTPException(status_code=400, detail="El email ya está registrado")
     
-    # Separar nombre
     name_parts = name.split(" ", 1)
     nombres = name_parts[0]
     apellidos = name_parts[1] if len(name_parts) > 1 else ""
     
-    # Generar contraseña temporal
-    temp_password = "Nutri123!"
+    # Contraseña imposible de adivinar hasta que complete el registro (no se envía por email)
+    import secrets
+    temp_password = secrets.token_urlsafe(32)
     hashed_pwd = pwd_context.hash(temp_password)
     
-    # Crear usuario admin
     new_admin = UserDB(
         nombres=nombres,
         apellidos=apellidos,
@@ -10393,7 +11125,6 @@ def superadmin_invite_nutritionist(
     db.add(new_admin)
     db.flush()
     
-    # Crear perfil extendido
     if specialty:
         admin_profile = AdminProfileDB(
             user_id=new_admin.id,
@@ -10403,18 +11134,40 @@ def superadmin_invite_nutritionist(
     
     try:
         db.commit()
-        
-        # Aquí deberías enviar un email de invitación
-        # send_invitation_email(email, temp_password)
-        
-        return {
-            "success": True,
-            "message": f"Invitación enviada a {email}",
-            "temp_password": temp_password  # En producción, no retornar esto
-        }
+        db.refresh(new_admin)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear invitación: {str(e)}")
+    
+    # Token JWT para el enlace de registro (válido 7 días)
+    invite_token = jwt.encode(
+        {
+            "user_id": new_admin.id,
+            "email": new_admin.email,
+            "type": "nutritionist_invite",
+            "exp": datetime.utcnow() + timedelta(days=7)
+        },
+        SECRET_KEY,
+        algorithm="HS256"
+    )
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    registration_link = f"{frontend_url}/register-nutritionist?token={quote(invite_token, safe='')}"
+    
+    # Enviar correo al nutricionista con el enlace de registro
+    email_sent = send_nutritionist_invite_email(
+        to_email=email,
+        name=f"{nombres} {apellidos}".strip() or email,
+        registration_link=registration_link
+    )
+    
+    return {
+        "success": True,
+        "message": "Nutricionista agregado. Se ha enviado un correo con el enlace de registro." if email_sent else "Nutricionista agregado. No se pudo enviar el correo; comparte el enlace manualmente.",
+        "registration_link": registration_link,
+        "email": email,
+        "name": f"{nombres} {apellidos}".strip(),
+        "email_sent": email_sent
+    }
 
 @app.delete("/api/superadmin/nutritionists/{nutritionist_id}")
 def superadmin_delete_nutritionist(nutritionist_id: int, db: Session = Depends(get_db)):
@@ -10747,7 +11500,35 @@ def get_conversations(
 ):
     conversations = []
     
-    if current_user.role in ["admin", "superadmin"]:
+    if current_user.role == "admin":
+        # Nutricionista: solo sus pacientes asignados
+        patients = db.query(UserDB).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == current_user.id
+        ).all()
+        for p in patients:
+            last_msg = db.query(MessageDB).filter(
+                ((MessageDB.sender_id == current_user.id) & (MessageDB.receiver_id == p.id)) |
+                ((MessageDB.sender_id == p.id) & (MessageDB.receiver_id == current_user.id))
+            ).order_by(MessageDB.timestamp.desc()).first()
+            
+            unread = db.query(MessageDB).filter(
+                MessageDB.sender_id == p.id,
+                MessageDB.receiver_id == current_user.id,
+                MessageDB.read == False
+            ).count()
+            
+            conversations.append({
+                "id": p.id,
+                "patientName": f"{p.nombres} {p.apellidos}",
+                "patientAvatar": p.foto_perfil,
+                "lastMessage": last_msg.content if last_msg else "Iniciar conversación",
+                "lastMessageTime": last_msg.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if last_msg else "",
+                "unreadCount": unread,
+                "isOnline": False
+            })
+    elif current_user.role == "superadmin":
+        # Superadmin: ve todos los pacientes (opcional)
         patients = db.query(UserDB).filter(UserDB.role == "patient").all()
         for p in patients:
             last_msg = db.query(MessageDB).filter(
@@ -10771,8 +11552,16 @@ def get_conversations(
                 "isOnline": False
             })
             
-    else: 
-        admins = db.query(UserDB).filter(UserDB.role.in_(['admin', 'superadmin'])).all()
+    else:
+        # Paciente: solo su nutricionista asignado
+        admins = []
+        if current_user.nutritionist_id:
+            admin = db.query(UserDB).filter(
+                UserDB.id == current_user.nutritionist_id,
+                UserDB.role.in_(['admin', 'superadmin'])
+            ).first()
+            if admin:
+                admins = [admin]
         for admin in admins:
              last_msg = db.query(MessageDB).filter(
                 ((MessageDB.sender_id == current_user.id) & (MessageDB.receiver_id == admin.id)) |
@@ -10803,6 +11592,18 @@ def get_messages(
     db: Session = Depends(get_db),
     current_user: UserDB = Depends(get_current_user)
 ):
+    # Solo permitir chat con el interlocutor correcto
+    other = db.query(UserDB).filter(UserDB.id == other_user_id).first()
+    if not other:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if current_user.role == "admin":
+        if other.role != "patient" or other.nutritionist_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No puedes acceder a esta conversación")
+    elif current_user.role == "patient":
+        if other_user_id != current_user.nutritionist_id:
+            raise HTTPException(status_code=403, detail="No puedes acceder a esta conversación")
+    # superadmin puede ver cualquier conversación
+
     messages = db.query(MessageDB).filter(
         ((MessageDB.sender_id == current_user.id) & (MessageDB.receiver_id == other_user_id)) |
         ((MessageDB.sender_id == other_user_id) & (MessageDB.receiver_id == current_user.id))
@@ -10833,7 +11634,14 @@ def send_message(
 ):
     receiver = db.query(UserDB).filter(UserDB.id == msg.receiver_id).first()
     if not receiver:
-         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # Restricción: nutricionista solo con sus pacientes; paciente solo con su nutricionista
+    if current_user.role == "admin":
+        if receiver.role != "patient" or receiver.nutritionist_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No puedes enviar mensajes a este usuario")
+    elif current_user.role == "patient":
+        if msg.receiver_id != current_user.nutritionist_id:
+            raise HTTPException(status_code=403, detail="No puedes enviar mensajes a este usuario")
 
     new_msg = MessageDB(
         sender_id=current_user.id,

@@ -152,6 +152,38 @@
   .animate-scale-in {
     animation: scaleIn 0.3s ease-out forwards;
   }
+
+  .animate-login-entrance {
+    animation: loginEntrance 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  .animate-login-stagger {
+    animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
+  .animate-float-subtle {
+    animation: floatSubtle 4s ease-in-out infinite;
+  }
+}
+
+@keyframes loginEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatSubtle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes fadeIn {
@@ -183,4 +215,61 @@
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Animación de llenado para barras de progreso */
+@keyframes progressBarFill {
+  from {
+    width: 0;
+  }
+  to {
+    width: var(--progress-end, 0);
+  }
+}
+
+.animate-progress-fill {
+  --progress-end: 0;
+  animation: progressBarFill 0.7s ease-out forwards;
+}
+
+/* Animación persona trotando (LoadingScreen) */
+@keyframes runner-leg-front {
+  0%, 100% { transform: rotate(-25deg); }
+  50% { transform: rotate(28deg); }
+}
+
+@keyframes runner-leg-back {
+  0%, 100% { transform: rotate(28deg); }
+  50% { transform: rotate(-25deg); }
+}
+
+@keyframes runner-arm-front {
+  0%, 100% { transform: rotate(20deg); }
+  50% { transform: rotate(-22deg); }
+}
+
+@keyframes runner-arm-back {
+  0%, 100% { transform: rotate(-22deg); }
+  50% { transform: rotate(20deg); }
+}
+
+@keyframes runner-ground {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.runner-leg-front {
+  animation: runner-leg-front 0.4s ease-in-out infinite;
+}
+.runner-leg-back {
+  animation: runner-leg-back 0.4s ease-in-out infinite;
+}
+.runner-arm-front {
+  animation: runner-arm-front 0.4s ease-in-out infinite;
+}
+.runner-arm-back {
+  animation: runner-arm-back 0.4s ease-in-out infinite;
+}
+.runner-ground {
+  animation: runner-ground 1.2s linear infinite;
 }

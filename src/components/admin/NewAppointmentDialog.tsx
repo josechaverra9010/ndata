@@ -72,7 +72,10 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
 
   const fetchPatients = async () => {
     try {
-      const response = await axios.get(`${API_URL}/patients`);
+      const token = localStorage.getItem("userToken");
+      const response = await axios.get(`${API_URL}/patients`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       setPatients(response.data);
     } catch (error) {
       console.error("Error loading patients:", error);
@@ -89,9 +92,11 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
 
     setLoadingSlots(true);
     try {
+      const token = localStorage.getItem("userToken");
       const dateStr = format(formData.date, "yyyy-MM-dd");
       const response = await axios.get(
-        `${API_URL}/appointments/available-slots/${dateStr}`
+        `${API_URL}/appointments/available-slots/${dateStr}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
       setAvailableSlots(response.data.available_slots);
     } catch (error) {
@@ -142,7 +147,10 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
         notes: formData.notes || null,
       };
 
-      await axios.post(`${API_URL}/appointments`, appointmentData);
+      const token = localStorage.getItem("userToken");
+      await axios.post(`${API_URL}/appointments`, appointmentData, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
       toast({
         title: "Cita creada",

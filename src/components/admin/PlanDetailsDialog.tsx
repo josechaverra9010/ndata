@@ -54,6 +54,7 @@ interface MealPlan {
   duration: string;
   category: string;
   color: string;
+  tipo?: string;
   protein_target?: number;
   carbs_target?: number;
   fat_target?: number;
@@ -66,6 +67,15 @@ interface MealPlan {
   fase_3?: any;
   fase_4?: any;
 }
+
+const planTypeLabels: Record<string, string> = {
+  adulto: "Adulto",
+  pediatria: "Pediatría",
+  gestante: "Gestante",
+  gestante_adolescente: "Gestante adolescente",
+  hospitalizado: "Hospitalizado",
+  deportista: "Deportista",
+};
 
 interface MealData {
   type: string;
@@ -277,6 +287,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
     duration: "",
     category: "",
     color: "primary",
+    tipo: "adulto",
     protein_target: "",
     carbs_target: "",
     fat_target: "",
@@ -292,6 +303,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
         duration: plan.duration,
         category: plan.category,
         color: plan.color,
+        tipo: plan.tipo || "adulto",
         protein_target: plan.protein_target?.toString() || "",
         carbs_target: plan.carbs_target?.toString() || "",
         fat_target: plan.fat_target?.toString() || "",
@@ -405,6 +417,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
       duration: formData.duration,
       category: formData.category,
       color: formData.color,
+      tipo: formData.tipo || "adulto",
       protein_target: formData.protein_target ? parseInt(formData.protein_target) : 0,
       carbs_target: formData.carbs_target ? parseInt(formData.carbs_target) : 0,
       fat_target: formData.fat_target ? parseInt(formData.fat_target) : 0,
@@ -542,9 +555,14 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
-              <Badge variant="outline" className={categoryColors[plan.color as keyof typeof categoryColors]}>
-                {plan.category}
-              </Badge>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className={categoryColors[plan.color as keyof typeof categoryColors]}>
+                  {plan.category}
+                </Badge>
+                {plan.tipo && (
+                  <Badge variant="secondary">{planTypeLabels[plan.tipo] ?? plan.tipo}</Badge>
+                )}
+              </div>
               <DialogTitle className="text-xl mt-2">{isEditing ? "Editar Plan" : plan.name}</DialogTitle>
               <DialogDescription>
                 {isEditing ? "Modifica los detalles del plan nutricional" : plan.description}
@@ -603,6 +621,22 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                     {categories.map((cat) => (
                       <SelectItem key={cat} value={cat}>
                         {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-tipo">Tipo de plan</Label>
+                <Select value={formData.tipo} onValueChange={(value) => handleChange("tipo", value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(planTypeLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -829,6 +863,12 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                       {plan.category}
                     </Badge>
                   </div>
+                  {plan.tipo && (
+                    <div className="flex items-center justify-between py-2 border-b">
+                      <span className="text-sm font-medium text-muted-foreground">Tipo de plan</span>
+                      <span className="text-sm font-semibold text-foreground">{planTypeLabels[plan.tipo] ?? plan.tipo}</span>
+                    </div>
+                  )}
                   {plan.created_at && (
                     <div className="flex items-center justify-between py-2">
                       <span className="text-sm font-medium text-muted-foreground">Fecha de creación</span>

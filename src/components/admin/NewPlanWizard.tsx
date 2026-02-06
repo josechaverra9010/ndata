@@ -27,11 +27,11 @@ import {
 } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Users, Clock, AlertCircle, PieChart } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Clock, AlertCircle, PieChart } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FOOD_NUTRIENTS } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getCompositionRowForIngredient } from "@/lib/foodNutrients";
 
 interface NewPlanWizardProps {
   open: boolean;
@@ -67,15 +67,23 @@ const PHASES = [
   }
 ];
 
-// Grupos de alimentos dinámicos desde FOOD_NUTRIENTS
-const GRUPOS_ALIMENTOS = Object.keys(FOOD_NUTRIENTS);
+// Grupos de alimentos de Fase 3 según EVANUT 4.1 (solo los del Excel)
+const GRUPOS_ALIMENTOS = EVANUT_GRUPOS_ALIMENTOS;
 
-export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: NewPlanWizardProps) {
-  const [currentPhase, setCurrentPhase] = useState(1);
-  const [selectedWeek, setSelectedWeek] = useState(1);
-  const [loadingPatient, setLoadingPatient] = useState(false);
-  const [formData, setFormData] = useState({
-    // Fase 1: Requerimiento Energético y Peso Saludable
+const PLAN_WIZARD_DRAFT_KEY = "ndata_plan_wizard_draft";
+
+export const PLAN_TYPES = [
+  { value: "adulto", label: "Adulto" },
+  { value: "pediatria", label: "Pediatría" },
+  { value: "gestante", label: "Gestante" },
+  { value: "gestante_adolescente", label: "Gestante adolescente" },
+  { value: "hospitalizado", label: "Hospitalizado" },
+  { value: "deportista", label: "Deportista" },
+] as const;
+
+function getDefaultFormData() {
+  return {
+    tipo_plan: "adulto" as string,
     peso_actual: "",
     altura: "",
     edad: "",
@@ -87,8 +95,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     imc: "",
     tmb: "",
     factor_actividad: "",
-
-    // Fase 2: Fórmula Sintética de Consumo y Planeada
     proteinas_gramos_f2: "",
     proteinas_calorias_f2: "",
     proteinas_amdr_f2: "",
@@ -115,8 +121,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     total_fibra: "",
     peso_referencia_f2: "",
     cho_kg_peso: "",
-
-    // Fase 3: Grupos de Alimentos - Detalles completos
     grupos_alimentos_f3: GRUPOS_ALIMENTOS.reduce((acc, grupo) => {
       acc[grupo] = {
         porciones: "",
@@ -140,7 +144,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       };
       return acc;
     }, {} as Record<string, any>),
-
     totals_f3: {
       kcal: 0,
       prot: 0,
@@ -160,24 +163,67 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       zn: 0,
       cu: 0
     },
-
-    // Fase 4: Minuta Patrón e Ingredientes
     nombre_plan: "",
     descripcion: "",
     categoria: "",
     color: "primary",
     duracion: "",
     comidas_dia: "3",
-    ingredientes_f4: {} as Record<string, any>, // [DayName][MealType][IngredientName] = grams
+    ingredientes_f4: {} as Record<string, any>,
     observaciones: "",
-    weekly_menu_id: ""
-  });
+    weekly_menu_id: "",
+    patient_id: "" as string | number,
+  };
+}
+
+function getDraftKey(patientIdOrFormPatient: number | string | undefined | null): string {
+  const id = patientIdOrFormPatient === "" || patientIdOrFormPatient == null ? 0 : patientIdOrFormPatient;
+  return `${PLAN_WIZARD_DRAFT_KEY}_${id}`;
+}
+
+function mergeFormDataWithDefaults(saved: any): any {
+  const defaultData = getDefaultFormData();
+  if (!saved || typeof saved !== "object") return defaultData;
+  const merged = { ...defaultData };
+  for (const key of Object.keys(defaultData)) {
+    if (saved[key] === undefined) continue;
+    if (key === "grupos_alimentos_f3" && saved[key] && typeof saved[key] === "object") {
+      const defaultGroups = defaultData.grupos_alimentos_f3;
+      merged.grupos_alimentos_f3 = { ...defaultGroups };
+      for (const g of Object.keys(saved.grupos_alimentos_f3 || {})) {
+        if (defaultGroups[g]) {
+          merged.grupos_alimentos_f3[g] = { ...defaultGroups[g], ...(saved.grupos_alimentos_f3[g] || {}) };
+        } else {
+          merged.grupos_alimentos_f3[g] = saved.grupos_alimentos_f3[g];
+        }
+      }
+    } else if (key === "totals_f3" && saved[key] && typeof saved[key] === "object") {
+      merged.totals_f3 = { ...defaultData.totals_f3, ...saved.totals_f3 };
+    } else if (key === "ingredientes_f4" && saved[key] && typeof saved[key] === "object") {
+      merged.ingredientes_f4 = { ...(saved.ingredientes_f4 || {}) };
+    } else {
+      merged[key] = saved[key];
+    }
+  }
+  return merged;
+}
+
+export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: NewPlanWizardProps) {
+  const [currentPhase, setCurrentPhase] = useState(1);
+  const [selectedWeek, setSelectedWeek] = useState(1);
+  const [loadingPatient, setLoadingPatient] = useState(false);
+  const [formData, setFormData] = useState(getDefaultFormData);
 
   const [completedPhases, setCompletedPhases] = useState<number[]>([]);
   const [weeklyMenus, setWeeklyMenus] = useState<any[]>([]);
   const [loadingMenus, setLoadingMenus] = useState(false);
   const [detailedMenu, setDetailedMenu] = useState<any>(null);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
+  // Guardar gramos base de Fase 4 (sin multiplicador) y multiplicadores por ingrediente
+  const [baseIngredientsF4, setBaseIngredientsF4] = useState<Record<string, any>>({});
+  const [ingredientMultipliers, setIngredientMultipliers] = useState<Record<string, any>>({});
+  const [patientsList, setPatientsList] = useState<{ id: number; name: string }[]>([]);
+  const [loadingPatientsList, setLoadingPatientsList] = useState(false);
   const { toast } = useToast();
 
   const currentPhaseData = PHASES.find(p => p.id === currentPhase) || PHASES[0];
@@ -256,37 +302,58 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       const edad = computeAgeYears(patient?.fecha_nacimiento);
       const pal = mapNivelActividadToPAL(patient?.nivel_actividad);
       const pesoObjetivo = patient?.peso_objetivo != null ? String(patient.peso_objetivo) : "";
+      const factorActividad = patient?.pal_factor ? String(patient.pal_factor) : (pal || "1.55");
 
-      setFormData((prev: any) => {
-        const next = {
-          ...prev,
-          peso_actual: pesoActual,
-          altura,
-          genero,
-          edad,
-          peso_objetivo: pesoObjetivo,
-          peso_referencia_f2: pesoObjetivo,
-          factor_actividad: patient?.pal_factor ? String(patient.pal_factor) : (pal || "1.55"), // Priorizar manual, luego mapeado, luego default
-        };
-        return next;
+      // Calcular todos los valores derivados con los datos del paciente (un solo setFormData para evitar estado desfasado)
+      let imc = "";
+      let pesoSaludable = "";
+      let pesoAjustado = "";
+      let tmb = "";
+      let requerimientoEnergetico = "";
+
+      const pesoNum = parseFloat(pesoActual);
+      const alturaNum = parseFloat(altura);
+      if (!isNaN(pesoNum) && !isNaN(alturaNum) && alturaNum > 0) {
+        const alturaMetros = alturaNum / 100;
+        const imcVal = pesoNum / (alturaMetros * alturaMetros);
+        imc = imcVal.toFixed(2);
+        pesoSaludable = (25 * alturaMetros * alturaMetros).toFixed(2);
+        pesoAjustado = ((pesoNum - 25 * alturaMetros * alturaMetros) * 0.25 + 25 * alturaMetros * alturaMetros).toFixed(2);
+      }
+
+      const tmbComputed = computeTmbValue(pesoObjetivo || pesoActual, edad, genero);
+      if (tmbComputed != null) {
+        tmb = tmbComputed.toFixed(2);
+        const factorNum = parseFloat(factorActividad) || 1.55;
+        requerimientoEnergetico = String(Math.round(tmbComputed * factorNum));
+      }
+
+      setFormData((prev: any) => ({
+        ...prev,
+        patient_id: pid,
+        peso_actual: pesoActual,
+        altura,
+        genero,
+        edad,
+        peso_objetivo: pesoObjetivo,
+        peso_referencia_f2: pesoObjetivo,
+        factor_actividad: factorActividad,
+        imc: imc || prev.imc,
+        peso_saludable: pesoSaludable || prev.peso_saludable,
+        peso_ajustado: pesoAjustado || prev.peso_ajustado,
+        tmb: tmb || prev.tmb,
+        requerimiento_energetico: requerimientoEnergetico || prev.requerimiento_energetico,
+      }));
+
+      toast({
+        title: "Datos cargados",
+        description: `Se cargaron los datos de ${patient?.nombres || "el paciente"}`,
       });
-
-      // Disparar cálculos con valores locales (evitar estado desfasado)
-      const tmbComputed = computeTmbValue(pesoObjetivo, edad, genero);
-      if (pesoActual && altura) {
-        calculateIMC(pesoActual, altura);
-      }
-      if (pesoObjetivo && edad && genero) {
-        calculateTMB(pesoObjetivo, edad, genero);
-      }
-      if (pal && tmbComputed != null) {
-        calculateRequerimientoEnergetico(String(tmbComputed), pal);
-      }
     } catch (error: any) {
       console.error("Error prefill patient:", error);
       toast({
         title: "Error",
-        description: error?.message || "No se pudo autocompletar con los datos del paciente",
+        description: error?.message || "No se pudo cargar los datos del paciente",
         variant: "destructive",
       });
     } finally {
@@ -294,15 +361,75 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     }
   };
 
+  // Cargar lista de pacientes para el selector de Fase 1 (cuando se abre el wizard)
+  useEffect(() => {
+    if (!open || currentPhase !== 1) return;
+    setLoadingPatientsList(true);
+    const token = localStorage.getItem("userToken");
+    fetch(`${API_URL}/patients`, {
+      headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+    })
+      .then((r) => r.ok ? r.json() : [])
+      .then((list: { id: number; nombres?: string; apellidos?: string; name?: string }[]) => {
+        setPatientsList(
+          (list || []).map((p) => ({
+            id: p.id,
+            name: [p.nombres, p.apellidos].filter(Boolean).join(" ") || (p as any).name || `Paciente ${p.id}`,
+          }))
+        );
+      })
+      .catch(() => setPatientsList([]))
+      .finally(() => setLoadingPatientsList(false));
+  }, [open, currentPhase]);
+
+  // Al abrir: restaurar borrador del paciente actual si existe; si no, empezar desde cero y opcionalmente prefill
   useEffect(() => {
     if (!open) return;
-    // Resetear a fase 1 al abrir
+    const draftKey = getDraftKey(patientId);
+    try {
+      const raw = localStorage.getItem(draftKey);
+      const draft = raw ? JSON.parse(raw) : null;
+      if (draft && typeof draft.currentPhase === "number" && draft.formData) {
+        const merged = mergeFormDataWithDefaults(draft.formData);
+        // Asegurar que el borrador cargado tenga el patient_id correcto (por si es antiguo o se abrió con paciente)
+        const mergedWithPatient = patientId != null
+          ? { ...merged, patient_id: merged.patient_id || patientId }
+          : merged;
+        setFormData(mergedWithPatient);
+        setCurrentPhase(Math.min(4, Math.max(1, draft.currentPhase)));
+        setCompletedPhases(Array.isArray(draft.completedPhases) ? draft.completedPhases : []);
+        toast({
+          title: "Borrador restaurado",
+          description: "Puedes continuar desde donde habías quedado.",
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn("Error loading plan wizard draft:", e);
+    }
+    setFormData(getDefaultFormData());
     setCurrentPhase(1);
     setCompletedPhases([]);
     if (typeof patientId === "number") {
       fetchPatientAndPrefill(patientId);
     }
   }, [open, patientId]);
+
+  // Persistir borrador del paciente actual mientras el modal está abierto
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const payload = {
+        formData,
+        currentPhase,
+        completedPhases,
+      };
+      const draftKey = getDraftKey(formData.patient_id);
+      localStorage.setItem(draftKey, JSON.stringify(payload));
+    } catch (e) {
+      console.warn("Error saving plan wizard draft:", e);
+    }
+  }, [open, formData, currentPhase, completedPhases]);
 
   // Cargar menús semanales cuando se abre la Fase 4
   useEffect(() => {
@@ -418,7 +545,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       setDetailedMenu(fullEnrichedMenu);
       console.log("✅ Menú enriquecido satisfactoriamente:", fullEnrichedMenu);
 
-      // Inicializar ingredientes_f4 de forma inteligente preservando los existentes
+      // Inicializar ingredientes_f4 con los gramos de la tabla de composición (por receta), no editables
       const currentIngredients = { ...formData.ingredientes_f4 };
       const initialIngredients: Record<string, any> = { ...currentIngredients };
 
@@ -426,20 +553,36 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
         if (!initialIngredients[dayIdx]) initialIngredients[dayIdx] = {};
 
         day.meals.forEach((meal: any, mealIdx: number) => {
-          // Intentar obtener por Tipo y también por Índice (retrocompatibilidad)
           const mealKey = meal.type || mealIdx.toString();
           if (!initialIngredients[dayIdx][mealKey]) initialIngredients[dayIdx][mealKey] = {};
 
           if (meal.recipeDetails?.ingredients && Array.isArray(meal.recipeDetails.ingredients)) {
             meal.recipeDetails.ingredients.forEach((ing: string) => {
-              // SOLO inicializar a vacío si no existe ya un valor (para no borrar lo que el usuario escribió)
-              if (initialIngredients[dayIdx][mealKey][ing] === undefined) {
-                initialIngredients[dayIdx][mealKey][ing] = "";
-              }
+              const baseName = (ing && typeof ing === "string") ? ing.replace(/\s*:.*$/, "").trim() : String(ing);
+              const row = getCompositionRowForIngredient(ing) ?? getCompositionRowForIngredient(baseName);
+              const grams = row?.portion_grams != null ? String(row.portion_grams) : "";
+              initialIngredients[dayIdx][mealKey][ing] = grams;
             });
           }
         });
       });
+
+      // Guardar gramos base y multiplicadores iniciales (1) por ingrediente
+      const initialMultipliers: Record<string, any> = {};
+      Object.entries(initialIngredients).forEach(([dayKey, meals]) => {
+        if (!meals || typeof meals !== "object") return;
+        initialMultipliers[dayKey] = {};
+        Object.entries(meals as Record<string, any>).forEach(([mealKey, ingredients]) => {
+          if (!ingredients || typeof ingredients !== "object") return;
+          initialMultipliers[dayKey][mealKey] = {};
+          Object.keys(ingredients as Record<string, any>).forEach((ingredientName) => {
+            initialMultipliers[dayKey][mealKey][ingredientName] = 1;
+          });
+        });
+      });
+
+      setBaseIngredientsF4(initialIngredients);
+      setIngredientMultipliers(initialMultipliers);
       handleChange("ingredientes_f4", initialIngredients);
     } catch (error) {
       console.error("Error fetching detailed menu:", error);
@@ -466,7 +609,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   };
 
   // Calcular IMC
-  // Actualizar gramos de ingredientes
+  // Actualizar gramos de un ingrediente concreto (Fase 4)
   const updateIngredientGrams = (dayIdx: number, mealType: string, ingredient: string, grams: string) => {
     setFormData(prev => ({
       ...prev,
@@ -768,14 +911,23 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       return;
     }
 
+    const calories = parseInt(formData.requerimiento_energetico) || 0;
+    const proteinG = parseFloat(formData.proteinas_gramos_f2) || 0;
+    const carbsG = parseFloat(formData.cho_gramos_f2) || 0;
+    const fatG = parseFloat(formData.grasas_gramos_f2) || 0;
+
     const planData = {
       name: formData.nombre_plan || "Plan Nutricional",
       description: formData.descripcion,
-      calories: parseInt(formData.requerimiento_energetico) || 0,
+      calories,
       duration: formData.duracion,
       category: formData.categoria,
       color: formData.color,
+      tipo: formData.tipo_plan || "adulto",
       meals_per_day: parseInt(formData.comidas_dia) || 3,
+      protein_target: Math.round(proteinG),
+      carbs_target: Math.round(carbsG),
+      fat_target: Math.round(fatG),
 
       // Datos de las 4 fases
       fase_1: {
@@ -896,8 +1048,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
         // El padre solo necesita actualizar la lista, no crear el plan de nuevo
         onCreatePlan(newPlan);
 
-        // ASIGNACIÓN AUTOMÁTICA AL PACIENTE
-        if (patientId) {
+        // ASIGNACIÓN AUTOMÁTICA AL PACIENTE (prop o paciente seleccionado en fase 1)
+        const effectivePatientId = patientId ?? (formData.patient_id ? Number(formData.patient_id) : null);
+        if (effectivePatientId) {
           try {
             const startDate = new Date().toISOString().split('T')[0];
             let endDate = null;
@@ -919,7 +1072,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                 ...(token ? { "Authorization": `Bearer ${token}` } : {}),
               },
               body: JSON.stringify({
-                patient_id: patientId,
+                patient_id: effectivePatientId,
                 meal_plan_id: planId,
                 start_date: startDate,
                 end_date: endDate,
@@ -938,65 +1091,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
           }
         }
 
-        // Reset form
-        setFormData({
-          peso_actual: "",
-          altura: "",
-          edad: "",
-          genero: "",
-          peso_saludable: "",
-          peso_ajustado: "",
-          peso_objetivo: "",
-          requerimiento_energetico: "",
-          imc: "",
-          tmb: "",
-          factor_actividad: "",
-          proteinas_gramos_f2: "",
-          proteinas_calorias_f2: "",
-          proteinas_amdr_f2: "",
-          proteinas_avb_gramos: "",
-          proteinas_avb_porcentaje: "",
-          proteinas_kg_peso: "",
-          grasas_gramos_f2: "",
-          grasas_calorias_f2: "",
-          grasas_amdr_f2: "",
-          grasas_gs_gramos: "",
-          grasas_gs_amdr: "",
-          grasas_gm_gramos: "",
-          grasas_gm_amdr: "",
-          grasas_gp_gramos: "",
-          grasas_gp_amdr: "",
-          grasas_colesterol: "",
-          cho_gramos_f2: "",
-          cho_calorias_f2: "",
-          cho_amdr_f2: "",
-          cho_concent_gramos: "",
-          cho_concent_amdr: "",
-          total_calorias_f2: "",
-          total_amdr_f2: "",
-          total_fibra: "",
-          peso_referencia_f2: "",
-          grupos_alimentos_f3: GRUPOS_ALIMENTOS.reduce((acc, grupo) => {
-            acc[grupo] = {
-              porciones: "", kcal: 0, prot: 0, grasa: 0, gs: 0, gm: 0, gp: 0, col: 0, chos: 0, fd: 0,
-              calcio: 0, p: 0, fe: 0, na: 0, k: 0, mg: 0, zn: 0, cu: 0
-            };
-            return acc;
-          }, {} as Record<string, any>),
-          totals_f3: {
-            kcal: 0, prot: 0, grasa: 0, gs: 0, gm: 0, gp: 0, col: 0, chos: 0, fd: 0,
-            calcio: 0, p: 0, fe: 0, na: 0, k: 0, mg: 0, zn: 0, cu: 0
-          },
-          nombre_plan: "",
-          descripcion: "",
-          categoria: "",
-          color: "primary",
-          duracion: "",
-          comidas_dia: "3",
-          ingredientes_f4: {},
-          observaciones: "",
-          weekly_menu_id: ""
-        });
+        // Limpiar borrador de este paciente y reset form
+        localStorage.removeItem(getDraftKey(patientId ?? formData.patient_id));
+        setFormData(getDefaultFormData());
         setCurrentPhase(1);
         setCompletedPhases([]);
         onOpenChange(false);
@@ -1027,6 +1124,26 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
             Completa las 4 fases para crear un plan nutricional completo
           </DialogDescription>
         </DialogHeader>
+
+        {/* Tipo de plan */}
+        <div className="space-y-2">
+          <Label className="text-base font-semibold text-primary">Tipo de plan</Label>
+          <Select
+            value={formData.tipo_plan}
+            onValueChange={(value) => handleChange("tipo_plan", value)}
+          >
+            <SelectTrigger className="max-w-xs">
+              <SelectValue placeholder="Seleccionar tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              {PLAN_TYPES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Progress Bar */}
         <div className="space-y-2">
@@ -1080,6 +1197,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                 <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
               </CardHeader>
               <CardContent className="space-y-4">
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="peso_actual">Peso Actual (kg)</Label>
@@ -1966,24 +2084,76 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                         <div className="space-y-3">
                                           <Label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">
                                             <FileText className="h-3 w-3" />
-                                            Ingredientes y Gramos
+                                            Ingredientes y gramos (según receta / tabla de composición)
                                           </Label>
                                           <div className="grid gap-2">
-                                            {meal.recipeDetails.ingredients.map((ing: string, ingIdx: number) => (
-                                              <div key={ingIdx} className="flex items-center gap-3 bg-muted/10 p-2 rounded border border-transparent hover:border-primary/10 transition-colors">
-                                                <span className="text-xs flex-1 truncate font-medium">{ing}</span>
-                                                <div className="flex items-center gap-1 w-24 shrink-0">
-                                                  <Input
-                                                    type="text"
-                                                    placeholder="0"
-                                                    className="h-7 text-xs text-right font-bold pr-1 focus-visible:ring-primary border-primary/20"
-                                                    value={formData.ingredientes_f4[dayIdx]?.[meal.type]?.[ing] || formData.ingredientes_f4[dayIdx]?.[mealIdx]?.[ing] || ""}
-                                                    onChange={(e) => updateIngredientGrams(dayIdx, meal.type, ing, e.target.value)}
-                                                  />
-                                                  <span className="text-[10px] font-bold text-muted-foreground">g</span>
+                                            {meal.recipeDetails.ingredients.map((ing: string, ingIdx: number) => {
+                                              const mealKey = meal.type || mealIdx.toString();
+                                              const baseGramsStr =
+                                                baseIngredientsF4?.[dayIdx]?.[mealKey]?.[ing] ??
+                                                baseIngredientsF4?.[dayIdx]?.[mealIdx]?.[ing] ??
+                                                "";
+                                              const baseGrams = parseFloat(String(baseGramsStr));
+                                              const currentMultiplier =
+                                                ingredientMultipliers?.[dayIdx]?.[mealKey]?.[ing] ?? 1;
+                                              const gramsValue =
+                                                formData.ingredientes_f4[dayIdx]?.[mealKey]?.[ing] ?? "";
+
+                                              const displayGrams =
+                                                gramsValue ||
+                                                (Number.isFinite(baseGrams)
+                                                  ? (baseGrams * currentMultiplier).toFixed(1)
+                                                  : "");
+
+                                              return (
+                                                <div
+                                                  key={ingIdx}
+                                                  className="flex items-center gap-3 bg-muted/10 p-2 rounded border border-transparent"
+                                                >
+                                                  <span className="text-xs flex-1 truncate font-medium">
+                                                    {ing.replace(/\s*:.*$/, "").trim() || ing}
+                                                  </span>
+                                                  <span className="text-[11px] text-muted-foreground w-10 text-right tabular-nums">
+                                                    {displayGrams ? `${displayGrams} g` : "—"}
+                                                  </span>
+                                                  <div className="flex items-center gap-1 shrink-0">
+                                                    <span className="text-[10px] text-muted-foreground">x</span>
+                                                    <Input
+                                                      type="number"
+                                                      step="0.1"
+                                                      className="h-7 w-16 text-[11px] text-center"
+                                                      value={currentMultiplier}
+                                                      onChange={(e) => {
+                                                        const raw = parseFloat(e.target.value);
+                                                        const safeMultiplier =
+                                                          Number.isFinite(raw) && raw >= 0 ? raw : 0;
+
+                                                        setIngredientMultipliers(prev => ({
+                                                          ...prev,
+                                                          [dayIdx]: {
+                                                            ...(prev[dayIdx] || {}),
+                                                            [mealKey]: {
+                                                              ...(prev[dayIdx]?.[mealKey] || {}),
+                                                              [ing]: safeMultiplier,
+                                                            },
+                                                          },
+                                                        }));
+
+                                                        if (Number.isFinite(baseGrams)) {
+                                                          const scaled = baseGrams * safeMultiplier;
+                                                          updateIngredientGrams(
+                                                            dayIdx,
+                                                            mealKey,
+                                                            ing,
+                                                            scaled.toFixed(1)
+                                                          );
+                                                        }
+                                                      }}
+                                                    />
+                                                  </div>
                                                 </div>
-                                              </div>
-                                            ))}
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       ) : (

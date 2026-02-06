@@ -1,0 +1,22 @@
+ID    Name                           Ingredients Type     Instructions Type   
+--------------------------------------------------------------------------------
+2     Omelette energético            <class 'str'> <class 'str'>
+  Ingredients: '["Huevos", "Cebolla", "Tomate", "Espinaca", "Aceite de oliva", "Sal"]'
+  Instructions: '["Batir los huevos", "Sofre\\u00edr cebolla y tomate", "Agregar espinaca", "A\\u00f1adir los huevos y cocinar"]'
+
+3     Avena cremosa tradicional      <class 'str'> <class 'str'>
+  Ingredients: '["Avena en hojuelas", "Leche o bebida vegetal", "Canela", "Fruta picada"]'
+  Instructions: '["Cocinar la avena con la leche", "A\\u00f1adir canela", "Servir con fruta"]'
+
+4     Arepa con huevo                <class 'str'> <class 'str'>
+  Ingredients: '["Arepa de ma\\u00edz", "Huevo", "Aceite", "Sal"]'
+  Instructions: '["Asar la arepa", "Fre\\u00edr el huevo", "Servir juntos"]'
+
+5     Yogur con fruta y semillas     <class 'str'> <class 'str'>
+  Ingredients: '["Yogur natural", "Frutas mixtas", "Semillas"]'
+  Instructions: '["Servir el yogur", "Agregar frutas", "A\\u00f1adir semillas"]'
+
+6     Pan integral con huevo y aguac <class 'str'> <class 'str'>
+  Ingredients: '["Pan integral", "Huevo", "Aguacate", "Sal", "Lim\\u00f3n", "Tomate"]'
+  Instructions: '["Tostar el pan", "Machacar el aguacate", "Untar y sazonar"]'
+

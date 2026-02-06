@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Moon, Sun } from "lucide-react";
@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { getRedirectPath } from "@/lib/auth";
 import { useTheme } from "@/hooks/use-theme";
+import { NutriDataParticles } from "@/components/NutriDataParticles";
 
 const Auth = () => {
 
@@ -37,8 +38,17 @@ const Auth = () => {
     direccion: "",
   });
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { user, setUser, isLoading: authLoading } = useAuth();
   const { theme, setTheme } = useTheme();
+
+  // Si ya está logeado, redirigir al dashboard según su rol
+  useEffect(() => {
+    if (authLoading) return;
+    if (user?.role) {
+      const path = getRedirectPath(user.role);
+      navigate(path, { replace: true });
+    }
+  }, [user, authLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,31 +127,36 @@ const Auth = () => {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    const email = resetEmail.trim().toLowerCase();
+    if (!email) {
+      toast.error("Ingresa tu correo electrónico");
+      return;
+    }
     setIsResetting(true);
 
     try {
       const response = await fetch(`${API_URL}/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail }),
+        body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
         toast.success("Enlace enviado", {
-          description: data.message || "Si el correo existe, recibirás instrucciones para restablecer tu contraseña."
+          description: data.message || "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña. Revisa tu bandeja de entrada y spam."
         });
         setShowForgotPassword(false);
         setResetEmail("");
       } else {
         toast.error("Error", {
-          description: data.detail || "No se pudo realizar la solicitud."
+          description: (typeof data.detail === "string" ? data.detail : "No se pudo enviar el enlace. Inténtalo de nuevo.")
         });
       }
     } catch (error) {
-      toast.error("Error", {
-        description: "No se pudo enviar el enlace. Inténtalo de nuevo."
+      toast.error("Error de conexión", {
+        description: "No se pudo conectar con el servidor. Revisa tu conexión e inténtalo de nuevo."
       });
     } finally {
       setIsResetting(false);
@@ -163,15 +178,19 @@ const Auth = () => {
         )}
       </button>
 
-      {/* Left side - Form */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background">
-        <div className="w-full max-w-md space-y-8 animate-fade-in">
+      {/* Left side - Form + partículas que forman "NutriData" */}
+      <div className="flex-1 flex items-center justify-center p-8 bg-background relative overflow-hidden">
+        <NutriDataParticles className="opacity-90 max-lg:opacity-70" />
+        <div className="w-full max-w-md space-y-8 animate-login-entrance relative z-10">
           {/* Logo */}
-          <div className="flex flex-col items-center gap-4">
+          <div
+            className="flex flex-col items-center gap-4 animate-login-stagger"
+            style={{ animationDelay: "0.1s" }}
+          >
             <img
               src="/logo.png"
               alt="NutriData"
-              className="h-24 w-auto"
+              className="h-24 w-auto animate-float-subtle"
             />
             <div className="text-center">
               <h1 className="text-2xl font-bold text-foreground">NutriData</h1>
@@ -180,7 +199,10 @@ const Auth = () => {
           </div>
 
           {/* Header */}
-          <div className="space-y-2">
+          <div
+            className="space-y-2 animate-login-stagger"
+            style={{ animationDelay: "0.2s" }}
+          >
             <h2 className="text-3xl font-bold text-foreground">
               Bienvenida de nuevo
             </h2>
@@ -190,7 +212,11 @@ const Auth = () => {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5 animate-login-stagger"
+            style={{ animationDelay: "0.3s" }}
+          >
 
 
             <div className="space-y-2">

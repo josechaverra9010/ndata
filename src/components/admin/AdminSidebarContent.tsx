@@ -1,14 +1,12 @@
 import {
   LayoutDashboard,
   Users,
-  Apple,
   Calendar,
   MessageSquare,
   Settings,
   LogOut,
   ChefHat,
   TrendingUp,
-  ChefHatIcon,
   ChevronFirst
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";

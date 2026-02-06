@@ -1,4 +1,5 @@
 import { AdminLayout } from "@/layouts/AdminLayout";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { StatsCard } from "@/components/admin/StatsCard";
 import { useAuth } from "@/hooks/useAuth";
 import { RecentPatients } from "@/components/admin/RecentPatients";
@@ -150,8 +151,7 @@ const Index = () => {
       <AdminLayout>
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Cargando dashboard...</p>
+            <LoadingScreen message="Cargando" />
           </div>
         </div>
       </AdminLayout>
@@ -266,14 +266,7 @@ const Index = () => {
                             <p className={`font-semibold ${color.text}`}>
                               {patient.weight_change > 0 ? '+' : ''}{patient.weight_change} kg
                             </p>
-                            <p className="text-xs text-muted-foreground">{patient.progress_percentage}% meta</p>
                           </div>
-                        </div>
-                        <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={`h-full bg-gradient-to-r ${color.bar} transition-all duration-500`}
-                            style={{ width: `${patient.progress_percentage}%` }}
-                          />
                         </div>
                       </div>
                     );

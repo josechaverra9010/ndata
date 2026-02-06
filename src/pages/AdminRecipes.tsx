@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AdminLayout } from "@/layouts/AdminLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  FOOD_INGREDIENT_GROUPS,
+  getIngredientsByGroup,
+  getCompositionRowForIngredient,
+  type CompositionTableRow,
+} from "@/lib/foodNutrients";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface Recipe {
   id: number;
@@ -65,6 +80,33 @@ export default function AdminRecipes() {
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
+  const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+  const [ingredientGroupFilter, setIngredientGroupFilter] = useState<string>("Todos");
+
+  /** Nombre base para lookup (quita sufijo " : X g" por si viene del modal) */
+  const getRowForIngredient = (name: string) =>
+    getCompositionRowForIngredient(name) ?? getCompositionRowForIngredient(name.replace(/\s*:.*$/, "").trim());
+
+  /** Cálculo neto de nutrientes según ingredientes seleccionados */
+  const netNutrients = useMemo(() => {
+    const rows = selectedIngredients
+      .map((name) => getRowForIngredient(name))
+      .filter((r): r is CompositionTableRow => r !== null);
+    return {
+      kcal: rows.reduce((s, r) => s + r.kcal, 0),
+      prot: rows.reduce((s, r) => s + r.prot, 0),
+      grasa: rows.reduce((s, r) => s + r.grasa, 0),
+      gs: rows.reduce((s, r) => s + r.gs, 0),
+      gm: rows.reduce((s, r) => s + r.gm, 0),
+      gp: rows.reduce((s, r) => s + r.gp, 0),
+      col: rows.reduce((s, r) => s + r.col, 0),
+      chos: rows.reduce((s, r) => s + r.chos, 0),
+      fd: rows.reduce((s, r) => s + r.fd, 0),
+      calcio: rows.reduce((s, r) => s + r.calcio, 0),
+      p: rows.reduce((s, r) => s + r.p, 0),
+      fe: rows.reduce((s, r) => s + r.fe, 0),
+    };
+  }, [selectedIngredients]);
 
   const filteredRecipes = recipes.filter(recipe => {
     const matchesSearch = recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -132,6 +174,10 @@ export default function AdminRecipes() {
 
   const handleSaveRecipe = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (selectedIngredients.length === 0) {
+      toast.error("Selecciona al menos un ingrediente de la lista");
+      return;
+    }
     const formElement = e.currentTarget;
     const formData = new FormData(formElement);
 
@@ -139,15 +185,15 @@ export default function AdminRecipes() {
     data.append("name", formData.get("name") as string);
     data.append("description", formData.get("description") as string);
     data.append("category", formData.get("category") as string);
-    data.append("prepTime", "0");
-    data.append("cookTime", "0");
+    data.append("prepTime", formData.get("prepTime") as string || "0");
+    data.append("cookTime", formData.get("cookTime") as string || "0");
     data.append("servings", formData.get("servings") as string);
-    data.append("calories", "0");
-    data.append("protein", "0");
-    data.append("carbs", "0");
-    data.append("fat", "0");
+    data.append("calories", String(Math.round(netNutrients.kcal)));
+    data.append("protein", String(Math.round(netNutrients.prot)));
+    data.append("carbs", String(Math.round(netNutrients.chos)));
+    data.append("fat", String(Math.round(netNutrients.grasa)));
 
-    const ingredientsList = (formData.get("ingredients") as string).split("\n").filter(i => i.trim());
+    const ingredientsList = selectedIngredients;
     const instructionsList = (formData.get("instructions") as string).split("\n").filter(i => i.trim());
     const tagsList = (formData.get("tags") as string).split(",").map(t => t.trim()).filter(t => t);
 
@@ -269,12 +315,22 @@ export default function AdminRecipes() {
 
   const openNewRecipeForm = () => {
     setEditingRecipe(null);
+    setSelectedIngredients([]);
+    setIngredientGroupFilter("Todos");
     setIsFormOpen(true);
   };
 
   const openEditForm = (recipe: Recipe) => {
     setEditingRecipe(recipe);
+    setSelectedIngredients(recipe.ingredients || []);
+    setIngredientGroupFilter("Todos");
     setIsFormOpen(true);
+  };
+
+  const toggleIngredient = (name: string) => {
+    setSelectedIngredients((prev) =>
+      prev.includes(name) ? prev.filter((i) => i !== name) : [...prev, name]
+    );
   };
 
   if (loading) {
@@ -306,13 +362,23 @@ export default function AdminRecipes() {
         </div>
 
         {/* Recipe Form Dialog */}
-        <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh]">
-            <DialogHeader>
+        <Dialog
+          open={isFormOpen}
+          onOpenChange={(open) => {
+            setIsFormOpen(open);
+            if (!open) {
+              setEditingRecipe(null);
+              setSelectedIngredients([]);
+              setIngredientGroupFilter("Todos");
+            }
+          }}
+        >
+          <DialogContent className="max-w-[min(92vw,56rem)] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col gap-4 p-6">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>{editingRecipe ? "Editar Receta" : "Crear Nueva Receta"}</DialogTitle>
             </DialogHeader>
-            <ScrollArea className="max-h-[70vh] pr-4">
-              <form onSubmit={handleSaveRecipe} className="space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 -mr-1">
+              <form onSubmit={handleSaveRecipe} className="space-y-4 pb-2">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <Label htmlFor="name">Nombre de la receta</Label>
@@ -361,15 +427,137 @@ export default function AdminRecipes() {
 
 
 
-                <div>
-                  <Label htmlFor="ingredients">Ingredientes (uno por línea)</Label>
-                  <Textarea
-                    id="ingredients"
-                    name="ingredients"
-                    rows={5}
-                    defaultValue={editingRecipe?.ingredients.join("\n")}
-                    required
-                  />
+                <div className="space-y-2">
+                  <Label>Ingredientes (del PDF por grupo)</Label>
+                  {selectedIngredients.length > 0 ? (
+                    <div className="border rounded-md overflow-x-auto mb-2" style={{ maxWidth: "100%" }}>
+                      <Table className="min-w-[700px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[140px]">Alimento</TableHead>
+                            <TableHead className="text-right w-12">g.</TableHead>
+                            <TableHead className="min-w-[160px]">Unidad de medida</TableHead>
+                            <TableHead className="text-right">Kcal.</TableHead>
+                            <TableHead className="text-right">Prot. g</TableHead>
+                            <TableHead className="text-right">GT. g</TableHead>
+                            <TableHead className="text-right">AGS. g</TableHead>
+                            <TableHead className="text-right">AGN. g</TableHead>
+                            <TableHead className="text-right">AGP. g</TableHead>
+                            <TableHead className="text-right">Col. mg</TableHead>
+                            <TableHead className="text-right">CHO. g</TableHead>
+                            <TableHead className="text-right">FDI. g</TableHead>
+                            <TableHead className="text-right">Ca. mg</TableHead>
+                            <TableHead className="text-right">P. mg</TableHead>
+                            <TableHead className="text-right">Fe. mg</TableHead>
+                            <TableHead className="w-10" />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedIngredients
+                            .map((name) => getCompositionRowForIngredient(name))
+                            .filter((r): r is CompositionTableRow => r !== null)
+                            .map((row) => (
+                              <TableRow
+                                key={row.name}
+                                className="hover:bg-muted/50"
+                              >
+                                <TableCell className="font-medium text-sm py-2">{row.name}</TableCell>
+                                <TableCell className="text-right tabular-nums text-sm py-2">
+                                  {row.portion_grams != null ? row.portion_grams : "—"}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-sm py-2">
+                                  {row.unit_measure ?? "—"}
+                                </TableCell>
+                                {(["kcal", "prot", "grasa", "gs", "gm", "gp", "col", "chos", "fd", "calcio", "p", "fe"] as const).map((key) => (
+                                  <TableCell key={key} className="text-right tabular-nums text-sm py-2">
+                                    {row[key] === 0 ? "—" : Number.isInteger(row[key]) ? String(row[key]) : (row[key] as number).toFixed(1).replace(".", ",")}
+                                  </TableCell>
+                                ))}
+                                <TableCell className="py-2">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                    onClick={() => toggleIngredient(row.name)}
+                                    aria-label="Quitar ingrediente"
+                                  >
+                                    ×
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : null}
+                  {selectedIngredients.length > 0 ? (
+                    <div className="rounded-lg border bg-muted/30 p-3 mb-2">
+                      <p className="text-sm font-medium mb-2">Cálculo neto (suma de ingredientes seleccionados)</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-1.5 text-sm">
+                        <span className="text-muted-foreground">Kcal</span>
+                        <span className="tabular-nums font-medium">{Math.round(netNutrients.kcal)}</span>
+                        <span className="text-muted-foreground">Prot. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.prot.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">GT. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.grasa.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">AGS. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.gs.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">AGN. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.gm.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">AGP. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.gp.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">Col. mg</span>
+                        <span className="tabular-nums font-medium">{Math.round(netNutrients.col)}</span>
+                        <span className="text-muted-foreground">CHO. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.chos.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">FDI. g</span>
+                        <span className="tabular-nums font-medium">{netNutrients.fd.toFixed(1).replace(".", ",")}</span>
+                        <span className="text-muted-foreground">Ca. mg</span>
+                        <span className="tabular-nums font-medium">{Math.round(netNutrients.calcio)}</span>
+                        <span className="text-muted-foreground">P. mg</span>
+                        <span className="tabular-nums font-medium">{Math.round(netNutrients.p)}</span>
+                        <span className="text-muted-foreground">Fe. mg</span>
+                        <span className="tabular-nums font-medium">{netNutrients.fe.toFixed(1).replace(".", ",")}</span>
+                      </div>
+                    </div>
+                  ) : null}
+                  <Select
+                    value={ingredientGroupFilter}
+                    onValueChange={setIngredientGroupFilter}
+                  >
+                    <SelectTrigger className="w-full max-w-xs">
+                      <SelectValue placeholder="Filtrar por grupo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FOOD_INGREDIENT_GROUPS.map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ScrollArea className="h-[200px] border rounded-md p-2 mt-2">
+                    <div className="space-y-2">
+                      {getIngredientsByGroup(ingredientGroupFilter).map((name) => (
+                        <label
+                          key={name}
+                          className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                        >
+                          <Checkbox
+                            checked={selectedIngredients.includes(name)}
+                            onCheckedChange={() => toggleIngredient(name)}
+                          />
+                          <span className="text-sm">{name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                  {selectedIngredients.length === 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Selecciona al menos un ingrediente de la lista (tabla de composición).
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -423,7 +611,7 @@ export default function AdminRecipes() {
                   </Button>
                 </div>
               </form>
-            </ScrollArea>
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -483,9 +671,26 @@ export default function AdminRecipes() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {recipes.length > 0 ? Math.round(recipes.reduce((acc, r) => acc + r.servings, 0) / recipes.length) : 0}
+                  {recipes.length > 0
+                    ? Math.round(recipes.reduce((acc, r) => acc + (r.servings ?? 0), 0) / recipes.length)
+                    : 0}
                 </p>
                 <p className="text-xs text-muted-foreground">Porciones prom.</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 bg-amber-500/10 rounded-lg">
+                <Flame className="h-5 w-5 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {recipes.length > 0
+                    ? Math.round(recipes.reduce((acc, r) => acc + (r.calories ?? 0), 0) / recipes.length)
+                    : 0}
+                </p>
+                <p className="text-xs text-muted-foreground">Kcal prom. por receta</p>
               </div>
             </CardContent>
           </Card>
@@ -564,11 +769,20 @@ export default function AdminRecipes() {
                 <h3 className="font-semibold text-lg mb-1">{recipe.name}</h3>
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{recipe.description}</p>
 
-                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
                   <span className="flex items-center gap-1">
                     <Users className="h-4 w-4" />
-                    {recipe.servings}
+                    {recipe.servings} porc.
                   </span>
+                  <span className="flex items-center gap-1 font-medium text-amber-600">
+                    <Flame className="h-3.5 w-3.5" />
+                    {recipe.calories ?? 0} kcal
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-3 border-t border-border/50 pt-2">
+                  <span className="text-primary font-medium">Prot: {(recipe.protein ?? 0)} g</span>
+                  <span className="text-amber-600 font-medium">Carb: {(recipe.carbs ?? 0)} g</span>
+                  <span className="text-yellow-700 font-medium">Grasas: {(recipe.fat ?? 0)} g</span>
                 </div>
 
                 <div className="flex flex-wrap gap-1">
@@ -669,12 +883,20 @@ export default function AdminRecipes() {
                       </TabsList>
                       <TabsContent value="ingredients" className="mt-4">
                         <ul className="space-y-2">
-                          {selectedRecipe.ingredients.map((ingredient, idx) => (
-                            <li key={idx} className="flex items-center gap-2">
-                              <div className="h-2 w-2 rounded-full bg-primary" />
-                              {ingredient}
-                            </li>
-                          ))}
+                          {selectedRecipe.ingredients.map((ingredient, idx) => {
+                            const row = getCompositionRowForIngredient(ingredient);
+                            const grams = row?.portion_grams;
+                            const label =
+                              grams != null && grams !== 0
+                                ? `${row!.name}: ${grams} g`
+                                : ingredient;
+                            return (
+                              <li key={idx} className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-primary" />
+                                <span>{label}</span>
+                              </li>
+                            );
+                          })}
                         </ul>
                       </TabsContent>
                       <TabsContent value="instructions" className="mt-4">

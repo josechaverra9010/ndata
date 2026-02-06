@@ -19,7 +19,9 @@ import {
   Phone,
   Award,
   Briefcase,
-  FileText
+  FileText,
+  Copy,
+  Link
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -160,6 +162,9 @@ export default function SuperadminNutritionists() {
     }
   };
 
+  const [registrationLink, setRegistrationLink] = useState<string | null>(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+
   const handleInvite = async () => {
     if (!inviteData.name || !inviteData.email) {
       toast.error("Nombre y email son requeridos");
@@ -167,27 +172,40 @@ export default function SuperadminNutritionists() {
     }
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/superadmin/nutritionists/invite`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(inviteData),
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        const data = await response.json();
         toast.success(data.message);
         setIsInviteOpen(false);
         setInviteData({ name: "", email: "", specialty: "" });
         fetchNutritionists();
+        if (data.registration_link) {
+          setRegistrationLink(data.registration_link);
+          setLinkDialogOpen(true);
+        }
       } else {
-        const data = await response.json();
-        toast.error(data.detail || "Error al enviar invitación");
+        toast.error(data.detail || "Error al agregar nutricionista");
       }
     } catch (error) {
       console.error("Error:", error);
-      toast.error("Error al enviar invitación");
+      toast.error("Error al agregar nutricionista");
+    }
+  };
+
+  const copyRegistrationLink = () => {
+    if (registrationLink) {
+      navigator.clipboard.writeText(registrationLink);
+      toast.success("Enlace copiado al portapapeles");
     }
   };
 
@@ -288,7 +306,7 @@ export default function SuperadminNutritionists() {
           </div>
           <Button onClick={() => setIsInviteOpen(true)} className="gradient-primary border-0">
             <Plus className="h-4 w-4 mr-2" />
-            Invitar Nutricionista
+            Agregar Nutricionista
           </Button>
         </div>
 
@@ -439,9 +457,9 @@ export default function SuperadminNutritionists() {
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invitar Nutricionista</DialogTitle>
+            <DialogTitle>Agregar Nutricionista</DialogTitle>
             <DialogDescription>
-              Envía una invitación para que se una a la plataforma
+              Agrega un nutricionista. Se enviará un correo con el enlace de registro a su email. También podrás copiar el enlace por si lo necesitas.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -473,7 +491,51 @@ export default function SuperadminNutritionists() {
               Cancelar
             </Button>
             <Button onClick={handleInvite} className="gradient-primary border-0">
-              Enviar Invitación
+              Generar enlace de registro
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Registration link dialog - show after invite success */}
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link className="h-5 w-5 text-primary" />
+              Enlace de registro
+            </DialogTitle>
+            <DialogDescription>
+              Se ha enviado un correo al nutricionista con este enlace. Si no lo recibe, puedes copiarlo y compartirlo manualmente. El enlace es válido por 7 días.
+            </DialogDescription>
+          </DialogHeader>
+          {registrationLink && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={registrationLink}
+                  className="font-mono text-xs bg-muted/50"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={copyRegistrationLink}
+                  title="Copiar enlace"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button onClick={copyRegistrationLink} className="w-full gap-2" variant="secondary">
+                <Copy className="h-4 w-4" />
+                Copiar enlace al portapapeles
+              </Button>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => { setLinkDialogOpen(false); setRegistrationLink(null); }}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -241,13 +241,14 @@ const AdminProgress = () => {
     }
 
     try {
+      const token = localStorage.getItem("userToken");
       const url = editingMetricId
         ? `${API_URL}/progress/metrics/${editingMetricId}`
         : `${API_URL}/progress/metrics`;
 
       const response = await fetch(url.trim(), {
         method: editingMetricId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           patient_id: selectedPatient.id,
           date: metricForm.date,
@@ -330,9 +331,10 @@ const AdminProgress = () => {
         ? `${API_URL}/progress/achievements/${editingAchievementId}`
         : `${API_URL}/progress/achievements`;
 
+      const token = localStorage.getItem("userToken");
       const response = await fetch(url, {
         method: editingAchievementId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           patient_id: selectedPatient.id,
           title: achievementForm.title,
@@ -387,7 +389,7 @@ const AdminProgress = () => {
 
       const response = await fetch(url, {
         method: editingNoteId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
           patient_id: selectedPatient.id,
           note: noteForm.note,
@@ -490,7 +492,8 @@ const AdminProgress = () => {
   const handleDeleteMetric = async (metricId: number) => {
     if (!selectedPatient || !confirm("¿Estás seguro de eliminar esta métrica?")) return;
     try {
-      await axios.delete(`${API_URL}/progress/metrics/${metricId}`);
+      const token = localStorage.getItem("userToken");
+      await axios.delete(`${API_URL}/progress/metrics/${metricId}`, { headers: { Authorization: `Bearer ${token}` } });
       toast({ title: "Éxito", description: "Métrica eliminada" });
       fetchPatientDetails(selectedPatient.id);
     } catch (error) {
@@ -501,7 +504,8 @@ const AdminProgress = () => {
   const handleDeleteAchievement = async (achievementId: number) => {
     if (!selectedPatient || !confirm("¿Estás seguro de eliminar este logro?")) return;
     try {
-      await axios.delete(`${API_URL}/progress/achievements/${achievementId}`);
+      const token = localStorage.getItem("userToken");
+      await axios.delete(`${API_URL}/progress/achievements/${achievementId}`, { headers: { Authorization: `Bearer ${token}` } });
       toast({ title: "Éxito", description: "Logro eliminado" });
       fetchPatientDetails(selectedPatient.id);
     } catch (error) {
@@ -512,7 +516,8 @@ const AdminProgress = () => {
   const handleDeleteNote = async (noteId: number) => {
     if (!selectedPatient || !confirm("¿Estás seguro de eliminar esta nota?")) return;
     try {
-      await axios.delete(`${API_URL}/progress/notes/${noteId}`);
+      const token = localStorage.getItem("userToken");
+      await axios.delete(`${API_URL}/progress/notes/${noteId}`, { headers: { Authorization: `Bearer ${token}` } });
       toast({ title: "Éxito", description: "Nota eliminada" });
       fetchPatientDetails(selectedPatient.id);
     } catch (error) {

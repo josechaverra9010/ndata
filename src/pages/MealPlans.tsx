@@ -30,6 +30,7 @@ interface MealPlan {
   duration: string;
   category: string;
   color: string;
+  tipo?: string;
   protein_target?: number;
   carbs_target?: number;
   fat_target?: number;
@@ -38,6 +39,15 @@ interface MealPlan {
   is_active: number;
   created_at?: string;
 }
+
+const planTypeLabels: Record<string, string> = {
+  adulto: "Adulto",
+  pediatria: "Pediatría",
+  gestante: "Gestante",
+  gestante_adolescente: "Gestante adolescente",
+  hospitalizado: "Hospitalizado",
+  deportista: "Deportista",
+};
 
 const categoryColors = {
   primary: "bg-primary/10 text-primary border-primary/20",
@@ -284,10 +294,15 @@ const MealPlans = () => {
             >
               <div className={`h-1.5 ${plan.color === 'primary' ? 'gradient-primary' : plan.color === 'accent' ? 'gradient-accent' : `bg-${plan.color}`}`} />
               <div className="p-5">
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
                   <Badge variant="outline" className={categoryColors[plan.color as keyof typeof categoryColors]}>
                     {plan.category}
                   </Badge>
+                  {plan.tipo && (
+                    <Badge variant="secondary" className="text-xs">
+                      {planTypeLabels[plan.tipo] ?? plan.tipo}
+                    </Badge>
+                  )}
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); handleViewDetails(plan); }}>
                       <Edit className="h-4 w-4" />
