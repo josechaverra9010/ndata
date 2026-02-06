@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, File, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker, Session, relationship, DeclarativeBase
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import inspect, text
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
