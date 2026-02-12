@@ -42,7 +42,7 @@ import {
 
 function formatCell(value: number): string {
   if (value === 0) return "—";
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(".", ",");
+  return Number.isInteger(value) ? String(value) : value.tofixed(2).replace(".", ",");
 }
 
 function TableCellNum(value: number) {

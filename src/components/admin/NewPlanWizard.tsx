@@ -38,6 +38,8 @@ interface NewPlanWizardProps {
   onOpenChange: (open: boolean) => void;
   onCreatePlan: (planData: any) => void;
   patientId?: number;
+  /** Tipo de plan preseleccionado al abrir (ej. desde el selector de tipos en MealPlans) */
+  initialTipoPlan?: string;
 }
 
 const PHASES = [
@@ -173,6 +175,21 @@ function getDefaultFormData() {
     observaciones: "",
     weekly_menu_id: "",
     patient_id: "" as string | number,
+    // Fase 1 Deportista: Somatotipo y composición corporal
+    deportista_peso: "",
+    deportista_triceps: "",
+    deportista_subescapular: "",
+    deportista_supraespinal: "",
+    deportista_estatura: "",
+    deportista_diametro_humero: "",
+    deportista_diametro_femur: "",
+    deportista_perim_brazo_tenso: "",
+    deportista_perim_pantorrilla: "",
+    deportista_pliegue_pantorrilla: "",
+    deportista_yuhasz_sexo: "masculino",
+    deportista_yuhasz_abdominal: "",
+    deportista_yuhasz_muslo_medio: "",
+    deportista_pct_grasa_esperado: "",
   };
 }
 
@@ -208,7 +225,7 @@ function mergeFormDataWithDefaults(saved: any): any {
   return merged;
 }
 
-export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: NewPlanWizardProps) {
+export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, initialTipoPlan }: NewPlanWizardProps) {
   const [currentPhase, setCurrentPhase] = useState(1);
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [loadingPatient, setLoadingPatient] = useState(false);
@@ -361,6 +378,58 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     }
   };
 
+  /** Carga datos del paciente desde la API y rellena la fase 1 deportista (peso, estatura, sexo) */
+  const fetchPatientAndPrefillDeportista = async (pid: number) => {
+    setLoadingPatient(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${pid}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.detail || "No se pudo cargar el paciente");
+      }
+      const patient = await response.json();
+      const peso = patient?.peso_actual != null ? String(patient.peso_actual) : "";
+      const estatura = patient?.altura != null ? String(patient.altura) : "";
+      const generoRaw = patient?.genero ? String(patient.genero).toLowerCase() : "";
+      const genero = generoRaw === "mujer" || generoRaw === "femenino" ? "femenino" : "masculino";
+      setFormData((prev: any) => ({
+        ...prev,
+        patient_id: pid,
+        deportista_peso: peso,
+        deportista_estatura: estatura,
+        deportista_yuhasz_sexo: genero || prev.deportista_yuhasz_sexo,
+      }));
+      toast({
+        title: "Datos cargados",
+        description: `Se cargaron los datos de ${patient?.nombres || "el paciente"} desde la base de datos`,
+      });
+    } catch (error: any) {
+      console.error("Error prefill deportista:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo cargar los datos del paciente",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPatient(false);
+    }
+  };
+
+  /** Obtiene el ID del paciente a cargar: el pasado por prop o el primero de la lista desde la API */
+  const getPatientIdToLoad = (): Promise<number | null> => {
+    if (typeof patientId === "number") return Promise.resolve(patientId);
+    const token = localStorage.getItem("userToken");
+    return fetch(`${API_URL}/patients`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { id: number }[]) => (list?.length > 0 ? list[0].id : null))
+      .catch(() => null);
+  };
+
   // Cargar lista de pacientes para el selector de Fase 1 (cuando se abre el wizard)
   useEffect(() => {
     if (!open || currentPhase !== 1) return;
@@ -396,7 +465,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
           ? { ...merged, patient_id: merged.patient_id || patientId }
           : merged;
         setFormData(mergedWithPatient);
-        setCurrentPhase(Math.min(4, Math.max(1, draft.currentPhase)));
+        setCurrentPhase(Math.min(4, Math.max(0, draft.currentPhase)));
         setCompletedPhases(Array.isArray(draft.completedPhases) ? draft.completedPhases : []);
         toast({
           title: "Borrador restaurado",
@@ -407,13 +476,17 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     } catch (e) {
       console.warn("Error loading plan wizard draft:", e);
     }
-    setFormData(getDefaultFormData());
-    setCurrentPhase(1);
+    const defaultData = getDefaultFormData();
+    setFormData({
+      ...defaultData,
+      ...(initialTipoPlan && { tipo_plan: initialTipoPlan }),
+    });
+    setCurrentPhase(initialTipoPlan ? 1 : 0);
     setCompletedPhases([]);
     if (typeof patientId === "number") {
       fetchPatientAndPrefill(patientId);
     }
-  }, [open, patientId]);
+  }, [open, patientId, initialTipoPlan]);
 
   // Persistir borrador del paciente actual mientras el modal está abierto
   useEffect(() => {
@@ -740,8 +813,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     }
 
     // REDONDEO CRÍTICO para coherencia en UI (1 decimal)
-    const pAMDRFinal = parseFloat(proteinasAMDR_Calc.toFixed(1));
-    const gAMDRFinal = parseFloat(grasasAMDR_Input.toFixed(1));
+    const pAMDRFinal = parseFloat(proteinasAMDR_Calc.toFixed(2));
+    const gAMDRFinal = parseFloat(grasasAMDR_Input.toFixed(2));
 
     // 2. CHO % AMDR es el remanente de 100 (permitir negativos por balance clínico)
     const cAMDRFinal = 100 - pAMDRFinal - gAMDRFinal;
@@ -779,23 +852,23 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
     const totalAMDR = pAMDRFinal + gAMDRFinal + cAMDRFinal;
 
     // Actualizar estados
-    handleChange("proteinas_amdr_f2", pAMDRFinal.toFixed(1));
-    handleChange("proteinas_calorias_f2", proteinasCalorias.toFixed(1));
-    handleChange("proteinas_gramos_f2", proteinasGramos.toFixed(1));
-    handleChange("grasas_calorias_f2", grasasCalorias.toFixed(1));
-    handleChange("grasas_gramos_f2", grasasGramos.toFixed(1));
-    handleChange("grasas_gm_amdr", grasasGM_AMDR.toFixed(1));
-    handleChange("cho_amdr_f2", cAMDRFinal.toFixed(1));
-    handleChange("cho_calorias_f2", choCalorias.toFixed(1));
-    handleChange("cho_gramos_f2", choGramos.toFixed(1));
+    handleChange("proteinas_amdr_f2", pAMDRFinal.toFixed(2));
+    handleChange("proteinas_calorias_f2", proteinasCalorias.toFixed(2));
+    handleChange("proteinas_gramos_f2", proteinasGramos.toFixed(2));
+    handleChange("grasas_calorias_f2", grasasCalorias.toFixed(2));
+    handleChange("grasas_gramos_f2", grasasGramos.toFixed(2));
+    handleChange("grasas_gm_amdr", grasasGM_AMDR.toFixed(2));
+    handleChange("cho_amdr_f2", cAMDRFinal.toFixed(2));
+    handleChange("cho_calorias_f2", choCalorias.toFixed(2));
+    handleChange("cho_gramos_f2", choGramos.toFixed(2));
     handleChange("cho_kg_peso", choKgPeso_Calc.toFixed(2));
-    handleChange("grasas_gs_gramos", grasasGSGramos.toFixed(1));
-    handleChange("grasas_gm_gramos", grasasGMGramos.toFixed(1));
-    handleChange("grasas_gp_gramos", grasasGPGramos.toFixed(1));
-    handleChange("proteinas_avb_gramos", proteinasAVBGramos.toFixed(1));
-    handleChange("cho_concent_gramos", choConcentGramos.toFixed(1));
-    handleChange("total_calorias_f2", totalCalorias.toFixed(1));
-    handleChange("total_amdr_f2", totalAMDR.toFixed(1));
+    handleChange("grasas_gs_gramos", grasasGSGramos.toFixed(2));
+    handleChange("grasas_gm_gramos", grasasGMGramos.toFixed(2));
+    handleChange("grasas_gp_gramos", grasasGPGramos.toFixed(2));
+    handleChange("proteinas_avb_gramos", proteinasAVBGramos.toFixed(2));
+    handleChange("cho_concent_gramos", choConcentGramos.toFixed(2));
+    handleChange("total_calorias_f2", totalCalorias.toFixed(2));
+    handleChange("total_amdr_f2", totalAMDR.toFixed(2));
   };
 
   // Calcular totales de Fase 3
@@ -896,7 +969,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
   };
 
   const handlePrevious = () => {
-    if (currentPhase > 1) {
+    if (currentPhase > 0) {
       setCurrentPhase(currentPhase - 1);
     }
   };
@@ -911,7 +984,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       return;
     }
 
-    const calories = parseInt(formData.requerimiento_energetico) || 0;
+    const calories = parseInt(formData.requerimiento_energetico) || parseInt(formData.total_calorias_f2) || 0;
     const proteinG = parseFloat(formData.proteinas_gramos_f2) || 0;
     const carbsG = parseFloat(formData.cho_gramos_f2) || 0;
     const fatG = parseFloat(formData.grasas_gramos_f2) || 0;
@@ -930,20 +1003,38 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
       fat_target: Math.round(fatG),
 
       // Datos de las 4 fases
-      fase_1: {
-        peso_actual: formData.peso_actual,
-        altura: formData.altura,
-        edad: formData.edad,
-        genero: formData.genero,
-        peso_saludable: formData.peso_saludable,
-        peso_ajustado: formData.peso_ajustado,
-        peso_objetivo: formData.peso_objetivo,
-        requerimiento_energetico: formData.requerimiento_energetico,
-        imc: formData.imc,
-        tmb: formData.tmb,
-        factor_actividad: formData.factor_actividad,
-        peso_referencia: formData.peso_referencia_f2
-      },
+      fase_1: formData.tipo_plan === "deportista"
+        ? {
+            tipo_fase: "deportista",
+            deportista_peso: formData.deportista_peso,
+            deportista_triceps: formData.deportista_triceps,
+            deportista_subescapular: formData.deportista_subescapular,
+            deportista_supraespinal: formData.deportista_supraespinal,
+            deportista_estatura: formData.deportista_estatura,
+            deportista_diametro_humero: formData.deportista_diametro_humero,
+            deportista_diametro_femur: formData.deportista_diametro_femur,
+            deportista_perim_brazo_tenso: formData.deportista_perim_brazo_tenso,
+            deportista_perim_pantorrilla: formData.deportista_perim_pantorrilla,
+            deportista_pliegue_pantorrilla: formData.deportista_pliegue_pantorrilla,
+            deportista_yuhasz_sexo: formData.deportista_yuhasz_sexo,
+            deportista_yuhasz_abdominal: formData.deportista_yuhasz_abdominal,
+            deportista_yuhasz_muslo_medio: formData.deportista_yuhasz_muslo_medio,
+            deportista_pct_grasa_esperado: formData.deportista_pct_grasa_esperado,
+          }
+        : {
+            peso_actual: formData.peso_actual,
+            altura: formData.altura,
+            edad: formData.edad,
+            genero: formData.genero,
+            peso_saludable: formData.peso_saludable,
+            peso_ajustado: formData.peso_ajustado,
+            peso_objetivo: formData.peso_objetivo,
+            requerimiento_energetico: formData.requerimiento_energetico,
+            imc: formData.imc,
+            tmb: formData.tmb,
+            factor_actividad: formData.factor_actividad,
+            peso_referencia: formData.peso_referencia_f2
+          },
       fase_2: {
         proteinas_gramos: formData.proteinas_gramos_f2,
         proteinas_calorias: formData.proteinas_calorias_f2,
@@ -1121,73 +1212,230 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
         <DialogHeader>
           <DialogTitle>Crear Nuevo Plan Nutricional</DialogTitle>
           <DialogDescription>
-            Completa las 4 fases para crear un plan nutricional completo
+            {currentPhase === 0
+              ? "Selecciona el tipo de plan para comenzar"
+              : "Completa las 4 fases para crear un plan nutricional completo"}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Tipo de plan */}
-        <div className="space-y-2">
-          <Label className="text-base font-semibold text-primary">Tipo de plan</Label>
-          <Select
-            value={formData.tipo_plan}
-            onValueChange={(value) => handleChange("tipo_plan", value)}
-          >
-            <SelectTrigger className="max-w-xs">
-              <SelectValue placeholder="Seleccionar tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              {PLAN_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
+        {/* Paso 0: Selección de tipo de plan */}
+        {currentPhase === 0 && (
+          <div className="space-y-6 py-4">
+            <p className="text-sm font-medium text-foreground">Selecciona el tipo de plan nutricional</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {PLAN_TYPES.map(({ value, label }) => (
+                <Button
+                  key={value}
+                  type="button"
+                  variant="outline"
+                  className="h-auto py-5 flex flex-col items-center justify-center gap-1 font-medium text-base hover:border-primary hover:bg-primary/5"
+                  onClick={async () => {
+                    handleChange("tipo_plan", value);
+                    setCurrentPhase(1);
+                    if (value === "adulto") {
+                      const id = await getPatientIdToLoad();
+                      if (id != null) await fetchPatientAndPrefill(id);
+                    } else if (value === "deportista") {
+                      const id = await getPatientIdToLoad();
+                      if (id != null) await fetchPatientAndPrefillDeportista(id);
+                      else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
+                    }
+                  }}
+                >
+                  {label}
+                </Button>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm text-muted-foreground">
-            <span>Fase {currentPhase} de {PHASES.length}</span>
-            <span>{Math.round((currentPhase / PHASES.length) * 100)}% completado</span>
+            </div>
           </div>
-          <Progress value={(currentPhase / PHASES.length) * 100} />
-        </div>
+        )}
 
-        {/* Phase Indicators */}
-        <div className="grid grid-cols-4 gap-2 mb-6">
-          {PHASES.map((phase) => {
-            const Icon = phase.icon;
-            const isActive = currentPhase === phase.id;
-            const isCompleted = completedPhases.includes(phase.id);
-
-            return (
-              <div
-                key={phase.id}
-                className={`flex flex-col items-center p-2 rounded-lg border-2 transition-colors ${isActive
-                  ? "border-primary bg-primary/10"
-                  : isCompleted
-                    ? "border-green-500 bg-green-50"
-                    : "border-muted bg-muted/50"
-                  }`}
+        {currentPhase >= 1 && (
+          <>
+            {/* Tipo de plan (visible en fases 1-4 para poder cambiarlo) */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold text-primary">Tipo de plan</Label>
+              <Select
+                value={formData.tipo_plan}
+                onValueChange={(value) => handleChange("tipo_plan", value)}
               >
-                <Icon className={`h-5 w-5 mb-1 ${isActive ? "text-primary" : isCompleted ? "text-green-600" : "text-muted-foreground"
-                  }`} />
-                <span className={`text-xs text-center font-medium ${isActive ? "text-primary" : isCompleted ? "text-green-600" : "text-muted-foreground"
-                  }`}>
-                  {phase.id}
-                </span>
-                {isCompleted && (
-                  <CheckCircle2 className="h-4 w-4 text-green-600 mt-1" />
-                )}
+                <SelectTrigger className="max-w-xs">
+                  <SelectValue placeholder="Seleccionar tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PLAN_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Progress Bar (5 pasos: tipo + 4 fases) */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Paso {currentPhase + 1} de 5</span>
+                <span>{Math.round(((currentPhase + 1) / 5) * 100)}% completado</span>
               </div>
-            );
-          })}
-        </div>
+              <Progress value={((currentPhase + 1) / 5) * 100} />
+            </div>
+
+            {/* Phase Indicators */}
+            <div className="grid grid-cols-4 gap-2 mb-6">
+              {PHASES.map((phase) => {
+                const Icon = phase.icon;
+                const isActive = currentPhase === phase.id;
+                const isCompleted = completedPhases.includes(phase.id);
+
+                return (
+                  <div
+                    key={phase.id}
+                    className={`flex flex-col items-center p-2 rounded-lg border-2 transition-colors ${isActive
+                      ? "border-primary bg-primary/10"
+                      : isCompleted
+                        ? "border-green-500 bg-green-50 dark:bg-green-950/30"
+                        : "border-muted bg-muted/50"
+                      }`}
+                  >
+                    <Icon className={`h-5 w-5 mb-1 ${isActive ? "text-primary" : isCompleted ? "text-green-600" : "text-muted-foreground"
+                      }`} />
+                    <span className={`text-xs text-center font-medium ${isActive ? "text-primary" : isCompleted ? "text-green-600" : "text-muted-foreground"
+                      }`}>
+                      {phase.id}
+                    </span>
+                    {isCompleted && (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 mt-1" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         <div>
-          {/* Phase 1: Requerimiento Energético y Peso Saludable */}
-          {currentPhase === 1 && (
+          {/* Phase 1 Deportista: Somatotipo y composición corporal */}
+          {currentPhase === 1 && formData.tipo_plan === "deportista" && (() => {
+            const t = formData.deportista_triceps; const s = formData.deportista_subescapular; const sp = formData.deportista_supraespinal;
+            const peso = parseFloat(formData.deportista_peso) || 0; const est = parseFloat(formData.deportista_estatura) || 0;
+            const sumPliegues = (parseFloat(t) || 0) + (parseFloat(s) || 0) + (parseFloat(sp) || 0);
+            const perimBrazo = parseFloat(formData.deportista_perim_brazo_tenso) || 0;
+            const plieguePant = parseFloat(formData.deportista_pliegue_pantorrilla) || 0;
+            const perimPant = parseFloat(formData.deportista_perim_pantorrilla) || 0;
+            const diamHum = parseFloat(formData.deportista_diametro_humero) || 0;
+            const diamFem = parseFloat(formData.deportista_diametro_femur) || 0;
+            const correccionProp = est > 0 ? (170.18 / est) : 0;
+            const perimBrazoCorr = perimBrazo - (Math.PI * (plieguePant / 10)); // pliegue en mm, simplificado
+            const perimPantCorr = perimPant - (Math.PI * (plieguePant / 10));
+            const hwr = peso > 0 && est > 0 ? est / (Math.pow(peso, 1 / 3)) : 0;
+            const endomorfia = est > 0 && sumPliegues > 0 ? (sumPliegues * (170.18 / est) - 0.00001) * 0.7182 + 0.00001 : 0;
+            const mesomorfia = est > 0 && diamHum > 0 && diamFem > 0 ? 0.858 * diamHum + 0.601 * diamFem + 0.188 * perimBrazoCorr + 0.161 * perimPantCorr - est * 0.131 + 4.5 : 0;
+            let ectomorfia = 0;
+            if (hwr >= 40.75) ectomorfia = 0.732 * hwr - 28.58;
+            else if (hwr > 38.25) ectomorfia = 0.463 * hwr - 17.63;
+            else if (hwr > 0) ectomorfia = 0.1;
+            const sumYuhasz = (parseFloat(t) || 0) + (parseFloat(s) || 0) + (parseFloat(sp) || 0) + (parseFloat(formData.deportista_yuhasz_abdominal) || 0) + (parseFloat(formData.deportista_yuhasz_muslo_medio) || 0) + (parseFloat(formData.deportista_pliegue_pantorrilla) || 0);
+            const isHombre = formData.deportista_yuhasz_sexo === "masculino";
+            const pctGrasaYuhasz = sumYuhasz > 0 ? (isHombre ? 0.1051 * sumYuhasz + 2.585 : 0.1548 * sumYuhasz + 3.58) : 0;
+            const pesoGraso = peso > 0 ? (peso * pctGrasaYuhasz) / 100 : 0;
+            const masaLibreGrasa = peso - pesoGraso;
+            const pctEsperado = parseFloat(formData.deportista_pct_grasa_esperado) || 0;
+            const pesoOptimo = masaLibreGrasa > 0 && pctEsperado < 100 ? masaLibreGrasa / (1 - pctEsperado / 100) : 0;
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PieChart className="h-5 w-5 text-primary" />
+                    Somatotipo y composición corporal (Deportista)
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">Mediciones antropométricas y % grasa Yuhasz para el plan deportista</p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                    <div className="space-y-1 min-w-[200px]">
+                      <Label>Paciente (cargar desde BD)</Label>
+                      <Select
+                        value={formData.patient_id ? String(formData.patient_id) : ""}
+                        onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
+                        disabled={loadingPatientsList}
+                      >
+                        <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
+                        <SelectContent>
+                          {patientsList.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={loadingPatient || !formData.patient_id}
+                      onClick={() => formData.patient_id && fetchPatientAndPrefillDeportista(Number(formData.patient_id))}
+                    >
+                      {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.deportista_peso} onChange={(e) => handleChange("deportista_peso", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Tríceps (mm)</Label><Input type="number" step="0.1" value={formData.deportista_triceps} onChange={(e) => handleChange("deportista_triceps", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Subescapular (mm)</Label><Input type="number" step="0.1" value={formData.deportista_subescapular} onChange={(e) => handleChange("deportista_subescapular", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Supraespinal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_supraespinal} onChange={(e) => handleChange("deportista_supraespinal", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Estatura (cm)</Label><Input type="number" step="0.1" value={formData.deportista_estatura} onChange={(e) => handleChange("deportista_estatura", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Diám. húmero (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_humero} onChange={(e) => handleChange("deportista_diametro_humero", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Diám. fémur (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_femur} onChange={(e) => handleChange("deportista_diametro_femur", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Perím. brazo tenso (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_brazo_tenso} onChange={(e) => handleChange("deportista_perim_brazo_tenso", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Perím. pantorrilla (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_pantorrilla} onChange={(e) => handleChange("deportista_perim_pantorrilla", e.target.value)} /></div>
+                    <div className="space-y-1"><Label>Pliegue pantorrilla (mm)</Label><Input type="number" step="0.1" value={formData.deportista_pliegue_pantorrilla} onChange={(e) => handleChange("deportista_pliegue_pantorrilla", e.target.value)} /></div>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    <div><span className="text-muted-foreground">Sumatoria</span><p className="font-medium">{sumPliegues > 0 ? sumPliegues.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Corrección prop.</span><p className="font-medium">{correccionProp > 0 ? correccionProp.toFixed(4) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Perím. brazo corregido</span><p className="font-medium">{perimBrazoCorr > 0 ? perimBrazoCorr.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Perím. pant. corregido</span><p className="font-medium">{perimPantCorr > 0 ? perimPantCorr.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">HWR</span><p className="font-medium">{hwr > 0 ? hwr.toFixed(2) : "—"}</p></div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-2">Componentes del somatotipo</h4>
+                    <div className="grid grid-cols-3 gap-3 text-sm">
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Endomorfia</span><p className="font-bold">{endomorfia > 0 ? endomorfia.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Mesomorfia</span><p className="font-bold">{mesomorfia > 0 ? mesomorfia.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Ectomorfia</span><p className="font-bold">{ectomorfia > 0 ? ectomorfia.toFixed(2) : "—"}</p></div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-2">% Grasa Yuhasz</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1"><Label>Sexo</Label>
+                        <Select value={formData.deportista_yuhasz_sexo} onValueChange={(v) => handleChange("deportista_yuhasz_sexo", v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="masculino">Hombre</SelectItem><SelectItem value="femenino">Mujer</SelectItem></SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1"><Label>Abdominal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_abdominal} onChange={(e) => handleChange("deportista_yuhasz_abdominal", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Muslo medio (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_muslo_medio} onChange={(e) => handleChange("deportista_yuhasz_muslo_medio", e.target.value)} /></div>
+                    </div>
+                    <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                      <div><span className="text-muted-foreground">% Grasa</span><p className="font-bold">{pctGrasaYuhasz > 0 ? pctGrasaYuhasz.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Peso graso (kg)</span><p className="font-medium">{pesoGraso > 0 ? pesoGraso.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Masa libre grasa (kg)</span><p className="font-medium">{masaLibreGrasa > 0 ? masaLibreGrasa.toFixed(2) : "—"}</p></div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-2">Peso óptimo</h4>
+                    <div className="flex flex-wrap gap-3 items-end">
+                      <div className="space-y-1"><Label>% grasa esperado</Label><Input type="number" step="0.1" value={formData.deportista_pct_grasa_esperado} onChange={(e) => handleChange("deportista_pct_grasa_esperado", e.target.value)} placeholder="Ej. 15" className="w-24" /></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block text-sm">Peso óptimo (kg)</span><p className="font-bold text-lg">{pesoOptimo > 0 ? pesoOptimo.toFixed(2) : "—"}</p></div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+          {/* Phase 1: Requerimiento Energético y Peso Saludable (no deportista) */}
+          {currentPhase === 1 && formData.tipo_plan !== "deportista" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1408,7 +1656,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                         </td>
                         <td className="border border-cyan-200 p-2 text-center">{formData.cho_gramos_f2 || "---"}</td>
                         <td className="border border-cyan-200 p-2 text-center font-medium">
-                          {formData.total_fibra ? parseFloat(formData.total_fibra).toFixed(1) : "---"}
+                          {formData.total_fibra ? parseFloat(formData.total_fibra).toFixed(2) : "---"}
                         </td>
                       </tr>
                     </tbody>
@@ -1803,18 +2051,18 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                 placeholder="0"
                               />
                             </td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.kcal || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.prot || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.grasa || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.gs || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.gm || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.gp || 0).toFixed(1)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.kcal || 0).toFixed(2)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.prot || 0).toFixed(2)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.grasa || 0).toFixed(2)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.gs || 0).toFixed(2)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.gm || 0).toFixed(2)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.gp || 0).toFixed(2)}</td>
                             <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.col || 0).toFixed(0)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.chos || 0).toFixed(1)}</td>
-                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.fd || 0).toFixed(1)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.chos || 0).toFixed(2)}</td>
+                            <td className="border border-gray-200 p-1 text-center text-xs">{(grupoData.fd || 0).toFixed(2)}</td>
                             {/*<td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.calcio || 0).toFixed(0)}</td>
                               <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.p || 0).toFixed(0)}</td>
-                              <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.fe || 0).toFixed(1)}</td>*/}
+                              <td className="border border-gray-200 p-1 text-center text-xs font-mono">{(grupoData.fe || 0).toFixed(2)}</td>*/}
                           </tr>
                         );
                       })}
@@ -1822,49 +2070,49 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                       <tr className="bg-primary/10 font-bold sticky bottom-0 z-20 shadow-lg">
                         <td className="border border-primary/30 p-2 sticky left-0 bg-primary/20">TOTAL CALCULADO</td>
                         <td className="border border-primary/30 p-1"></td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.kcal || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.prot || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.grasa || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.gs || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.gm || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.gp || 0).toFixed(1)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.kcal || 0).toFixed(2)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.prot || 0).toFixed(2)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.grasa || 0).toFixed(2)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.gs || 0).toFixed(2)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.gm || 0).toFixed(2)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.gp || 0).toFixed(2)}</td>
                         <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.col || 0).toFixed(0)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.chos || 0).toFixed(1)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fd || 0).toFixed(1)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.chos || 0).toFixed(2)}</td>
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fd || 0).toFixed(2)}</td>
                         {/* <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.calcio || 0).toFixed(0)}</td>
                         <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.p || 0).toFixed(0)}</td>
-                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fe || 0).toFixed(1)}</td> */}
+                        <td className="border border-primary/30 p-1 text-center">{(formData.totals_f3.fe || 0).toFixed(2)}</td> */}
                       </tr>
                       {/* Diferencia con Fase 2 */}
                       <tr className="bg-red-50 font-bold text-red-700">
                         <td className="border border-red-200 p-2 sticky left-0 bg-red-100">DIFERENCIA (Requerimiento)</td>
                         <td className="border border-red-200 p-1"></td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.total_calorias_f2) - formData.totals_f3.kcal).toFixed(1)}
+                          {(parseFloat(formData.total_calorias_f2) - formData.totals_f3.kcal).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.proteinas_gramos_f2) - formData.totals_f3.prot).toFixed(1)}
+                          {(parseFloat(formData.proteinas_gramos_f2) - formData.totals_f3.prot).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.grasas_gramos_f2) - formData.totals_f3.grasa).toFixed(1)}
+                          {(parseFloat(formData.grasas_gramos_f2) - formData.totals_f3.grasa).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.grasas_gs_gramos) - formData.totals_f3.gs).toFixed(1)}
+                          {(parseFloat(formData.grasas_gs_gramos) - formData.totals_f3.gs).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.grasas_gm_gramos) - formData.totals_f3.gm).toFixed(1)}
+                          {(parseFloat(formData.grasas_gm_gramos) - formData.totals_f3.gm).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.grasas_gp_gramos) - formData.totals_f3.gp).toFixed(1)}
+                          {(parseFloat(formData.grasas_gp_gramos) - formData.totals_f3.gp).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
                           {(parseFloat(formData.grasas_colesterol) - formData.totals_f3.col).toFixed(0)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.cho_gramos_f2) - formData.totals_f3.chos).toFixed(1)}
+                          {(parseFloat(formData.cho_gramos_f2) - formData.totals_f3.chos).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1 text-center">
-                          {(parseFloat(formData.total_fibra) - formData.totals_f3.fd).toFixed(1)}
+                          {(parseFloat(formData.total_fibra) - formData.totals_f3.fd).toFixed(2)}
                         </td>
                         <td className="border border-red-200 p-1" colSpan={3}></td>
                       </tr>
@@ -2102,7 +2350,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                               const displayGrams =
                                                 gramsValue ||
                                                 (Number.isFinite(baseGrams)
-                                                  ? (baseGrams * currentMultiplier).toFixed(1)
+                                                  ? (baseGrams * currentMultiplier).toFixed(2)
                                                   : "");
 
                                               return (
@@ -2145,7 +2393,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
                                                             dayIdx,
                                                             mealKey,
                                                             ing,
-                                                            scaled.toFixed(1)
+                                                            scaled.toFixed(2)
                                                           );
                                                         }
                                                       }}
@@ -2198,13 +2446,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
             </Card>
           )}
 
+          {currentPhase >= 1 && (
           <DialogFooter className="mt-6">
             <div className="flex justify-between w-full">
               <Button
                 type="button"
                 variant="outline"
                 onClick={handlePrevious}
-                disabled={currentPhase === 1}
+                disabled={currentPhase === 0}
               >
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 Anterior
@@ -2223,6 +2472,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId }: N
               </div>
             </div>
           </DialogFooter>
+          )}
         </div>
       </DialogContent>
     </Dialog>

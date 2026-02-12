@@ -279,9 +279,9 @@ export function PlanPhasesSummaryDialog({ plan, open, onOpenChange }: PlanPhases
                               <td className="p-2 font-medium">{grupo}</td>
                               <td className="p-2 text-center font-bold bg-primary/5">{portions}</td>
                               <td className="p-2 text-center">{(portions * nutrients.energia).toFixed(0)}</td>
-                              <td className="p-2 text-center">{(portions * nutrients.proteina).toFixed(1)}</td>
-                              <td className="p-2 text-center">{(portions * nutrients.grasa).toFixed(1)}</td>
-                              <td className="p-2 text-center">{(portions * nutrients.carbohidratos).toFixed(1)}</td>
+                              <td className="p-2 text-center">{(portions * nutrients.proteina).tofixed(2)}</td>
+                              <td className="p-2 text-center">{(portions * nutrients.grasa).tofixed(2)}</td>
+                              <td className="p-2 text-center">{(portions * nutrients.carbohidratos).tofixed(2)}</td>
                             </tr>
                           );
                         })}
