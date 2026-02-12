@@ -574,7 +574,7 @@ const AdminProgress = () => {
               <Scale className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.total_weight_lost.toFixed(1)} kg</div>
+              <div className="text-2xl font-bold">{stats.total_weight_lost.toFixed(2)} kg</div>
               <p className="text-xs text-muted-foreground">Entre todos los pacientes</p>
             </CardContent>
           </Card>
@@ -638,7 +638,7 @@ const AdminProgress = () => {
                       <div className="flex items-center justify-center text-xs text-muted-foreground">
                         {getTrendIcon(patient.trend)}
                         <span className="ml-1">
-                          {Math.abs(patient.current_weight - patient.initial_weight).toFixed(1)} kg
+                          {Math.abs(patient.current_weight - patient.initial_weight).toFixed(2)} kg
                         </span>
                       </div>
                     </div>
@@ -649,7 +649,7 @@ const AdminProgress = () => {
                       </div>
                       <p className="text-lg font-bold">{patient.goal_weight} kg</p>
                       <p className="text-xs text-muted-foreground">
-                        Faltan {Math.abs(patient.goal_weight - patient.current_weight).toFixed(1)} kg
+                        Faltan {Math.abs(patient.goal_weight - patient.current_weight).toFixed(2)} kg
                       </p>
                     </div>
                     <div className="text-center">
@@ -895,7 +895,7 @@ const AdminProgress = () => {
                             <div className="flex justify-between border-t pt-2 mt-2">
                               <span className="text-muted-foreground">Cambio</span>
                               <span className="font-bold text-primary">
-                                {(selectedPatient.current_weight - selectedPatient.initial_weight).toFixed(1)} kg
+                                {(selectedPatient.current_weight - selectedPatient.initial_weight).toFixed(2)} kg
                               </span>
                             </div>
                           </div>

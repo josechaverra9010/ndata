@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from urllib.parse import quote
 import requests
 import copy
@@ -27,6 +28,11 @@ load_dotenv()
 from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
 from sqlalchemy import func, and_
+import io
+from fastapi.responses import StreamingResponse, JSONResponse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
 
 # Configuración de Base de Datos (PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -80,6 +86,7 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 app = FastAPI(docs_url=None, redoc_url=None)
 
+
 # URL base para las fotos (usar variable de entorno o localhost por defecto)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
@@ -103,10 +110,51 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],  # Métodos específicos
-    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],  # Headers específicos
-    max_age=3600,  # Cache de preflight requests
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc: HTTPException):
+    """Asegura que las respuestas de error incluyan cabeceras CORS."""
+    origin = request.headers.get("origin", "") if hasattr(request, "headers") else ""
+    headers = {}
+    if origin and origin in origins:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=headers)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc: Exception):
+    """Captura excepciones no controladas y asegura cabeceras CORS para que el cliente reciba la respuesta."""
+    # Log simple del error (no incluir stacktrace en producción)
+    try:
+        print(f"Unhandled exception: {str(exc)}")
+    except Exception:
+        pass
+
+    origin = request.headers.get("origin", "") if hasattr(request, "headers") else ""
+    headers = {}
+    if origin and origin in origins:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
+
+
+# Asegurar CORS en todas las respuestas (incl. 404) para que el cliente pueda leer el error
+@app.middleware("http")
+async def ensure_cors_on_response(request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+    if origin and origin in origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 # Middleware de seguridad para agregar headers HTTP seguros
 @app.middleware("http")
@@ -1804,6 +1852,21 @@ def calcular_edad_detallada(fecha_nacimiento: Optional[date]) -> str:
         
     return ", ".join(parts)
 
+def get_frequency_label(freq_id: Optional[str]) -> str:
+    """Convierte id de frecuencia a etiqueta legible (alineado con el front)."""
+    if not freq_id:
+        return "No registrado"
+    if freq_id == "never":
+        return "Nunca o casi nunca"
+    if freq_id.startswith("month_"):
+        return f"Al mes: {freq_id.split('_')[1]}"
+    if freq_id.startswith("week_"):
+        return f"A la semana: {freq_id.split('_')[1]}"
+    if freq_id.startswith("day_"):
+        val = freq_id.split("_")[1]
+        return f"Al día: {'≥ 6' if val == '6' else val}"
+    return str(freq_id)
+
 def calcular_progreso(peso_actual: Optional[float], peso_objetivo: Optional[float], peso_inicial: Optional[float] = None) -> int:
     """Calcula el progreso del paciente basado en peso actual vs objetivo, usando el inicial como base"""
     if peso_actual is None or peso_objetivo is None:
@@ -1843,6 +1906,238 @@ def calcular_progreso(peso_actual: Optional[float], peso_objetivo: Optional[floa
         
     progreso = (achieved / total_needed) * 100
     return min(100, max(0, int(progreso)))
+
+
+def build_nutrition_report_bytes(patient_id: int, db: Session):
+    """Construye el PDF detallado del informe nutricional y devuelve (bytes, filename)."""
+    patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    nutritionist = None
+    if getattr(patient, 'nutritionist_id', None):
+        nutritionist = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id).first()
+
+    recent_metrics = db.query(ProgressMetricDB).filter(ProgressMetricDB.patient_id == patient_id).order_by(ProgressMetricDB.date.desc()).limit(6).all()
+
+    buffer = io.BytesIO()
+    width, height = A4
+    p = canvas.Canvas(buffer, pagesize=A4)
+
+    primary = colors.HexColor('#7a9b76')
+    cream = colors.HexColor('#faf5f0')
+    text_color = colors.HexColor('#352d26')
+    accent = colors.HexColor('#c9a96a')
+
+    header_h = 100
+    p.setFillColor(primary)
+    p.rect(0, height - header_h, width, header_h, stroke=0, fill=1)
+    p.setFillColor(colors.white)
+    p.setFont("Helvetica-Bold", 20)
+    p.drawString(50, height - 48, "NutriData — Informe Nutricional Profesional")
+    p.setFont("Helvetica", 9)
+    p.drawString(50, height - 66, f"Generado: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+
+    card_x = 40
+    card_w = width - 80
+    card_h = 76
+    card_y = height - header_h - 20 - card_h
+    p.setFillColor(cream)
+    p.roundRect(card_x, card_y, card_w, card_h, 6, stroke=1, fill=1)
+    p.setStrokeColor(colors.HexColor('#e0d9d0'))
+    p.setFillColor(text_color)
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(card_x + 12, card_y + card_h - 20, f"{patient.nombres or ''} {patient.apellidos or ''}".strip() or "Paciente")
+    p.setFont("Helvetica", 10)
+    dob = ""
+    if patient.fecha_nacimiento:
+        try:
+            dob = patient.fecha_nacimiento.strftime("%d/%m/%Y")
+        except Exception:
+            dob = str(patient.fecha_nacimiento)
+    edad_str = calcular_edad_detallada(patient.fecha_nacimiento)
+    p.drawString(card_x + 12, card_y + card_h - 36, f"Email: {patient.email or '—'}  ·  Teléfono: {patient.telefono or '—'}")
+    p.drawString(card_x + 12, card_y + card_h - 52, f"Fecha de nacimiento: {dob or '—'}  ·  Edad: {edad_str}  ·  Género: {(patient.genero or '—').capitalize()}")
+
+    left_x = card_x + 6
+    left_y = card_y - 28
+    p.setFont("Helvetica-Bold", 12)
+    p.setFillColor(primary)
+    p.drawString(left_x, left_y, "Medidas y estado antropométrico")
+    p.setFillColor(text_color)
+    left_y -= 6
+    p.setStrokeColor(accent)
+    p.setLineWidth(0.5)
+    p.line(left_x, left_y, left_x + 220, left_y)
+    left_y -= 18
+    bmi = None
+    try:
+        if patient.peso_actual and patient.altura:
+            h_m = (patient.altura / 100)
+            bmi = round(patient.peso_actual / (h_m * h_m), 2)
+    except Exception:
+        bmi = None
+    peso_act = patient.peso_actual if patient.peso_actual is not None else "—"
+    peso_obj = patient.peso_objetivo if patient.peso_objetivo is not None else "—"
+    alt = patient.altura if patient.altura is not None else "—"
+    imc_str = str(bmi) if bmi is not None else "N/A"
+    medidas_line = f"Peso actual: {peso_act} kg  ·  Peso objetivo: {peso_obj} kg  ·  Altura: {alt} cm  ·  IMC: {imc_str}"
+    p.setFont("Helvetica", 10)
+    p.drawString(left_x, left_y, medidas_line)
+    left_y -= 22
+
+    prog = calcular_progreso(patient.peso_actual, patient.peso_objetivo, getattr(patient, "peso_inicial", None))
+    p.setFont("Helvetica-Bold", 11)
+    p.setFillColor(text_color)
+    p.drawString(left_x, left_y, "Progreso hacia objetivo de peso")
+    left_y -= 14
+    bar_x = left_x
+    bar_w = 240
+    bar_h = 10
+    p.setFillColor(colors.HexColor('#e6e6e6'))
+    p.rect(bar_x, left_y - 6, bar_w, bar_h, fill=1, stroke=0)
+    p.setFillColor(primary)
+    fill_w = max(0, min(bar_w, (prog or 0) / 100 * bar_w))
+    p.rect(bar_x, left_y - 6, fill_w, bar_h, fill=1, stroke=0)
+    p.setFillColor(text_color)
+    p.setFont("Helvetica", 9)
+    p.drawString(bar_x + bar_w + 8, left_y - 4, f"{prog}%")
+
+    eval_block_y = left_y - 60
+    if eval_block_y < 140:
+        p.showPage()
+        eval_block_y = height - 72
+    p.setFont("Helvetica-Bold", 12)
+    p.setFillColor(primary)
+    p.drawString(50, eval_block_y, "Evaluación nutricional")
+    p.setFillColor(text_color)
+    eval_block_y -= 6
+    p.setStrokeColor(accent)
+    p.line(50, eval_block_y, 250, eval_block_y)
+    eval_block_y -= 18
+    p.setFont("Helvetica", 10)
+    eval_text = (patient.evaluacion_nutricional or "No se ha registrado una evaluación.").strip()
+    for paragraph in eval_text.split('\n'):
+        for i in range(0, len(paragraph), 100):
+            if eval_block_y < 80:
+                p.showPage()
+                eval_block_y = height - 72
+            p.drawString(50, eval_block_y, paragraph[i:i+100])
+            eval_block_y -= 14
+
+    metrics_section_y = eval_block_y - 28
+    if metrics_section_y < 180:
+        p.showPage()
+        metrics_section_y = height - 72
+    table_w = 360
+    table_x = 50
+    p.setFont("Helvetica-Bold", 12)
+    p.setFillColor(primary)
+    p.drawString(table_x, metrics_section_y, "Métricas recientes")
+    p.setFillColor(text_color)
+    header_y = metrics_section_y - 20
+    p.setFont("Helvetica-Bold", 9)
+    cols = ["Fecha", "Peso (kg)", "Grasa (%)", "Músculo (kg)", "Cintura (cm)"]
+    col_x = [table_x + 4, table_x + 72, table_x + 132, table_x + 202, table_x + 272]
+    p.setFillColor(primary)
+    p.rect(table_x, header_y - 4, table_w, 18, fill=1, stroke=1)
+    p.setStrokeColor(colors.HexColor("#5a7d56"))
+    p.setFillColor(colors.white)
+    for i, c in enumerate(cols):
+        p.drawString(col_x[i], header_y + 2, c)
+    p.setFillColor(text_color)
+    row_y = header_y - 16
+    p.setFont("Helvetica", 9)
+    if recent_metrics:
+        for m in recent_metrics:
+            date_str = m.date.strftime("%d/%m/%Y") if getattr(m, "date", None) else ""
+            p.drawString(col_x[0], row_y, date_str[:10] if len(date_str) > 10 else date_str)
+            p.drawString(col_x[1], row_y, f"{m.weight:.1f}" if m.weight is not None else "—")
+            p.drawString(col_x[2], row_y, f"{m.body_fat:.1f}" if m.body_fat is not None else "—")
+            p.drawString(col_x[3], row_y, f"{m.muscle:.1f}" if m.muscle is not None else "—")
+            p.drawString(col_x[4], row_y, f"{m.waist:.1f}" if m.waist is not None else "—")
+            row_y -= 15
+            if row_y < 120:
+                break
+    else:
+        p.drawString(col_x[0], row_y, "No hay métricas registradas")
+    metrics_bottom_y = row_y - 10
+
+    freq_section_y = metrics_bottom_y - 28
+    if freq_section_y < 200:
+        p.showPage()
+        freq_section_y = height - 72
+    freq_table_x = 50
+    freq_table_w = width - 100
+    p.setFont("Helvetica-Bold", 12)
+    p.setFillColor(primary)
+    p.drawString(freq_table_x, freq_section_y, "Frecuencia alimentaria")
+    p.setFillColor(text_color)
+    freq_header_y = freq_section_y - 18
+    p.setFont("Helvetica-Bold", 9)
+    p.setFillColor(primary)
+    p.rect(freq_table_x, freq_header_y - 4, freq_table_w, 16, fill=1, stroke=1)
+    p.setStrokeColor(colors.HexColor("#5a7d56"))
+    p.setFillColor(colors.white)
+    p.drawString(freq_table_x + 4, freq_header_y + 2, "Grupo de alimento")
+    p.drawString(freq_table_x + 280, freq_header_y + 2, "Frecuencia")
+    p.setFillColor(text_color)
+    freq_row_y = freq_header_y - 14
+    p.setFont("Helvetica", 9)
+    frecuencia_consumo = getattr(patient, "frecuencia_consumo", None) or []
+    if isinstance(frecuencia_consumo, list) and len(frecuencia_consumo) > 0:
+        for item in frecuencia_consumo:
+            grupo = (item.get("grupo") if isinstance(item, dict) else None) or "—"
+            freq_id = (item.get("frecuencia") if isinstance(item, dict) else None) or ""
+            freq_label = get_frequency_label(freq_id)
+            p.drawString(freq_table_x + 4, freq_row_y, str(grupo)[:50])
+            p.drawString(freq_table_x + 280, freq_row_y, freq_label[:35])
+            freq_row_y -= 12
+            if freq_row_y < 100:
+                break
+    else:
+        p.drawString(freq_table_x + 4, freq_row_y, "No se ha registrado la frecuencia de consumo para este paciente.")
+        freq_row_y -= 12
+    freq_bottom_y = freq_row_y - 12
+
+    notes_y = freq_bottom_y - 24
+    note_obj = db.query(NutritionistNoteDB).filter(NutritionistNoteDB.patient_id == patient_id).order_by(NutritionistNoteDB.created_at.desc()).first()
+    if note_obj:
+        nutritionist_note = note_obj.note
+        if notes_y < 120:
+            p.showPage()
+            notes_y = height - 72
+        p.setFont("Helvetica-Bold", 11)
+        p.setFillColor(text_color)
+        p.drawString(50, notes_y, "Nota del nutricionista")
+        notes_y -= 6
+        p.setStrokeColor(accent)
+        p.line(50, notes_y, 200, notes_y)
+        notes_y -= 16
+        p.setFont("Helvetica", 10)
+        for i in range(0, len(nutritionist_note), 100):
+            if notes_y < 80:
+                p.showPage()
+                notes_y = height - 72
+            p.drawString(50, notes_y, nutritionist_note[i:i+100])
+            notes_y -= 14
+
+    footer_y = 60
+    p.setFont("Helvetica", 9)
+    p.setFillColor(colors.HexColor('#6b6159'))
+    generated_by = nutritionist.nombres + " " + nutritionist.apellidos if nutritionist else "Sistema NutriData"
+    p.drawString(50, footer_y, f"Generado por: {generated_by}")
+    p.drawRightString(width - 50, footer_y, "NutriData ©")
+
+    p.showPage()
+    p.save()
+
+    buffer.seek(0)
+    pdf_bytes = buffer.getvalue()
+    safe_name = (f"{patient.nombres or ''}_{patient.apellidos or ''}".strip() or "paciente").replace(" ", "_")
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    filename = f"informe_nutricional_{safe_name}_{date_str}.pdf"
+    return pdf_bytes, filename
 
 # ==================== ENDPOINTS DE PACIENTES ====================
 
@@ -1906,6 +2201,74 @@ def get_patients(
         })
     
     return results
+
+
+@app.get("/api/patients/{patient_id}/reports/nutrition")
+def generate_nutrition_report(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """
+    Generar un informe nutricional más detallado y con estilos alineados a la identidad.
+    Incluye: encabezado con marca, resumen del paciente, métricas recientes, IMC, progreso
+    y la evaluación nutricional. Devuelve PDF como StreamingResponse.
+    """
+    # Reusar la función que construye el PDF y devuelve bytes + filename
+    authorize_patient_access(patient_id, current_user, db)
+    pdf_bytes, filename = build_nutrition_report_bytes(patient_id, db)
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+@app.post("/api/patients/{patient_id}/reports/nutrition/send")
+def send_nutrition_report_email(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    """Genera el PDF de informe y lo envía por email al paciente."""
+    authorize_patient_access(patient_id, current_user, db)
+
+    patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    if not patient.email:
+        raise HTTPException(status_code=400, detail="El paciente no tiene email registrado")
+
+    # Generar el mismo PDF detallado que se usa para la descarga
+    pdf_bytes, filename = build_nutrition_report_bytes(patient_id, db)
+
+    # Preparar y enviar email con adjunto
+    smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "no-reply@example.com")
+    sender_password = os.getenv("SMTP_PASSWORD", "")
+
+    msg = MIMEMultipart()
+    msg["Subject"] = f"Informe nutricional - {patient.nombres} {patient.apellidos}"
+    msg["From"] = sender_email
+    msg["To"] = patient.email
+
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+    inner = f"<p>Hola {patient.nombres},</p><p>Adjuntamos tu informe nutricional generado desde NutriData.</p><p>Saludos,<br/>NutriData</p>"
+    html_content = _email_layout(inner, "Informe Nutricional", frontend_url)
+    msg.attach(MIMEText(html_content, "html"))
+
+    attachment = MIMEApplication(pdf_bytes, Name=filename)
+    attachment['Content-Disposition'] = f'attachment; filename="{filename}"'
+    msg.attach(attachment)
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            if sender_password:
+                server.login(sender_email, sender_password)
+            server.sendmail(sender_email, [patient.email], msg.as_string())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error enviando email: {str(e)}")
+
+    return {"message": "Informe enviado por email"}
 
 @app.post("/api/patients", response_model=PatientResponse)
 def create_patient(

@@ -431,7 +431,7 @@ export default function SuperadminNutritionists() {
                       Rating
                     </span>
                     <span className="font-medium text-foreground">
-                      {nutritionist.rating > 0 ? nutritionist.rating.toFixed(1) : 'N/A'}
+                      {nutritionist.rating > 0 ? nutritionist.rating.tofixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
@@ -569,7 +569,7 @@ export default function SuperadminNutritionists() {
                     {getStatusBadge(selectedNutritionist.status)}
                     <Badge variant="outline" className="gap-1">
                       <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                      {selectedNutritionist.rating.toFixed(1)}
+                      {selectedNutritionist.rating.tofixed(2)}
                     </Badge>
                   </div>
                 </div>
@@ -626,7 +626,7 @@ export default function SuperadminNutritionists() {
                   </Card>
                   <Card className="border-border">
                     <CardContent className="pt-4 text-center">
-                      <div className="text-2xl font-bold text-foreground">{selectedNutritionist.rating.toFixed(1)}</div>
+                      <div className="text-2xl font-bold text-foreground">{selectedNutritionist.rating.tofixed(2)}</div>
                       <p className="text-xs text-muted-foreground">Rating Promedio</p>
                     </CardContent>
                   </Card>

@@ -730,7 +730,7 @@ export default function PatientDashboard() {
                               const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
                               const altura = (dashboardData?.stats as any)?.altura || user?.altura;
                               const h = altura > 3 ? altura / 100 : altura;
-                              return (peso / (h * h)).toFixed(1);
+                              return (peso / (h * h)).tofixed(2);
                             })()}
                           </span>
                           <span className="text-sm font-medium text-muted-foreground ml-1 mb-1">kg/m²</span>

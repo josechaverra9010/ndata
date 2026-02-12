@@ -28,6 +28,7 @@ import {
   Trash2,
   Clock,
   Plus,
+  Loader2,
 } from "lucide-react";
 import { Recordatorio24hForm } from "./Recordatorio24hForm";
 import { useToast } from "@/hooks/use-toast";
@@ -154,6 +155,7 @@ export function PatientDetailsDialog({
   const [recalls, setRecalls] = useState<any[]>([]);
   const [loadingRecalls, setLoadingRecalls] = useState(false);
   const [showRecallForm, setShowRecallForm] = useState(false);
+  const [sendingReport, setSendingReport] = useState(false);
 
   // SOLUCIÓN AL ERROR: Si no hay paciente, no renderizamos nada para evitar el crash
   if (!patient) return null;
@@ -200,6 +202,32 @@ export function PatientDetailsDialog({
     }
   };
 
+  const handleSendReport = async () => {
+    if (!patient) return;
+    setSendingReport(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/patients/${patient.id}/reports/nutrition/send`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Status ${res.status}`);
+      }
+
+      toast({ title: "Enviado", description: "El informe fue enviado al correo del paciente." });
+    } catch (error) {
+      console.error("Error enviando informe:", error);
+      toast({ title: "Error", description: "No se pudo enviar el informe", variant: "destructive" });
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
   const handleDelete = async () => {
     try {
       setDeleting(true);
@@ -241,26 +269,37 @@ export function PatientDetailsDialog({
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
-              <Avatar className="h-16 w-16 border-2 border-primary/20">
-                <AvatarImage src={patient.foto_perfil || ""} alt={`${patient.nombres} ${patient.apellidos}`} />
-                <AvatarFallback className="bg-primary/10 text-primary text-lg">
-                  {getInitials(patient.nombres, patient.apellidos)}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span>{patient.nombres} {patient.apellidos}</span>
-                  <Badge variant="outline" className={statusStyles[patient.status] || statusStyles.activo}>
-                    {patient.status}
-                  </Badge>
+              <div className="w-full flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-16 w-16 border-2 border-primary/20">
+                    <AvatarImage src={patient.foto_perfil || ""} alt={`${patient.nombres} ${patient.apellidos}`} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-lg">
+                      {getInitials(patient.nombres, patient.apellidos)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-lg">{patient.nombres} {patient.apellidos}</span>
+                      <Badge variant="outline" className={statusStyles[patient.status] || statusStyles.activo}>
+                        {patient.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold">
+                        {patient.edad_formateada || "Edad no registrada"}
+                      </Badge>
+                      <DialogDescription>
+                        Información detallada del paciente
+                      </DialogDescription>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold">
-                    {patient.edad_formateada || "Edad no registrada"}
-                  </Badge>
-                  <DialogDescription>
-                    Información detallada del paciente
-                  </DialogDescription>
+
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={handleSendReport} disabled={sendingReport}>
+                    {sendingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 mr-2" />}
+                    Enviar informe
+                  </Button>
                 </div>
               </div>
             </DialogTitle>
@@ -384,8 +423,8 @@ export function PatientDetailsDialog({
                           {patient.peso_actual && patient.altura ? (
                             <>
                               {(() => {
-                                const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
-                                return (patient.peso_actual / (h * h)).toFixed(1);
+                                  const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
+                                  return (patient.peso_actual / (h * h)).toFixed(2);
                               })()}
                               <span className="text-sm font-normal text-muted-foreground">kg/m²</span>
                             </>

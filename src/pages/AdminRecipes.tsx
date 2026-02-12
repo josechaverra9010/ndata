@@ -82,6 +82,15 @@ export default function AdminRecipes() {
   const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   const [ingredientGroupFilter, setIngredientGroupFilter] = useState<string>("Todos");
+  const [ingredientSearchTerm, setIngredientSearchTerm] = useState("");
+
+  /** Lista de ingredientes del grupo actual filtrada por búsqueda */
+  const filteredIngredientsForRecipe = useMemo(() => {
+    const list = getIngredientsByGroup(ingredientGroupFilter);
+    const q = ingredientSearchTerm.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((name) => name.toLowerCase().includes(q));
+  }, [ingredientGroupFilter, ingredientSearchTerm]);
 
   /** Nombre base para lookup (quita sufijo " : X g" por si viene del modal) */
   const getRowForIngredient = (name: string) =>
@@ -429,6 +438,32 @@ export default function AdminRecipes() {
 
                 <div className="space-y-2">
                   <Label>Ingredientes (del PDF por grupo)</Label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="relative flex-1 max-w-sm">
+                      <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar ingrediente..."
+                        value={ingredientSearchTerm}
+                        onChange={(e) => setIngredientSearchTerm(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
+                    <Select
+                      value={ingredientGroupFilter}
+                      onValueChange={(v) => { setIngredientGroupFilter(v); setIngredientSearchTerm(""); }}
+                    >
+                      <SelectTrigger className="w-full max-w-xs sm:w-[200px]">
+                        <SelectValue placeholder="Filtrar por grupo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FOOD_INGREDIENT_GROUPS.map((g) => (
+                          <SelectItem key={g} value={g}>
+                            {g}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   {selectedIngredients.length > 0 ? (
                     <div className="border rounded-md overflow-x-auto mb-2" style={{ maxWidth: "100%" }}>
                       <Table className="min-w-[700px]">
@@ -470,7 +505,7 @@ export default function AdminRecipes() {
                                 </TableCell>
                                 {(["kcal", "prot", "grasa", "gs", "gm", "gp", "col", "chos", "fd", "calcio", "p", "fe"] as const).map((key) => (
                                   <TableCell key={key} className="text-right tabular-nums text-sm py-2">
-                                    {row[key] === 0 ? "—" : Number.isInteger(row[key]) ? String(row[key]) : (row[key] as number).toFixed(1).replace(".", ",")}
+                                    {row[key] === 0 ? "—" : Number.isInteger(row[key]) ? String(row[key]) : (row[key] as number).toFixed(2).replace(".", ",")}
                                   </TableCell>
                                 ))}
                                 <TableCell className="py-2">
@@ -491,55 +526,45 @@ export default function AdminRecipes() {
                       </Table>
                     </div>
                   ) : null}
-                  {selectedIngredients.length > 0 ? (
+                  {selectedIngredients.length > 0 && (
                     <div className="rounded-lg border bg-muted/30 p-3 mb-2">
                       <p className="text-sm font-medium mb-2">Cálculo neto (suma de ingredientes seleccionados)</p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-1.5 text-sm">
                         <span className="text-muted-foreground">Kcal</span>
                         <span className="tabular-nums font-medium">{Math.round(netNutrients.kcal)}</span>
                         <span className="text-muted-foreground">Prot. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.prot.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.prot.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">GT. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.grasa.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.grasa.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">AGS. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.gs.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.gs.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">AGN. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.gm.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.gm.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">AGP. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.gp.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.gp.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">Col. mg</span>
                         <span className="tabular-nums font-medium">{Math.round(netNutrients.col)}</span>
                         <span className="text-muted-foreground">CHO. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.chos.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.chos.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">FDI. g</span>
-                        <span className="tabular-nums font-medium">{netNutrients.fd.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.fd.toFixed(2).replace(".", ",")}</span>
                         <span className="text-muted-foreground">Ca. mg</span>
                         <span className="tabular-nums font-medium">{Math.round(netNutrients.calcio)}</span>
                         <span className="text-muted-foreground">P. mg</span>
                         <span className="tabular-nums font-medium">{Math.round(netNutrients.p)}</span>
                         <span className="text-muted-foreground">Fe. mg</span>
-                        <span className="tabular-nums font-medium">{netNutrients.fe.toFixed(1).replace(".", ",")}</span>
+                        <span className="tabular-nums font-medium">{netNutrients.fe.toFixed(2).replace(".", ",")}</span>
                       </div>
                     </div>
-                  ) : null}
-                  <Select
-                    value={ingredientGroupFilter}
-                    onValueChange={setIngredientGroupFilter}
-                  >
-                    <SelectTrigger className="w-full max-w-xs">
-                      <SelectValue placeholder="Filtrar por grupo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FOOD_INGREDIENT_GROUPS.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <ScrollArea className="h-[200px] border rounded-md p-2 mt-2">
+                  )}
+                  <ScrollArea className="h-[240px] border rounded-md p-2 mt-2">
                     <div className="space-y-2">
-                      {getIngredientsByGroup(ingredientGroupFilter).map((name) => (
+                      {filteredIngredientsForRecipe.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-2">
+                          {ingredientSearchTerm.trim() ? "No hay ingredientes que coincidan con la búsqueda." : "No hay ingredientes en este grupo."}
+                        </p>
+                      ) : (
+                        filteredIngredientsForRecipe.map((name) => (
                         <label
                           key={name}
                           className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
@@ -550,7 +575,8 @@ export default function AdminRecipes() {
                           />
                           <span className="text-sm">{name}</span>
                         </label>
-                      ))}
+                      ))
+                      )}
                     </div>
                   </ScrollArea>
                   {selectedIngredients.length === 0 && (
