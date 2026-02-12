@@ -2785,7 +2785,7 @@ def _recipe_to_response(recipe: RecipeDB) -> dict:
         "ingredients": to_list(recipe.ingredients, ing_keys),
         "instructions": to_list(recipe.instructions, inst_keys),
         "tags": to_list(getattr(recipe, "tags", None)),
-        "image": recipe.image,
+        "image": get_avatar_url(recipe.image),
         "isFavorite": bool(getattr(recipe, "isFavorite", 0)),
         "is_public": bool(getattr(recipe, "is_public", 0)),
     }
@@ -3549,12 +3549,12 @@ def get_plan_assigned_menu(plan_id: int, db: Session = Depends(get_db)):
             except:
                 day_meals = {}
         
-        # Extraer comidas
+        # Extraer comidas y procesar URLs de imágenes
         meals = day_meals.get("meals", []) if isinstance(day_meals, dict) else []
         
         week_data.append({
             "day": day_name,
-            "meals": meals
+            "meals": process_meal_images(meals)
         })
     
     return {
@@ -9622,6 +9622,16 @@ def calculate_weekly_totals(week_data: List[dict]) -> dict:
         "avg_fat": total_fat // n
     }
 
+def process_meal_images(meals: List[dict]) -> List[dict]:
+    """Procesa las URLs de las imágenes en una lista de comidas"""
+    processed = []
+    for meal in meals:
+        meal_copy = meal.copy()
+        if "image" in meal_copy and meal_copy["image"]:
+            meal_copy["image"] = get_avatar_url(meal_copy["image"])
+        processed.append(meal_copy)
+    return processed
+
 def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
     """Serializar un menú semanal completo"""
     days_map = {
@@ -9670,10 +9680,11 @@ def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
                     # Fallback por si acaso
                     day_meals = day_col
                 
+                meals = day_meals.get("meals", []) if isinstance(day_meals, dict) else []
                 week_data.append({
                     "day": day_name,
                     "week": week_num,
-                    "meals": day_meals.get("meals", []) if isinstance(day_meals, dict) else []
+                    "meals": process_meal_images(meals)
                 })
     else:
         # Estructura antigua: un solo dict por día
@@ -9686,10 +9697,11 @@ def serialize_weekly_menu(menu: WeeklyMenuCompleteDB) -> dict:
                 except:
                     day_meals = {}
 
+            meals = day_meals.get("meals", []) if isinstance(day_meals, dict) else []
             week_data.append({
                 "day": day_name,
                 "week": 1,
-                "meals": day_meals.get("meals", []) if isinstance(day_meals, dict) else []
+                "meals": process_meal_images(meals)
             })
     
     # Recalcular totales desde week_data para que kcal/día salga siempre correcto
@@ -9735,6 +9747,12 @@ def get_weekly_menus(
     """
     Obtener todos los menús semanales con filtros opcionales
     """
+    print(f"\n🔍 GET /api/weekly-menus")
+    if current_user:
+        print(f"   Usuario: {current_user.email}, Role: {getattr(current_user, 'role', None)}, ID: {current_user.id}")
+    else:
+        print(f"   Sin usuario autenticado")
+    
     query = _menu_query_for_user(db, current_user)
     
     if search:
@@ -9747,6 +9765,10 @@ def get_weekly_menus(
         query = query.filter(WeeklyMenuCompleteDB.category == category)
     
     menus = query.order_by(WeeklyMenuCompleteDB.created_at.desc()).all()
+    
+    print(f"   Menús encontrados: {len(menus)}")
+    for menu in menus:
+        print(f"     - ID: {menu.id}, Nombre: {menu.name}, created_by_id: {menu.created_by_id}")
     
     return [serialize_weekly_menu(menu) for menu in menus]
 
@@ -9780,69 +9802,6 @@ def create_weekly_menu(
     """
     Crear un nuevo menú semanal
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Mapear días en español a inglés
-    days_map = {
-        "Lunes": "monday",
-        "Martes": "tuesday",
-        "Miércoles": "wednesday",
-        "Jueves": "thursday",
-        "Viernes": "friday",
-        "Sábado": "saturday",
-        "Domingo": "sunday"
-    }
-    
-    # Preparar datos de la semana
-    # Inicializar estructura de listas para 4 semanas
-    week_dict = {
-        "monday": [{}, {}, {}, {}],
-        "tuesday": [{}, {}, {}, {}],
-        "wednesday": [{}, {}, {}, {}],
-        "thursday": [{}, {}, {}, {}],
-        "friday": [{}, {}, {}, {}],
-        "saturday": [{}, {}, {}, {}],
-        "sunday": [{}, {}, {}, {}]
-    }
-    
-    for day_data in menu_data.week:
-        day_key = days_map.get(day_data.day)
-        week_idx = (day_data.week - 1) if day_data.week else 0
-        
-        if day_key and 0 <= week_idx < 4:
-            week_dict[day_key][week_idx] = {
-                "meals": [meal.model_dump() for meal in day_data.meals]
-            }
-    
-    # Calcular totales
-    totals = calculate_weekly_totals([
-        {"meals": [m.model_dump() for m in d.meals]} 
-        for d in menu_data.week
-    ])
-    
-    creator_id = current_user.id if getattr(current_user, "role", None) in ("admin", "superadmin") else None
-    new_menu = WeeklyMenuCompleteDB(
-        name=menu_data.name,
-        description=menu_data.description,
-        category=menu_data.category,
-        monday=week_dict.get("monday", {}),
-        tuesday=week_dict.get("tuesday", {}),
-        wednesday=week_dict.get("wednesday", {}),
-        thursday=week_dict.get("thursday", {}),
-        friday=week_dict.get("friday", {}),
-        saturday=week_dict.get("saturday", {}),
-        sunday=week_dict.get("sunday", {}),
-        total_calories=totals["total_calories"],
-        avg_protein=totals["avg_protein"],
-        avg_carbs=totals["avg_carbs"],
-        avg_fat=totals["avg_fat"],
-        assigned_patients=0,
-        is_active=1,
-        created_at=now,
-        updated_at=now,
-        created_by_id=creator_id
-    )
-    
     try:
         print(f"📝 Creando menú semanal: {menu_data.name}")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -9892,6 +9851,7 @@ def create_weekly_menu(
         
         # Crear el menú
         print("💾 Creando registro en base de datos")
+        creator_id = current_user.id if getattr(current_user, "role", None) in ("admin", "superadmin") else None
         new_menu = WeeklyMenuCompleteDB(
             name=menu_data.name,
             description=menu_data.description,
@@ -9911,7 +9871,8 @@ def create_weekly_menu(
             assigned_patients=0,
             is_active=1,
             created_at=now,
-            updated_at=now
+            updated_at=now,
+            created_by_id=creator_id
         )
         
         db.add(new_menu)
