@@ -2129,44 +2129,150 @@ def build_nutrition_report_bytes(patient_id: int, db: Session):
         p.drawString(col_x[0], row_y, "No hay métricas registradas")
     metrics_bottom_y = row_y - 10
 
-    freq_section_y = metrics_bottom_y - 28
-    if freq_section_y < 200:
-        p.showPage()
-        freq_section_y = height - 72
-    freq_table_x = 50
-    freq_table_w = width - 100
-    p.setFont("Helvetica-Bold", 12)
-    p.setFillColor(primary)
-    p.drawString(freq_table_x, freq_section_y, "Frecuencia alimentaria")
-    p.setFillColor(text_color)
-    freq_header_y = freq_section_y - 18
-    p.setFont("Helvetica-Bold", 9)
-    p.setFillColor(primary)
-    p.rect(freq_table_x, freq_header_y - 4, freq_table_w, 16, fill=1, stroke=1)
-    p.setStrokeColor(colors.HexColor("#5a7d56"))
-    p.setFillColor(colors.white)
-    p.drawString(freq_table_x + 4, freq_header_y + 2, "Grupo de alimento")
-    p.drawString(freq_table_x + 280, freq_header_y + 2, "Frecuencia")
-    p.setFillColor(text_color)
-    freq_row_y = freq_header_y - 14
-    p.setFont("Helvetica", 9)
-    frecuencia_consumo = getattr(patient, "frecuencia_consumo", None) or []
-    if isinstance(frecuencia_consumo, list) and len(frecuencia_consumo) > 0:
-        for item in frecuencia_consumo:
-            grupo = (item.get("grupo") if isinstance(item, dict) else None) or "—"
-            freq_id = (item.get("frecuencia") if isinstance(item, dict) else None) or ""
-            freq_label = get_frequency_label(freq_id)
-            p.drawString(freq_table_x + 4, freq_row_y, str(grupo)[:50])
-            p.drawString(freq_table_x + 280, freq_row_y, freq_label[:35])
-            freq_row_y -= 12
-            if freq_row_y < 100:
-                break
-    else:
-        p.drawString(freq_table_x + 4, freq_row_y, "No se ha registrado la frecuencia de consumo para este paciente.")
-        freq_row_y -= 12
-    freq_bottom_y = freq_row_y - 12
+    # Menú semanal semana a semana (plan activo) — con estilos y porciones/gramos
+    menu_section_y = metrics_bottom_y - 28
+    active_plan = db.query(PatientMealPlanDB).filter(
+        PatientMealPlanDB.patient_id == patient_id,
+        PatientMealPlanDB.status == "active"
+    ).order_by(PatientMealPlanDB.id.desc()).first()
+    days_map = [
+        ("monday", "Lunes"), ("tuesday", "Martes"), ("wednesday", "Miércoles"),
+        ("thursday", "Jueves"), ("friday", "Viernes"), ("saturday", "Sábado"), ("sunday", "Domingo")
+    ]
 
-    notes_y = freq_bottom_y - 24
+    def _meal_portion_grams(m):
+        """Extrae porción y gramos de un item de comida (dict)."""
+        if not isinstance(m, dict):
+            return "", ""
+        portion = m.get("portion") or m.get("portions") or m.get("portion_size") or ""
+        if portion is not None:
+            portion = str(portion).strip()
+        ing_list = m.get("ingredients") or []
+        grams_parts = []
+        if isinstance(ing_list, list):
+            for ing in ing_list:
+                if isinstance(ing, dict):
+                    p = ing.get("portion") or ing.get("portion_size") or ""
+                    if p:
+                        grams_parts.append(str(p).strip())
+                elif isinstance(ing, str) and ":" in ing:
+                    part = ing.split(":")[-1].strip()
+                    if part:
+                        grams_parts.append(part)
+        grams_str = ", ".join(grams_parts)[:40] if grams_parts else ""
+        return portion, grams_str
+
+    if active_plan:
+        weekly_menus = db.query(WeeklyMenuDB).filter(
+            WeeklyMenuDB.meal_plan_id == active_plan.meal_plan_id
+        ).order_by(WeeklyMenuDB.week_number).all()
+        plan_name = ""
+        plan_obj = db.query(MealPlanDB).filter(MealPlanDB.id == active_plan.meal_plan_id).first()
+        if plan_obj:
+            plan_name = getattr(plan_obj, "name", None) or "Plan"
+        for wm in weekly_menus:
+            if menu_section_y < 220:
+                p.showPage()
+                menu_section_y = height - 72
+            # Título con línea decorativa (mismo estilo que otras secciones)
+            p.setFont("Helvetica-Bold", 12)
+            p.setFillColor(primary)
+            p.drawString(50, menu_section_y, f"Menú semanal — Semana {wm.week_number}" + (f" ({plan_name})" if plan_name else ""))
+            p.setFillColor(text_color)
+            menu_section_y -= 6
+            p.setStrokeColor(accent)
+            p.setLineWidth(0.8)
+            p.line(50, menu_section_y, 200, menu_section_y)
+            menu_section_y -= 20
+            # Encabezado de tabla
+            col_dia_w = 52
+            col_comida_w = 180
+            col_porcion_w = 55
+            col_gramos_w = 120
+            table_x = 50
+            header_y = menu_section_y
+            p.setFont("Helvetica-Bold", 9)
+            p.setFillColor(primary)
+            p.rect(table_x, header_y - 4, col_dia_w + col_comida_w + col_porcion_w + col_gramos_w, 14, fill=1, stroke=1)
+            p.setStrokeColor(colors.HexColor("#5a7d56"))
+            p.setFillColor(colors.white)
+            p.drawString(table_x + 2, header_y + 2, "Día")
+            p.drawString(table_x + col_dia_w + 4, header_y + 2, "Comida")
+            p.drawString(table_x + col_dia_w + col_comida_w + 4, header_y + 2, "Porción")
+            p.drawString(table_x + col_dia_w + col_comida_w + col_porcion_w + 4, header_y + 2, "Gramos")
+            p.setFillColor(text_color)
+            row_y = header_y - 14
+            p.setFont("Helvetica", 9)
+            week_idx = max(0, (wm.week_number or 1) - 1)
+            row_parity = 0
+            for day_key, day_name in days_map:
+                day_val = getattr(wm, day_key, None)
+                if isinstance(day_val, str):
+                    try:
+                        day_val = json.loads(day_val)
+                    except Exception:
+                        day_val = {}
+                if isinstance(day_val, list) and len(day_val) > week_idx:
+                    day_val = day_val[week_idx] if isinstance(day_val[week_idx], dict) else {}
+                elif not isinstance(day_val, dict):
+                    day_val = {}
+                meals_list = day_val.get("meals", []) if isinstance(day_val, dict) else []
+                if not meals_list:
+                    # Fila vacía: fondo suave acorde a la paleta (crema)
+                    bg = cream if not row_parity else colors.HexColor("#f1ebe3")
+                    p.setFillColor(bg)
+                    p.rect(table_x, row_y - 2, col_dia_w + col_comida_w + col_porcion_w + col_gramos_w, 12, fill=1, stroke=0)
+                    p.setFillColor(text_color)
+                    p.drawString(table_x + 2, row_y + 2, day_name)
+                    p.drawString(table_x + col_dia_w + 4, row_y + 2, "—")
+                    row_y -= 12
+                    row_parity = 1 - row_parity
+                    if row_y < 90:
+                        p.showPage()
+                        row_y = height - 72
+                    continue
+                for idx, m in enumerate(meals_list if isinstance(meals_list, list) else []):
+                    name = "—"
+                    portion_str = ""
+                    grams_str = ""
+                    if isinstance(m, dict):
+                        name = (m.get("recipe_name") or m.get("name") or m.get("type") or "—")[:38]
+                        portion_str, grams_str = _meal_portion_grams(m)
+                        portion_str = str(portion_str)[:12]
+                    # Fondo alterno suave en tonos crema para mantener identidad visual
+                    if row_parity:
+                        p.setFillColor(colors.HexColor("#f3eee5"))
+                        p.rect(table_x, row_y - 2, col_dia_w + col_comida_w + col_porcion_w + col_gramos_w, 12, fill=1, stroke=0)
+                    p.setFillColor(text_color)
+                    day_cell = day_name if idx == 0 else ""
+                    p.drawString(table_x + 2, row_y + 2, day_cell)
+                    p.drawString(table_x + col_dia_w + 4, row_y + 2, name)
+                    p.drawString(table_x + col_dia_w + col_comida_w + 4, row_y + 2, portion_str)
+                    p.drawString(table_x + col_dia_w + col_comida_w + col_porcion_w + 4, row_y + 2, grams_str[:28])
+                    row_y -= 12
+                    row_parity = 1 - row_parity
+                    if row_y < 90:
+                        p.showPage()
+                        row_y = height - 72
+            menu_section_y = row_y - 16
+    else:
+        if menu_section_y < 180:
+            p.showPage()
+            menu_section_y = height - 72
+        p.setFont("Helvetica-Bold", 12)
+        p.setFillColor(primary)
+        p.drawString(50, menu_section_y, "Menú semanal")
+        p.setFillColor(text_color)
+        menu_section_y -= 6
+        p.setStrokeColor(accent)
+        p.line(50, menu_section_y, 180, menu_section_y)
+        menu_section_y -= 18
+        p.setFont("Helvetica", 10)
+        p.drawString(50, menu_section_y, "El paciente no tiene un plan activo asignado.")
+        menu_section_y -= 20
+    menu_bottom_y = menu_section_y
+
+    notes_y = menu_bottom_y - 24
     note_obj = db.query(NutritionistNoteDB).filter(NutritionistNoteDB.patient_id == patient_id).order_by(NutritionistNoteDB.created_at.desc()).first()
     if note_obj:
         nutritionist_note = note_obj.note
