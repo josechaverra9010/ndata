@@ -70,6 +70,7 @@ python-dotenv==1.2.1
 python-jose==3.5.0
 python-multipart==0.0.21
 pyzmq==27.1.0
+reportlab
 referencing==0.37.0
 requests==2.32.5
 rpds-py==0.30.0

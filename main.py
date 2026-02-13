@@ -104,7 +104,6 @@ if os.getenv("DEBUG", "False").lower() == "true":
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
 
-<<<<<<< HEAD
 app = FastAPI(
     title="NutriData API",
     version="1.0.0",
@@ -132,11 +131,6 @@ async def upload_file(file: UploadFile = File(...)):
     
     # Retornar URL pública (firmada en GCS, local en DEBUG)
     return {"url": get_avatar_url(file_path)}
-=======
-
-# URL base para las fotos (usar variable de entorno o localhost por defecto)
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
->>>>>>> ce04129610968f5424a1f8e36fbb510ac4d63fb7
 
 # Define los orígenes permitidos explícitamente
 origins = [
