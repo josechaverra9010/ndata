@@ -565,17 +565,17 @@ export default function AdminRecipes() {
                         </p>
                       ) : (
                         filteredIngredientsForRecipe.map((name) => (
-                        <label
-                          key={name}
-                          className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
-                        >
-                          <Checkbox
-                            checked={selectedIngredients.includes(name)}
-                            onCheckedChange={() => toggleIngredient(name)}
-                          />
-                          <span className="text-sm">{name}</span>
-                        </label>
-                      ))
+                          <label
+                            key={name}
+                            className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                          >
+                            <Checkbox
+                              checked={selectedIngredients.includes(name)}
+                              onCheckedChange={() => toggleIngredient(name)}
+                            />
+                            <span className="text-sm">{name}</span>
+                          </label>
+                        ))
                       )}
                     </div>
                   </ScrollArea>

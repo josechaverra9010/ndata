@@ -1005,36 +1005,36 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       // Datos de las 4 fases
       fase_1: formData.tipo_plan === "deportista"
         ? {
-            tipo_fase: "deportista",
-            deportista_peso: formData.deportista_peso,
-            deportista_triceps: formData.deportista_triceps,
-            deportista_subescapular: formData.deportista_subescapular,
-            deportista_supraespinal: formData.deportista_supraespinal,
-            deportista_estatura: formData.deportista_estatura,
-            deportista_diametro_humero: formData.deportista_diametro_humero,
-            deportista_diametro_femur: formData.deportista_diametro_femur,
-            deportista_perim_brazo_tenso: formData.deportista_perim_brazo_tenso,
-            deportista_perim_pantorrilla: formData.deportista_perim_pantorrilla,
-            deportista_pliegue_pantorrilla: formData.deportista_pliegue_pantorrilla,
-            deportista_yuhasz_sexo: formData.deportista_yuhasz_sexo,
-            deportista_yuhasz_abdominal: formData.deportista_yuhasz_abdominal,
-            deportista_yuhasz_muslo_medio: formData.deportista_yuhasz_muslo_medio,
-            deportista_pct_grasa_esperado: formData.deportista_pct_grasa_esperado,
-          }
+          tipo_fase: "deportista",
+          deportista_peso: formData.deportista_peso,
+          deportista_triceps: formData.deportista_triceps,
+          deportista_subescapular: formData.deportista_subescapular,
+          deportista_supraespinal: formData.deportista_supraespinal,
+          deportista_estatura: formData.deportista_estatura,
+          deportista_diametro_humero: formData.deportista_diametro_humero,
+          deportista_diametro_femur: formData.deportista_diametro_femur,
+          deportista_perim_brazo_tenso: formData.deportista_perim_brazo_tenso,
+          deportista_perim_pantorrilla: formData.deportista_perim_pantorrilla,
+          deportista_pliegue_pantorrilla: formData.deportista_pliegue_pantorrilla,
+          deportista_yuhasz_sexo: formData.deportista_yuhasz_sexo,
+          deportista_yuhasz_abdominal: formData.deportista_yuhasz_abdominal,
+          deportista_yuhasz_muslo_medio: formData.deportista_yuhasz_muslo_medio,
+          deportista_pct_grasa_esperado: formData.deportista_pct_grasa_esperado,
+        }
         : {
-            peso_actual: formData.peso_actual,
-            altura: formData.altura,
-            edad: formData.edad,
-            genero: formData.genero,
-            peso_saludable: formData.peso_saludable,
-            peso_ajustado: formData.peso_ajustado,
-            peso_objetivo: formData.peso_objetivo,
-            requerimiento_energetico: formData.requerimiento_energetico,
-            imc: formData.imc,
-            tmb: formData.tmb,
-            factor_actividad: formData.factor_actividad,
-            peso_referencia: formData.peso_referencia_f2
-          },
+          peso_actual: formData.peso_actual,
+          altura: formData.altura,
+          edad: formData.edad,
+          genero: formData.genero,
+          peso_saludable: formData.peso_saludable,
+          peso_ajustado: formData.peso_ajustado,
+          peso_objetivo: formData.peso_objetivo,
+          requerimiento_energetico: formData.requerimiento_energetico,
+          imc: formData.imc,
+          tmb: formData.tmb,
+          factor_actividad: formData.factor_actividad,
+          peso_referencia: formData.peso_referencia_f2
+        },
       fase_2: {
         proteinas_gramos: formData.proteinas_gramos_f2,
         proteinas_calorias: formData.proteinas_calorias_f2,
@@ -2447,31 +2447,31 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
           )}
 
           {currentPhase >= 1 && (
-          <DialogFooter className="mt-6">
-            <div className="flex justify-between w-full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePrevious}
-                disabled={currentPhase === 0}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Anterior
-              </Button>
-              <div className="flex gap-2">
-                {currentPhase < 4 ? (
-                  <Button type="button" onClick={handleNext}>
-                    Siguiente
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                ) : (
-                  <Button type="button" onClick={handleSubmit}>
-                    Crear Plan
-                  </Button>
-                )}
+            <DialogFooter className="mt-6">
+              <div className="flex justify-between w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={currentPhase === 0}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Anterior
+                </Button>
+                <div className="flex gap-2">
+                  {currentPhase < 4 ? (
+                    <Button type="button" onClick={handleNext}>
+                      Siguiente
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  ) : (
+                    <Button type="button" onClick={handleSubmit}>
+                      Crear Plan
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          </DialogFooter>
+            </DialogFooter>
           )}
         </div>
       </DialogContent>

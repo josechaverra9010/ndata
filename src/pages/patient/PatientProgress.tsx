@@ -165,7 +165,7 @@ export default function PatientProgress() {
   const calculateIMC = (weight: number) => {
     if (!user?.altura) return null;
     const heightM = user.altura / 100;
-    return (weight / (heightM * heightM)).tofixed(2);
+    return (weight / (heightM * heightM)).toFixed(2);
   };
 
   if (loading || isAuthLoading) {
@@ -377,7 +377,7 @@ export default function PatientProgress() {
                   <p className="text-xs lg:text-sm text-muted-foreground truncate">Meta</p>
                   <p className="text-lg lg:text-2xl font-bold text-foreground">{summary.goal_weight} kg</p>
                   <p className="text-[10px] lg:text-xs text-muted-foreground mt-1">
-                    Faltan {Math.abs(summary.goal_weight - summary.current_weight).tofixed(2)} kg
+                    Faltan {Math.abs(summary.goal_weight - summary.current_weight).toFixed(2)} kg
                   </p>
                 </div>
                 <div className="flex h-9 w-9 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10">

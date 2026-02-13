@@ -423,8 +423,8 @@ export function PatientDetailsDialog({
                           {patient.peso_actual && patient.altura ? (
                             <>
                               {(() => {
-                                  const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
-                                  return (patient.peso_actual / (h * h)).toFixed(2);
+                                const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
+                                return (patient.peso_actual / (h * h)).toFixed(2);
                               })()}
                               <span className="text-sm font-normal text-muted-foreground">kg/m²</span>
                             </>
