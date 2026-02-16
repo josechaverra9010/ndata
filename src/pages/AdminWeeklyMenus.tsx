@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
+import { MEAL_SCHEDULE } from "@/config/mealSchedule";
 import { AdminLayout } from "@/layouts/AdminLayout";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,6 +64,7 @@ interface MealSlot {
     time: string;
     notes?: string;
     image?: string;
+    imagen?: string; // compatibilidad con API
     ingredients?: string[];
     instructions?: string[];
 }
@@ -97,13 +99,16 @@ interface Stats {
 
 const daysOfWeek = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
-const mealTypes = [
-    { type: "desayuno" as const, label: "Desayuno", icon: Coffee, time: "08:00", color: "bg-orange-500" },
-    { type: "almuerzo" as const, label: "Almuerzo", icon: Apple, time: "11:00", color: "bg-green-500" },
-    { type: "comida" as const, label: "Comida", icon: ChefHat, time: "14:00", color: "bg-blue-500" },
-    { type: "merienda" as const, label: "Merienda", icon: Sandwich, time: "17:00", color: "bg-purple-500" },
-    { type: "cena" as const, label: "Cena", icon: Moon, time: "20:00", color: "bg-indigo-500" },
-];
+const mealTypeIcons = { desayuno: Coffee, almuerzo: Apple, comida: ChefHat, merienda: Sandwich, cena: Moon };
+const mealTypeColors = { desayuno: "bg-orange-500", almuerzo: "bg-green-500", comida: "bg-blue-500", merienda: "bg-purple-500", cena: "bg-indigo-500" };
+const mealTypes = MEAL_SCHEDULE.map((m) => ({
+    type: m.type,
+    label: m.label,
+    icon: mealTypeIcons[m.type],
+    time: m.time,
+    timeRange: m.timeRange,
+    color: mealTypeColors[m.type],
+}));
 
 const AdminWeeklyMenus = () => {
     const [weeklyMenus, setWeeklyMenus] = useState<WeeklyMenu[]>([]);
@@ -138,11 +143,17 @@ const AdminWeeklyMenus = () => {
     const [mealNotes, setMealNotes] = useState("");
 
     const getImageUrl = (imagePath: string | undefined | null) => {
-        if (!imagePath) return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
-        if (imagePath.startsWith("http")) return imagePath;
-        const baseUrl = API_URL.replace("/api", "");
-        return `${baseUrl}${imagePath}`;
+        if (!imagePath || typeof imagePath !== "string") return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+        const trimmed = imagePath.trim();
+        if (!trimmed) return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+        if (trimmed.startsWith("http")) return trimmed;
+        const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+        const baseUrl = API_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
+        return `${baseUrl}${path}`;
     };
+
+    const getMealImageUrl = (meal: MealSlot | undefined) =>
+        getImageUrl(meal?.image ?? (meal as MealSlot & { imagen?: string })?.imagen);
 
     // Initialize empty week (now 4 weeks)
     const createEmptyWeek = (): DayMenu[] => {
@@ -901,7 +912,7 @@ const AdminWeeklyMenus = () => {
                                                                                         </div>
                                                                                         <div>
                                                                                             <p className="font-medium">{mealType.label}</p>
-                                                                                            <p className="text-xs text-muted-foreground">{mealType.time}</p>
+                                                                                            <p className="text-xs text-muted-foreground">{"timeRange" in mealType ? mealType.timeRange : mealType.time}</p>
                                                                                         </div>
                                                                                     </div>
                                                                                     <Button
@@ -914,13 +925,12 @@ const AdminWeeklyMenus = () => {
                                                                                 </div>
                                                                                 {meal?.recipe_name && (
                                                                                     <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                                                                                        {meal.image && (
-                                                                                            <img
-                                                                                                src={getImageUrl(meal.image)}
-                                                                                                alt={meal.recipe_name}
-                                                                                                className="w-16 h-16 rounded-lg object-cover"
-                                                                                            />
-                                                                                        )}
+                                                                                        <img
+                                                                                            src={getMealImageUrl(meal)}
+                                                                                            alt={meal.recipe_name}
+                                                                                            className="w-16 h-16 rounded-lg object-cover bg-muted"
+                                                                                            onError={(e) => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400"; }}
+                                                                                        />
                                                                                         <div className="flex-1">
                                                                                             <p className="font-medium text-sm">{meal.recipe_name}</p>
                                                                                             <div className="flex gap-3 text-xs text-muted-foreground mt-1">
@@ -1132,18 +1142,17 @@ const AdminWeeklyMenus = () => {
                                                                                         </div>
                                                                                         <div>
                                                                                             <p className="font-semibold">{mealType.label}</p>
-                                                                                            <p className="text-sm text-muted-foreground">{mealType.time}</p>
+                                                                                            <p className="text-sm text-muted-foreground">{"timeRange" in mealType ? mealType.timeRange : mealType.time}</p>
                                                                                         </div>
                                                                                     </div>
                                                                                     {meal?.recipe_name ? (
                                                                                         <div className="flex items-center gap-4">
-                                                                                            {meal.image && (
-                                                                                                <img
-                                                                                                    src={getImageUrl(meal.image)}
-                                                                                                    alt={meal.recipe_name}
-                                                                                                    className="w-24 h-24 rounded-lg object-cover"
-                                                                                                />
-                                                                                            )}
+                                                                                            <img
+                                                                                                src={getMealImageUrl(meal)}
+                                                                                                alt={meal.recipe_name}
+                                                                                                className="w-24 h-24 rounded-lg object-cover bg-muted"
+                                                                                                onError={(e) => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400"; }}
+                                                                                            />
                                                                                             <div className="flex-1">
                                                                                                 <p className="font-medium mb-2">{meal.recipe_name}</p>
                                                                                                 <div className="grid grid-cols-4 gap-2 text-sm">
