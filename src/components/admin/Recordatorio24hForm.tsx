@@ -17,11 +17,11 @@ export function Recordatorio24hForm({ patientId, onSuccess, onCancel }: Recordat
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const MEAL_TIMES = [
-        { id: "desayuno", label: "DESAYUNO", time: ": a.m.", rows: 4 },
-        { id: "media_manana", label: "NUEVES", time: ": a.m.", rows: 3 },
-        { id: "almuerzo", label: "ALMUERZO", time: ": p.m.", rows: 6 },
-        { id: "media_tarde", label: "ONCES", time: ": p.m.", rows: 3 },
-        { id: "cena", label: "CENA", time: ": p.m.", rows: 6 },
+        { id: "desayuno", label: "DESAYUNO", time: "7:00am - 9:30am", rows: 4 },
+        { id: "media_manana", label: "SNACK #1", time: "10:00am - 11:00am", rows: 3 },
+        { id: "almuerzo", label: "ALMUERZO", time: "12:00pm - 1:30pm", rows: 6 },
+        { id: "media_tarde", label: "SNACK #2", time: "4:00pm - 5:00pm", rows: 3 },
+        { id: "cena", label: "CENA", time: "7:00pm - 8:00pm", rows: 6 },
     ];
 
     const createEmptyRow = () => ({ prep: "", ingredients: "", qty: "" });
