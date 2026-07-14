@@ -33,6 +33,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 
 # Configuración de Base de Datos (PostgreSQL)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -2232,7 +2233,15 @@ def build_nutrition_report_bytes(patient_id: int, db: Session):
     p.setFont("Helvetica", 9)
     p.setFillColor(colors.HexColor('#6b6159'))
     generated_by = nutritionist.nombres + " " + nutritionist.apellidos if nutritionist else "Sistema NutriData"
-    p.drawString(50, footer_y, f"Generado por: {generated_by}")
+    license_to = None
+    if nutritionist:
+        admin_prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == nutritionist.id).first()
+        if admin_prof and admin_prof.license:
+            license_to = admin_prof.license
+    footer_left = f"Generado por: {generated_by}"
+    if license_to:
+        footer_left += f" — TO: {license_to}"
+    p.drawString(50, footer_y, footer_left)
     p.drawRightString(width - 50, footer_y, "NutriData ©")
 
     p.showPage()
@@ -2244,6 +2253,279 @@ def build_nutrition_report_bytes(patient_id: int, db: Session):
     date_str = datetime.utcnow().strftime("%Y-%m-%d")
     filename = f"informe_nutricional_{safe_name}_{date_str}.pdf"
     return pdf_bytes, filename
+
+
+def _pdf_wrap_lines(text: str, max_chars: int = 95):
+    """Divide texto en líneas para canvas PDF (simple)."""
+    if not text:
+        return []
+    lines = []
+    for paragraph in str(text).replace("\r\n", "\n").split("\n"):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            lines.append("")
+            continue
+        while len(paragraph) > max_chars:
+            cut = paragraph.rfind(" ", 0, max_chars)
+            if cut < 20:
+                cut = max_chars
+            lines.append(paragraph[:cut].strip())
+            paragraph = paragraph[cut:].strip()
+        if paragraph:
+            lines.append(paragraph)
+    return lines
+
+
+def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: UserDB, db: Session):
+    """PDF Historia Clínica Nutricional (formato EVANUT / Word) con pie del nutricionista + TO."""
+    patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    # Nutricionista firmante: preferir usuario actual (admin), luego nutritionist_id del paciente
+    nutritionist = current_user if current_user and current_user.role in ("admin", "superadmin") else None
+    if nutritionist is None and getattr(patient, "nutritionist_id", None):
+        nutritionist = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id).first()
+
+    license_to = None
+    if nutritionist:
+        admin_prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == nutritionist.id).first()
+        if admin_prof and admin_prof.license:
+            license_to = admin_prof.license
+
+    nutri_name = (
+        f"{(nutritionist.nombres or '').strip()} {(nutritionist.apellidos or '').strip()}".strip()
+        if nutritionist
+        else "Sistema NutriData"
+    )
+
+    buffer = io.BytesIO()
+    width, height = A4
+    p = canvas.Canvas(buffer, pagesize=A4)
+    primary = colors.HexColor("#7a9b76")
+    text_color = colors.HexColor("#352d26")
+    muted = colors.HexColor("#6b6159")
+    left = 45
+    right = width - 45
+    y = height - 50
+
+    def draw_footer():
+        p.setFont("Helvetica", 8)
+        p.setFillColor(muted)
+        footer = f"Generado por: {nutri_name}"
+        if license_to:
+            footer += f" — TO: {license_to}"
+        p.drawString(left, 28, footer)
+        p.drawRightString(right, 28, "Historia Clínica Nutricional · NutriData")
+        p.line(left, 38, right, 38)
+
+    def new_page():
+        nonlocal y
+        draw_footer()
+        p.showPage()
+        y = height - 50
+
+    def ensure(space=60):
+        nonlocal y
+        if y < space:
+            new_page()
+
+    def heading(title: str):
+        nonlocal y
+        ensure(70)
+        y -= 8
+        p.setFillColor(primary)
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(left, y, title.upper())
+        y -= 6
+        p.setStrokeColor(primary)
+        p.setLineWidth(1)
+        p.line(left, y, right, y)
+        y -= 14
+        p.setFillColor(text_color)
+
+    def label_value(label: str, value: str, bold_label=True):
+        nonlocal y
+        ensure(40)
+        p.setFont("Helvetica-Bold" if bold_label else "Helvetica", 9)
+        p.setFillColor(text_color)
+        p.drawString(left, y, f"{label}:")
+        p.setFont("Helvetica", 9)
+        val = (value or "—").strip() if value is not None else "—"
+        # mismo renglón si cabe
+        label_w = p.stringWidth(f"{label}: ", "Helvetica-Bold", 9)
+        first_max = max(20, int((right - left - label_w) / 5.2))
+        lines = _pdf_wrap_lines(val, first_max if first_max < 90 else 90)
+        if not lines:
+            lines = ["—"]
+        p.drawString(left + label_w + 4, y, lines[0])
+        y -= 14
+        for line in lines[1:]:
+            ensure(30)
+            p.drawString(left + 8, y, line)
+            y -= 12
+
+    def block(label: str, value: str):
+        nonlocal y
+        ensure(50)
+        p.setFont("Helvetica-Bold", 9)
+        p.setFillColor(text_color)
+        p.drawString(left, y, f"{label}:")
+        y -= 14
+        p.setFont("Helvetica", 9)
+        for line in _pdf_wrap_lines(value or "—", 100) or ["—"]:
+            ensure(30)
+            p.drawString(left + 6, y, line)
+            y -= 12
+        y -= 6
+
+    def checks(items):
+        nonlocal y
+        ensure(30)
+        p.setFont("Helvetica", 9)
+        p.setFillColor(text_color)
+        parts = []
+        for label, on in items:
+            parts.append(f"[{'X' if on else ' '}] {label}")
+        text = "   ".join(parts)
+        for line in _pdf_wrap_lines(text, 100) or [text]:
+            ensure(28)
+            p.drawString(left + 6, y, line)
+            y -= 12
+
+    # Header
+    # Header
+    logo_path = os.getenv("PDF_LOGO_URL", "https://utridata.com/logo-light.png") # Usar variable de entorno o URL por defecto
+    try:
+        logo = ImageReader(logo_path)
+        logo_width = 120
+        logo_height = 33
+        logo_x = left
+        logo_y = height - 50 - logo_height / 2
+        p.drawImage(logo, logo_x, logo_y, width=logo_width, height=logo_height, mask='auto')
+        
+        p.setFillColor(primary)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawCentredString(width / 2, height - 40, "HISTORIA CLÍNICA NUTRICIONAL")
+        p.setFont("Helvetica", 9)
+        p.drawCentredString(width / 2, height - 55, f"NutriData  ·  Fecha documento: {data.get("fecha") or datetime.utcnow().strftime("%Y-%m-%d")}")
+        y = height - 80
+    except Exception:
+        # Fallback a encabezado de texto si la imagen no carga
+        p.setFillColor(primary)
+        p.rect(0, height - 62, width, 62, stroke=0, fill=1)
+        p.setFillColor(colors.white)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(left, height - 32, "FORMATO HISTORIA CLÍNICA NUTRICIONAL")
+        p.setFont("Helvetica", 9)
+        p.drawString(left, height - 48, f"NutriData  ·  Fecha documento: {data.get("fecha") or datetime.utcnow().strftime("%Y-%m-%d")}")
+        heading("Información general")
+    label_value("Nº historia nutricional", str(data.get("numero_historia") or ""))
+    label_value("Nombre", str(data.get("nombre") or f"{patient.nombres or ''} {patient.apellidos or ''}".strip()))
+    label_value("Fecha de nacimiento", str(data.get("fecha_nacimiento") or ""))
+    label_value("Edad", str(data.get("edad") or ""))
+    label_value("Cuidador", str(data.get("cuidador") or ""))
+    label_value("Teléfono fijo", str(data.get("telefono_fijo") or ""))
+    label_value("Celular", str(data.get("celular") or patient.telefono or ""))
+    label_value("E-mail", str(data.get("email") or patient.email or ""))
+    label_value("Nivel educativo", str(data.get("nivel_educativo") or ""))
+    label_value("Estrato socioeconómico", str(data.get("estrato") or ""))
+    label_value("Seguridad social", str(data.get("seguridad_social") or ""))
+    label_value("Programa PyP", str(data.get("programa_pyp") or ""))
+    label_value("Nivel de actividad física", str(data.get("nivel_actividad") or patient.nivel_actividad or ""))
+
+    heading("Información de salud")
+    block("Motivo de consulta", str(data.get("motivo_consulta") or ""))
+    block("Enfermedad actual", str(data.get("enfermedad_actual") or ""))
+    block("Antecedentes personales", str(data.get("antecedentes_personales") or ""))
+    block("Signos y síntomas", str(data.get("signos_sintomas") or ""))
+    checks([
+        ("Constipación", bool(data.get("constipacion"))),
+        ("Diarrea", bool(data.get("diarrea"))),
+        ("Vómito", bool(data.get("vomito"))),
+        ("Reflujo", bool(data.get("reflujo"))),
+    ])
+    label_value("Otros", str(data.get("otros_sintomas") or ""))
+    block("Antecedentes familiares", str(data.get("antecedentes_familiares") or ""))
+    checks([
+        ("Diabetes", bool(data.get("fam_diabetes"))),
+        ("Cardiovascular", bool(data.get("fam_cardiovascular"))),
+        ("Hipertensión", bool(data.get("fam_hipertension"))),
+        ("Obesidad", bool(data.get("fam_obesidad"))),
+    ])
+    label_value("Otros familiares", str(data.get("fam_otros") or ""))
+
+    heading("Medicamentos / suplementos")
+    block("Consumo actual", str(data.get("medicamentos") or "No reporta."))
+
+    heading("Datos bioquímicos")
+    block("Resultados", str(data.get("bioquimicos") or ""))
+
+    heading("Información antropométrica")
+    label_value("Peso (kg)", str(data.get("peso") or ""))
+    label_value("Talla (cm)", str(data.get("talla") or ""))
+    label_value("IMC", str(data.get("imc") or ""))
+    label_value("Perímetro cefálico", str(data.get("perimetro_cefalico") or ""))
+    label_value("Perímetro braquial", str(data.get("perimetro_braquial") or ""))
+    label_value("Perímetro de cintura", str(data.get("perimetro_cintura") or ""))
+    label_value("Pliegue tricipital", str(data.get("pliegue_tricipital") or ""))
+    label_value("Pliegue subescapular", str(data.get("pliegue_subescapular") or ""))
+    block("Clasificación antropométrica", str(data.get("clasificacion_antropometrica") or ""))
+    block("Observaciones", str(data.get("observaciones_antro") or ""))
+
+    heading("Información alimentaria")
+    block("Preferencias", str(data.get("preferencias") or ""))
+    block("Rechazos", str(data.get("rechazos") or ""))
+    block("Intolerancias", str(data.get("intolerancias") or ""))
+    block("Recordatorio 24 horas", str(data.get("recordatorio_24h") or ""))
+    block("Análisis cuantitativo de consumo", str(data.get("analisis_cuantitativo") or ""))
+    block("Evaluación consumo de alimentos", str(data.get("evaluacion_consumo") or ""))
+    block("Factores de riesgo", str(data.get("factores_riesgo") or ""))
+
+    heading("Diagnóstico nutricional PES")
+    block("Diagnóstico", str(data.get("diagnostico_pes") or ""))
+
+    heading("Tratamiento nutricional")
+    block("Objetivos", str(data.get("objetivos") or ""))
+    block("Tipo de dieta y características", str(data.get("tipo_dieta") or ""))
+    block("Determinación de requerimientos", str(data.get("determinacion_requerimientos") or ""))
+    block("Fórmula sintética inicial", str(data.get("formula_sintetica_inicial") or ""))
+    block("Fórmula desarrollada", str(data.get("formula_desarrollada") or ""))
+    block("Fórmula sintética final", str(data.get("formula_sintetica_final") or ""))
+    block("Minuta patrón", str(data.get("minuta_patron") or ""))
+    block("Ejemplo de menú", str(data.get("ejemplo_menu") or ""))
+    block("Recomendaciones", str(data.get("recomendaciones") or ""))
+    block("Plan de educación nutricional", str(data.get("plan_educacion") or ""))
+
+    heading("Seguimiento")
+    label_value("Próxima cita en (días)", str(data.get("proxima_cita_dias") or ""))
+    label_value("Fecha próxima cita", str(data.get("proxima_cita_fecha") or ""))
+    block("Criterios a evaluar", str(data.get("criterios_seguimiento") or ""))
+    block("Nota resumida", str(data.get("nota_resumida") or ""))
+
+    # Firma
+    ensure(100)
+    y -= 20
+    p.setStrokeColor(text_color)
+    p.line(left + 40, y, left + 220, y)
+    y -= 12
+    p.setFont("Helvetica", 9)
+    p.setFillColor(text_color)
+    p.drawString(left + 40, y, nutri_name)
+    y -= 11
+    p.setFont("Helvetica", 8)
+    p.setFillColor(muted)
+    p.drawString(left + 40, y, f"Nutricionista{' · TO: ' + license_to if license_to else ''}")
+
+    draw_footer()
+    p.save()
+    buffer.seek(0)
+    pdf_bytes = buffer.getvalue()
+    safe_name = (f"{patient.nombres or ''}_{patient.apellidos or ''}".strip() or "paciente").replace(" ", "_")
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    filename = f"historia_clinica_{safe_name}_{date_str}.pdf"
+    return pdf_bytes, filename
+
 
 # ==================== ENDPOINTS DE PACIENTES ====================
 
@@ -2375,6 +2657,24 @@ def send_nutrition_report_email(
         raise HTTPException(status_code=500, detail=f"Error enviando email: {str(e)}")
 
     return {"message": "Informe enviado por email"}
+
+
+@app.post("/api/patients/{patient_id}/reports/clinical-history")
+def generate_clinical_history_report(
+    patient_id: int,
+    body: Dict[str, Any] = Body(default={}),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    """Genera PDF de Historia Clínica Nutricional a partir del formulario del modal."""
+    authorize_patient_access(patient_id, current_user, db)
+    data = body or {}
+    pdf_bytes, filename = build_clinical_history_pdf_bytes(patient_id, data, current_user, db)
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 @app.post("/api/patients", response_model=PatientResponse)
 def create_patient(
@@ -2927,13 +3227,17 @@ def complete_invite_registration(
     db: Session = Depends(get_db)
 ):
     """
-    Completar registro de nutricionista invitado: establecer contraseña y activar cuenta.
+    Completar registro de nutricionista invitado: establecer contraseña,
+    número de TO (tarjeta profesional) y activar cuenta.
     No requiere autenticación.
     """
     token = body.get("token")
     password = body.get("password")
+    numero_to = (body.get("numero_to") or body.get("license") or "").strip()
     if not token or not password:
         raise HTTPException(status_code=400, detail="Token y contraseña son requeridos")
+    if not numero_to:
+        raise HTTPException(status_code=400, detail="El número de TO (tarjeta profesional) es requerido")
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
     try:
@@ -2948,6 +3252,14 @@ def complete_invite_registration(
             raise HTTPException(status_code=400, detail="Esta invitación ya fue utilizada")
         user.password = pwd_context.hash(password)
         user.status = "activo"
+
+        admin_profile = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == user.id).first()
+        if not admin_profile:
+            admin_profile = AdminProfileDB(user_id=user.id, license=numero_to)
+            db.add(admin_profile)
+        else:
+            admin_profile.license = numero_to
+
         db.commit()
         return {"success": True, "message": "Cuenta activada. Ya puedes iniciar sesión."}
     except jwt.ExpiredSignatureError:

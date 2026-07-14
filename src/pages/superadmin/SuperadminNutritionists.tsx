@@ -605,7 +605,7 @@ export default function SuperadminNutritionists() {
                     <p className="font-medium text-sm">{selectedNutritionist.specialty || "No especificada"}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Licencia Profesional</Label>
+                    <Label className="text-xs text-muted-foreground">Número de TO (tarjeta profesional)</Label>
                     <p className="font-medium text-sm">{selectedNutritionist.license || "No registrada"}</p>
                   </div>
                 </div>
@@ -724,7 +724,7 @@ export default function SuperadminNutritionists() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Licencia Profesional</Label>
+              <Label>Número de TO (tarjeta profesional)</Label>
               <Input
                 value={editData.license || ""}
                 onChange={(e) => setEditData({ ...editData, license: e.target.value })}

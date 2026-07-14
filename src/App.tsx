@@ -6,6 +6,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import ClickSpark from "@/components/ClickSpark";
 import Index from "./pages/Index";
 import Patients from "./pages/Patients";
 import MealPlans from "./pages/MealPlans";
@@ -49,7 +50,14 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Routes>
+            <ClickSpark
+              sparkColor="#fff"
+              sparkSize={5}
+              sparkRadius={200}
+              sparkCount={8}
+              duration={400}
+            >
+              <Routes>
               {/* Auth */}
               <Route path="/auth" element={<Auth />} />
               <Route path="/reset-password" element={<ResetPassword />} />
@@ -89,7 +97,8 @@ const App = () => (
               <Route path="/superadmin/settings" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminSettings /></ProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />
-            </Routes>
+              </Routes>
+            </ClickSpark>
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>

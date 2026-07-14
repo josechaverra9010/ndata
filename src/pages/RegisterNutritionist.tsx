@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { API_URL } from "@/config/api";
-import { Lock, Eye, EyeOff, CheckCircle2, User } from "lucide-react";
+import { Lock, Eye, EyeOff, CheckCircle2, User, BadgeCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ const RegisterNutritionist = () => {
   const [isValidating, setIsValidating] = useState(true);
   const [isSuccess, setIsSuccess] = useState(false);
   const [inviteInfo, setInviteInfo] = useState<{ email: string; name: string } | null>(null);
-  const [formData, setFormData] = useState({ password: "", confirmPassword: "" });
+  const [formData, setFormData] = useState({ numeroTo: "", password: "", confirmPassword: "" });
 
   const rawToken = searchParams.get("token");
   const token = rawToken ? rawToken.trim() : null;
@@ -53,6 +53,11 @@ const RegisterNutritionist = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const numeroTo = formData.numeroTo.trim();
+    if (!numeroTo) {
+      toast.error("El número de TO (tarjeta profesional) es requerido");
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
       toast.error("Las contraseñas no coinciden");
       return;
@@ -66,7 +71,11 @@ const RegisterNutritionist = () => {
       const res = await fetch(`${API_URL}/auth/complete-invite`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password: formData.password }),
+        body: JSON.stringify({
+          token,
+          password: formData.password,
+          numero_to: numeroTo,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -134,10 +143,30 @@ const RegisterNutritionist = () => {
               <span>({inviteInfo.email})</span>
             </p>
           )}
-          <p className="text-sm text-muted-foreground">Elige una contraseña para tu cuenta</p>
+          <p className="text-sm text-muted-foreground">
+            Ingresa tu número de TO y elige una contraseña para tu cuenta
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-2">
+            <Label htmlFor="numeroTo" className="text-foreground">
+              Número de TO (tarjeta profesional)
+            </Label>
+            <div className="relative">
+              <BadgeCheck className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="numeroTo"
+                type="text"
+                value={formData.numeroTo}
+                onChange={(e) => setFormData({ ...formData, numeroTo: e.target.value })}
+                placeholder="Ej: TO-12345"
+                className="pl-11 h-12 bg-muted/50 border-border focus-visible:ring-primary/20"
+                required
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="password" className="text-foreground">Contraseña</Label>
             <div className="relative">

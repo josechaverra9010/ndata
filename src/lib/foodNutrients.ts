@@ -2025,6 +2025,249 @@ export const EVANUT_GRUPOS_ALIMENTOS: string[] = [
   "Productos con reducción de grasa adultos y niños",
 ];
 
+/** Grupo de suplementos (hoja Deportista EVANUT): nutrientes se introducen manualmente por porción */
+export const SUPLEMENTOS_GRUPO =
+  "Suplementos (Introduzca la información nutricional de 1 porción de suplemento)";
+
+/**
+ * Grupos Fase 3 para plan Deportista (EVANUT hoja Deportista).
+ * Igual que adultos + fila Suplementos después de leches altas en calorías.
+ */
+export const EVANUT_GRUPOS_DEPORTISTA: string[] = (() => {
+  const groups = [...EVANUT_GRUPOS_ALIMENTOS];
+  const idx = groups.indexOf(
+    "Leches frescas y fermentadas enteras altas en calorías y azucares"
+  );
+  if (idx >= 0) groups.splice(idx + 1, 0, SUPLEMENTOS_GRUPO);
+  else groups.splice(4, 0, SUPLEMENTOS_GRUPO);
+  return groups;
+})();
+
+/**
+ * Grupos Fase 3 Pediatría según EVANUT 4.1 (hoja Pediatría).
+ * Incluye grupos adultos + niños + menores de 2 años + leche materna.
+ */
+export const EVANUT_GRUPOS_PEDIATRIA: string[] = [
+  "Leches enteras frescas y fermentadas",
+  "Leches semidescremadas frescas y fermentadas",
+  "Leches descremadas frescas y fermentadas",
+  "Leches frescas y fermentadas enteras altas en calorías y azucares",
+  "Leches frescas, fermentadas y productos lácteos menores de 2 años",
+  "Leche materna toma/100ml*",
+  "Sustitutos",
+  "Huevo menores de 2 años",
+  "Carnes magras crudas y proteínas texturizada adultos y niños",
+  "Carnes magras cocidas menores de 2 años",
+  "Carnes crudas altas en lípidos adultos y niños",
+  "Carnes cocidas altas en lípidos menores de 2 años",
+  "Leguminosas adultos",
+  "Leguminosas niños",
+  "Leguminosas menores de 2 años",
+  "Cereales adultos",
+  "Cereales niños",
+  "Cereales menores de 2 años",
+  "Raíces, tubérculos y plátanos adultos",
+  "Raíces, tubérculos y plátanos niños",
+  "Raíces, tubérculos y plátanos menores de 2 años",
+  "Promedio harinas adultos",
+  "Promedio harinas niños",
+  "Promedio harinas menores de 2 años",
+  "Verduras y hortalizas adultos y niños",
+  "Verduras y hortalizas menores de 2 años",
+  "Frutas adultos y niños",
+  "Frutas menores de 2 años",
+  "Nueces adultos y niños",
+  "Semillas adultos y niños",
+  "Azucares y dulces adultos",
+  "Azucares y dulces niños y niñas",
+  "Grasas poliinsaturadas adultos y niños",
+  "Grasas monoinsaturadas adultos y niños",
+  "Grasas saturadas adultos y niños",
+  "Promedio grasas adultos y niños",
+  "Productos con reducción de grasa adultos y niños",
+  "Grasas poliinsaturadas menores de 2 años",
+  "Grasas monoinsaturadas menores de 2 años",
+  "Grasas saturadas menores de 2 años",
+  "Promedio grasas menores de 2 años",
+];
+
+export function getEvanutGruposForTipo(tipoPlan?: string): string[] {
+  if (tipoPlan === "deportista") return EVANUT_GRUPOS_DEPORTISTA;
+  if (tipoPlan === "pediatria") return EVANUT_GRUPOS_PEDIATRIA;
+  // Gestante / Ges Adoles / Hospitalizado usan grupos adultos EVANUT
+  return EVANUT_GRUPOS_ALIMENTOS;
+}
+
+/** Lookup de nutrientes por grupo (soporta alias leche materna y nombres cortos del Excel) */
+export function getFoodNutrientsForGroup(nombre: string) {
+  if (FOOD_NUTRIENTS[nombre]) return FOOD_NUTRIENTS[nombre];
+  if (nombre.endsWith("*") && FOOD_NUTRIENTS[nombre.slice(0, -1)]) {
+    return FOOD_NUTRIENTS[nombre.slice(0, -1)];
+  }
+  if (FOOD_NUTRIENTS[`${nombre}*`]) return FOOD_NUTRIENTS[`${nombre}*`];
+  const aliases: Record<string, string> = {
+    'Promedio "Harinas" adultos': "Promedio harinas adultos",
+    "Carnes magras crudas y proteínas texturizada":
+      "Carnes magras crudas y proteínas texturizada adultos y niños",
+    "Carnes crudas altas en lípidos":
+      "Carnes crudas altas en lípidos adultos y niños",
+  };
+  const alias = aliases[nombre];
+  if (alias && FOOD_NUTRIENTS[alias]) return FOOD_NUTRIENTS[alias];
+  return undefined;
+}
+
+/** Clasificación IMC Atalah (pregestacional) */
+export function getAtalahClass(imcPreg: number): "Bajo" | "Normal" | "Sobrepeso" | "Obesidad" | "" {
+  if (!(imcPreg > 0)) return "";
+  if (imcPreg < 20) return "Bajo";
+  if (imcPreg < 25) return "Normal";
+  if (imcPreg < 30) return "Sobrepeso";
+  return "Obesidad";
+}
+
+/** Trimestre desde semana gestacional */
+export function getTrimestreFromSemana(semana: number): 1 | 2 | 3 {
+  if (semana < 14) return 1;
+  if (semana < 28) return 2;
+  return 3;
+}
+
+/**
+ * Calorías adicionales por gestación (EVANUT hoja Gestante).
+ * Sobrepeso usa punto medio 200-250 → 225.
+ */
+export function getGestanteExtraKcal(
+  atalah: "Bajo" | "Normal" | "Sobrepeso" | "Obesidad" | "",
+  trimestre: 1 | 2 | 3,
+  normalVariant: "a" | "b" = "a"
+): number {
+  const table: Record<string, [number, number, number]> = {
+    Bajo: [500, 500, 500],
+    Normal: normalVariant === "b" ? [0, 360, 475] : [85, 285, 475],
+    Sobrepeso: [0, 225, 225],
+    Obesidad: [0, 100, 100],
+  };
+  if (!atalah || !table[atalah]) return 0;
+  return table[atalah][trimestre - 1];
+}
+
+/** Ganancia esperada Atalah (kg en sem 0-13 y 14-40) */
+export function getGestanteExpectedGainKg(atalah: "Bajo" | "Normal" | "Sobrepeso" | "Obesidad" | "") {
+  const map: Record<string, { t1: number; t23: number }> = {
+    Bajo: { t1: 2.5, t23: 13.5 },
+    Normal: { t1: 1.5, t23: 10.8 },
+    Sobrepeso: { t1: 0.9, t23: 8.1 },
+    Obesidad: { t1: 0, t23: 5.4 },
+  };
+  return map[atalah || ""] || { t1: 0, t23: 0 };
+}
+
+/** Kg que debió ganar hasta la semana gestacional (fórmula Excel F15/I24) */
+export function getGestanteDebioGanar(semana: number, t1Kg: number, t23Kg: number): number {
+  if (!(semana > 0)) return 0;
+  if (semana < 14) return (t1Kg / 13) * semana;
+  return t1Kg + (t23Kg / 27) * (semana - 13);
+}
+
+/** Targets RIEN gestante */
+export function getGestanteRienTargets(atalah: "Bajo" | "Normal" | "Sobrepeso" | "Obesidad" | "") {
+  return {
+    proteinas_kg: atalah === "Bajo" ? 1.7 : 1.53,
+    grasas_amdr: 27.5,
+    proteinas_amdr: "14-20%",
+    fibra_g: 28,
+  };
+}
+
+/** Clasificación por puntaje Z (Ges Adoles EVANUT) */
+export function getGestAdolesZClass(z: number): string {
+  if (Number.isNaN(z)) return "";
+  if (z < -2) return "Delgadez";
+  if (z < -1) return "Riesgo delgadez";
+  if (z <= 1) return "Adecuado";
+  if (z <= 2) return "Sobrepeso";
+  return "Obesidad";
+}
+
+/** Ganancia esperada adolescente según Z (kg sem 0-13 y 14-40) */
+export function getGestAdolesExpectedGainKg(z: number) {
+  if (Number.isNaN(z)) return { t1: 0, t23: 0 };
+  if (z < -1) return { t1: 2.25, t23: 12.15 };
+  if (z <= 1) return { t1: 1.3, t23: 12.15 };
+  if (z <= 2) return { t1: 0.9, t23: 8 };
+  return { t1: 0.675, t23: 6 };
+}
+
+/** Extras kcal gestante adolescente por categoría y trimestre */
+export function getGestAdolesExtraKcal(
+  zClass: string,
+  trimestre: 1 | 2 | 3
+): number {
+  // Mapeo Delgadez/Riesgo → Bajo; Adecuado → Normo
+  let key = "Normo";
+  if (zClass === "Delgadez" || zClass === "Riesgo delgadez") key = "Bajo";
+  else if (zClass === "Sobrepeso") key = "Sobrepeso";
+  else if (zClass === "Obesidad") key = "Obesidad";
+  const table: Record<string, [number, number, number]> = {
+    Bajo: [500, 500, 500],
+    Normo: [85, 285, 475],
+    Sobrepeso: [0, 300, 300],
+    Obesidad: [0, 200, 200],
+  };
+  return table[key][trimestre - 1];
+}
+
+/** Ganancia diaria (g) por edad para crecimiento adolescente (EVANUT Ges Adoles) */
+export function getGestAdolesDailyGainG(edad: number): number {
+  if (!(edad > 0)) return 0;
+  if (edad < 11) return 12.3;
+  if (edad < 12) return 12.3;
+  if (edad < 13) return 12.6;
+  if (edad < 14) return 11.5;
+  if (edad < 15) return 9.3;
+  if (edad < 16) return 6.0;
+  if (edad < 17) return 2.2;
+  return 0;
+}
+
+/**
+ * Requerimiento base Ges Adoles:
+ * GET FAO mujer = 263.4 + 65.3W - 0.454W²
+ * + ganancia_diaria_g × 2
+ * × factor actividad (Sed 0.85 / Mod 1 / Act 1.15)
+ */
+export function getGestAdolesBaseReq(
+  pesoPreg: number,
+  gananciaDiariaG: number,
+  actividad: "Sedentario" | "Moderado" | "Activo" | string
+): { get: number; conCrecimiento: number; requerimiento: number; factor: number } {
+  const get =
+    pesoPreg > 0 ? 263.4 + 65.3 * pesoPreg - 0.454 * Math.pow(pesoPreg, 2) : 0;
+  const conCrecimiento = get + gananciaDiariaG * 2;
+  let factor = 1;
+  if (actividad === "Sedentario") factor = 0.85;
+  else if (actividad === "Activo") factor = 1.15;
+  return { get, conCrecimiento, requerimiento: conCrecimiento * factor, factor };
+}
+
+/** Recomendaciones RIEN pediátricas por edad (años decimales) */
+export function getPediatriaRienTargets(ageYears: number) {
+  if (ageYears < 0.5) {
+    return { band: "0-6 meses", proteinas_kg: 1.52, grasas_amdr: 40, cho_hint: "60g", proteinas_amdr: "—" };
+  }
+  if (ageYears < 1) {
+    return { band: "7-12 meses", proteinas_kg: 1.67, grasas_amdr: 40, cho_hint: "95g", proteinas_amdr: "—" };
+  }
+  if (ageYears < 4) {
+    return { band: "1-3 años", proteinas_kg: 1.46, grasas_amdr: 35, cho_hint: "50-65%", proteinas_amdr: "10-20%" };
+  }
+  if (ageYears < 14) {
+    return { band: "4-13 años", proteinas_kg: 1.32, grasas_amdr: 30, cho_hint: "50-65%", proteinas_amdr: "10-20%" };
+  }
+  return { band: "14-18 años", proteinas_kg: 1.18, grasas_amdr: 30, cho_hint: "50-65%", proteinas_amdr: "10-20%" };
+}
+
 /** Lista de todos los ingredientes del PDF (tabla de composición de alimentos) */
 export const FOOD_INGREDIENTS_LIST: string[] = Object.keys(FOOD_NUTRIENTS);
 

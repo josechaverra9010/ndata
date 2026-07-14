@@ -50,3 +50,12 @@ peso_obeso = 100
 imc_obeso = calculate_imc(peso_obeso, altura)
 ref_weight_obeso = calculate_pa(peso_obeso, ps) if imc_obeso > 30 else peso_obeso
 print(f"Obese example (100kg): IMC {imc_obeso:.2f}, Ref Weight {ref_weight_obeso:.2f}")
+
+assert abs(imc - 21.05) < 0.02
+assert abs(ps - 74.82) < 0.02
+assert abs(pa - 71.87) < 0.02
+assert abs(tmr - (15.057 * 63 + 692.2)) < 0.01
+assert abs(req - tmr * 1.53) < 0.01
+assert ref_weight == peso  # IMC < 30
+assert imc_obeso > 30 and abs(ref_weight_obeso - calculate_pa(100, ps)) < 0.01
+print("ALL OK")

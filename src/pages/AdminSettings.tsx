@@ -555,7 +555,7 @@ const AdminSettings = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="license">Número de licencia</Label>
+                    <Label htmlFor="license">Número de TO (tarjeta profesional)</Label>
                     <Input
                       id="license"
                       value={profile.license || ""}

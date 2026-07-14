@@ -31,7 +31,10 @@ import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, Fil
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getCompositionRowForIngredient } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEMENTOS_GRUPO, getCompositionRowForIngredient, getFoodNutrientsForGroup, getPediatriaRienTargets, getAtalahClass, getTrimestreFromSemana, getGestanteExtraKcal, getGestanteExpectedGainKg, getGestanteDebioGanar, getGestanteRienTargets, getGestAdolesZClass, getGestAdolesExpectedGainKg, getGestAdolesExtraKcal, getGestAdolesDailyGainG, getGestAdolesBaseReq } from "@/lib/foodNutrients";
+
+const isGestanteTipo = (tipo?: string) => tipo === "gestante" || tipo === "gestante_adolescente";
+const isGestAdoles = (tipo?: string) => tipo === "gestante_adolescente";
 
 interface NewPlanWizardProps {
   open: boolean;
@@ -46,31 +49,118 @@ const PHASES = [
   {
     id: 1,
     title: "REQUERIMIENTO ENERGÉTICO Y PESO SALUDABLE",
+    titleDeportista: "SOMATOTIPO Y COMPOSICIÓN CORPORAL",
+    titlePediatria: "EVALUACIÓN Y REQUERIMIENTO PEDIÁTRICO",
+    titleGestante: "EVALUACIÓN Y REQUERIMIENTO GESTANTE",
+    titleGestAdoles: "EVALUACIÓN GESTANTE ADOLESCENTE",
     icon: Calculator,
-    description: "Calcula las necesidades energéticas, peso saludable y peso ajustado"
+    description: "Calcula las necesidades energéticas, peso saludable y peso ajustado",
+    descriptionDeportista: "Somatotipo Heath-Carter, % grasa Yuhasz, AKS y calorías del plan (EVANUT Deportista)",
+    descriptionPediatria: "GER FAO/OMS 2005, crecimiento, actividad y catch-up (EVANUT Pediatría)",
+    descriptionGestante: "IMC Atalah, ganancia gestacional, TMR × PAL + calorías por trimestre (EVANUT Gestante)",
+    descriptionGestAdoles: "Puntaje Z, GET FAO + crecimiento adolescente + extras por trimestre (EVANUT Ges Adoles)",
   },
   {
     id: 2,
     title: "FÓRMULA SINTÉTICA PLANEADA",
     icon: ClipboardList,
-    description: "Define la distribución de macronutrientes (AMDR) y micronutrientes"
+    description: "Define la distribución de macronutrientes (AMDR) y micronutrientes",
+    descriptionDeportista: "Distribución AMDR para deportista (proteína 1.11–2.00 g/kg)",
+    descriptionPediatria: "Distribución AMDR RIEN por edad (0–18 años)",
+    descriptionGestante: "Distribución AMDR RIEN gestante (proteína 1.53–1.7 g/kg)",
+    descriptionGestAdoles: "Distribución AMDR RIEN gestante adolescente (1.53–1.7 g/kg)",
   },
   {
     id: 3,
     title: "FÓRMULA SINTÉTICA DESARROLLADA",
     icon: FileText,
-    description: "Distribución por grupos de alimentos y cálculo de nutrientes totales"
+    description: "Distribución por grupos de alimentos y cálculo de nutrientes totales",
+    descriptionDeportista: "Grupos EVANUT + suplementos (nutrientes manuales por porción)",
+    descriptionPediatria: "Grupos EVANUT pediátricos (adultos, niños y menores de 2 años)",
+    descriptionGestante: "Grupos EVANUT adultos para gestante",
+    descriptionGestAdoles: "Grupos EVANUT adultos para gestante adolescente",
   },
   {
     id: 4,
     title: "MINUTA PATRÓN Y DETALLE DE INGREDIENTES",
     icon: Utensils,
-    description: "Especifica los gramos de cada ingrediente para el paciente"
+    description: "Especifica los gramos de cada ingrediente para el paciente",
+    descriptionDeportista: "Minuta patrón con porciones de grupos y suplementos",
+    descriptionPediatria: "Minuta patrón con grupos pediátricos",
+    descriptionGestante: "Minuta patrón gestante",
+    descriptionGestAdoles: "Minuta patrón gestante adolescente",
   }
 ];
 
 // Grupos de alimentos de Fase 3 según EVANUT 4.1 (solo los del Excel)
 const GRUPOS_ALIMENTOS = EVANUT_GRUPOS_ALIMENTOS;
+
+const emptyGrupoNutrients = () => ({
+  porciones: "",
+  kcal: 0,
+  prot: 0,
+  grasa: 0,
+  gs: 0,
+  gm: 0,
+  gp: 0,
+  col: 0,
+  chos: 0,
+  fd: 0,
+  calcio: 0,
+  p: 0,
+  fe: 0,
+  na: 0,
+  k: 0,
+  mg: 0,
+  zn: 0,
+  cu: 0,
+  manual: false,
+  per_kcal: "",
+  per_prot: "",
+  per_grasa: "",
+  per_gs: "",
+  per_gm: "",
+  per_gp: "",
+  per_col: "",
+  per_chos: "",
+  per_fd: "",
+});
+
+/** Delta kcal por restricción (-) o aumento (+) */
+function getAjusteCaloriasDelta(fd: Record<string, any>): number {
+  const valor = parseFloat(fd.ajuste_calorias_valor) || 0;
+  if (!(valor > 0)) return 0;
+  if (fd.ajuste_calorias_modo === "restriccion") return -valor;
+  if (fd.ajuste_calorias_modo === "aumento") return valor;
+  return 0;
+}
+
+/** Aplica ajuste a un requerimiento base (mínimo 0) */
+function applyAjusteCalorias(baseKcal: number, fd: Record<string, any>): number {
+  if (!(baseKcal > 0)) return 0;
+  return Math.max(0, Math.round(baseKcal + getAjusteCaloriasDelta(fd)));
+}
+
+/** Campos de requerimiento con base + ajuste aplicados */
+function withAjusteCaloriasFields(baseKcal: number, fd: Record<string, any>) {
+  const base = baseKcal > 0 ? Math.round(baseKcal) : 0;
+  const finalKcal = applyAjusteCalorias(base, fd);
+  return {
+    requerimiento_base_f1: base > 0 ? String(base) : "",
+    requerimiento_energetico: finalKcal > 0 ? String(finalKcal) : "",
+    total_calorias_f2: finalKcal > 0 ? String(finalKcal) : "",
+  };
+}
+
+function buildGruposAlimentos(tipoPlan: string) {
+  return getEvanutGruposForTipo(tipoPlan).reduce((acc, grupo) => {
+    acc[grupo] = {
+      ...emptyGrupoNutrients(),
+      manual: grupo === SUPLEMENTOS_GRUPO,
+    };
+    return acc;
+  }, {} as Record<string, any>);
+}
 
 const PLAN_WIZARD_DRAFT_KEY = "ndata_plan_wizard_draft";
 
@@ -97,6 +187,10 @@ function getDefaultFormData() {
     imc: "",
     tmb: "",
     factor_actividad: "",
+    // Ajuste calórico Fase 1 (restricción / aumento)
+    requerimiento_base_f1: "",
+    ajuste_calorias_modo: "ninguno", // ninguno | restriccion | aumento
+    ajuste_calorias_valor: "",
     proteinas_gramos_f2: "",
     proteinas_calorias_f2: "",
     proteinas_amdr_f2: "",
@@ -123,29 +217,7 @@ function getDefaultFormData() {
     total_fibra: "",
     peso_referencia_f2: "",
     cho_kg_peso: "",
-    grupos_alimentos_f3: GRUPOS_ALIMENTOS.reduce((acc, grupo) => {
-      acc[grupo] = {
-        porciones: "",
-        kcal: 0,
-        prot: 0,
-        grasa: 0,
-        gs: 0,
-        gm: 0,
-        gp: 0,
-        col: 0,
-        chos: 0,
-        fd: 0,
-        calcio: 0,
-        p: 0,
-        fe: 0,
-        na: 0,
-        k: 0,
-        mg: 0,
-        zn: 0,
-        cu: 0
-      };
-      return acc;
-    }, {} as Record<string, any>),
+    grupos_alimentos_f3: buildGruposAlimentos("adulto"),
     totals_f3: {
       kcal: 0,
       prot: 0,
@@ -190,6 +262,376 @@ function getDefaultFormData() {
     deportista_yuhasz_abdominal: "",
     deportista_yuhasz_muslo_medio: "",
     deportista_pct_grasa_esperado: "",
+    // Fase 1 Pediatría (EVANUT)
+    pediatria_sexo: "femenino",
+    pediatria_edad_anos: "",
+    pediatria_edad_meses: "",
+    pediatria_peso: "",
+    pediatria_talla_cm: "",
+    pediatria_peso_referencia: "",
+    pediatria_imc_deseado: "",
+    pediatria_alimentacion_0_1: "leche_materna", // leche_materna | formula | mixto
+    pediatria_ganancia_g_dia: "",
+    pediatria_kcal_por_gramo: "5",
+    pediatria_actividad: "Moderado", // Sedentario | Moderado | Activo
+    pediatria_deficit: "Ninguno", // Ninguno | Duplicar | Triplicar
+    pediatria_perim_brazo_mm: "",
+    pediatria_pliegue_tricipital_mm: "",
+    pediatria_pliegue_subescapular_mm: "",
+    // Fase 1 Gestante (EVANUT)
+    gestante_edad: "",
+    gestante_peso_preg: "",
+    gestante_estatura_m: "",
+    gestante_semana: "",
+    gestante_peso_actual: "",
+    gestante_peso_ref: "",
+    gestante_imc_deseado: "",
+    gestante_pal: "1.53",
+    gestante_extra_normal_variant: "a", // a=85/285/475 ; b=-/360/475
+    gestante_perim_brazo_mm: "",
+    gestante_pliegue_tricipital_mm: "",
+    gestante_pliegue_subescapular_mm: "",
+    // Campos extra Ges Adoles
+    gestante_puntaje_z: "",
+    gestante_ganancia_diaria_g: "",
+    gestante_actividad_adoles: "Moderado", // Sedentario | Moderado | Activo
+  };
+}
+
+/** Energía y ganancia gestante según EVANUT 4.1 */
+function calculateGestanteEnergia(fd: Record<string, any>) {
+  const pesoPreg = parseFloat(fd.gestante_peso_preg) || 0;
+  let estM = parseFloat(fd.gestante_estatura_m) || 0;
+  // permitir cm si el valor es > 3
+  if (estM > 3) estM = estM / 100;
+  const semana = parseFloat(fd.gestante_semana) || 0;
+  const pesoActual = parseFloat(fd.gestante_peso_actual) || 0;
+  const edad = parseFloat(fd.gestante_edad) || 25;
+  const pal = parseFloat(fd.gestante_pal) || 1.53;
+  const imcDeseado = parseFloat(fd.gestante_imc_deseado) || 0;
+
+  const imcPreg = pesoPreg > 0 && estM > 0 ? pesoPreg / (estM * estM) : 0;
+  const atalah = getAtalahClass(imcPreg);
+  const imcGest = pesoActual > 0 && estM > 0 ? pesoActual / (estM * estM) : 0;
+  const gananciaPresentada = pesoActual > 0 && pesoPreg > 0 ? pesoActual - pesoPreg : 0;
+
+  const gains = getGestanteExpectedGainKg(atalah);
+  const debioGanar = getGestanteDebioGanar(semana, gains.t1, gains.t23);
+  const totalEsperado = gains.t1 + gains.t23;
+  const trimestre = getTrimestreFromSemana(semana || 1);
+
+  const pesoSaludable = imcDeseado > 0 && estM > 0 ? imcDeseado * estM * estM : 0;
+  const pesoRef =
+    parseFloat(fd.gestante_peso_ref) ||
+    (pesoSaludable > 0 ? pesoSaludable : pesoPreg);
+
+  // TMR Schofield mujeres (hoja Gestante)
+  let tmr = 0;
+  if (pesoRef > 0) {
+    if (edad <= 30) tmr = 14.818 * pesoRef + 486.6;
+    else tmr = 8.126 * pesoRef + 845.6;
+  }
+  const reqBase = tmr * pal;
+  const extra = getGestanteExtraKcal(
+    atalah,
+    trimestre,
+    fd.gestante_extra_normal_variant === "b" ? "b" : "a"
+  );
+  const requerimientoFinal = reqBase + extra;
+  const rien = getGestanteRienTargets(atalah);
+
+  // Braquial
+  const perimBrazo = parseFloat(fd.gestante_perim_brazo_mm) || 0;
+  const pliegueTri = parseFloat(fd.gestante_pliegue_tricipital_mm) || 0;
+  const pliegueSub = parseFloat(fd.gestante_pliegue_subescapular_mm) || 0;
+  const perimMuscularBrazo = perimBrazo > 0 ? perimBrazo - Math.PI * pliegueTri : 0;
+  const areaMuscularBrazo = perimMuscularBrazo > 0 ? Math.pow(perimMuscularBrazo, 2) / (4 * Math.PI) : 0;
+  const areaTotalBrazo = perimBrazo > 0 ? (Math.PI / 4) * Math.pow(perimBrazo / Math.PI, 2) : 0;
+  const areaGrasaBrazo = areaTotalBrazo - areaMuscularBrazo;
+
+  return {
+    estM,
+    imcPreg,
+    atalah,
+    imcGest,
+    gananciaPresentada,
+    gains,
+    debioGanar,
+    totalEsperado,
+    trimestre,
+    pesoSaludable,
+    pesoRef,
+    tmr,
+    reqBase,
+    extra,
+    requerimientoFinal,
+    rien,
+    perimMuscularBrazo,
+    areaMuscularBrazo,
+    areaGrasaBrazo,
+    adiposidad: pliegueTri + pliegueSub,
+  };
+}
+
+/** Energía gestante adolescente (EVANUT Ges Adoles) */
+function calculateGestanteAdolescenteEnergia(fd: Record<string, any>) {
+  const pesoPreg = parseFloat(fd.gestante_peso_preg) || 0;
+  let estM = parseFloat(fd.gestante_estatura_m) || 0;
+  if (estM > 3) estM = estM / 100;
+  const semana = parseFloat(fd.gestante_semana) || 0;
+  const pesoActual = parseFloat(fd.gestante_peso_actual) || 0;
+  const edad = parseFloat(fd.gestante_edad) || 15;
+  const z = parseFloat(fd.gestante_puntaje_z);
+  const zClass = getGestAdolesZClass(z);
+  const imcPreg = pesoPreg > 0 && estM > 0 ? pesoPreg / (estM * estM) : 0;
+  const imcGest = pesoActual > 0 && estM > 0 ? pesoActual / (estM * estM) : 0;
+  const gananciaPresentada = pesoActual > 0 && pesoPreg > 0 ? pesoActual - pesoPreg : 0;
+
+  const gains = getGestAdolesExpectedGainKg(z);
+  const debioGanar = getGestanteDebioGanar(semana, gains.t1, gains.t23);
+  const totalEsperado = gains.t1 + gains.t23;
+  const trimestre = getTrimestreFromSemana(semana || 1);
+
+  const gananciaSugerida = getGestAdolesDailyGainG(edad);
+  const gananciaDiaria =
+    parseFloat(fd.gestante_ganancia_diaria_g) || gananciaSugerida;
+  const actividad = fd.gestante_actividad_adoles || "Moderado";
+  const base = getGestAdolesBaseReq(pesoPreg, gananciaDiaria, actividad);
+  const extra = getGestAdolesExtraKcal(zClass, trimestre);
+  const requerimientoFinal = base.requerimiento + extra;
+  const bajo = zClass === "Delgadez" || zClass === "Riesgo delgadez";
+  const rien = getGestanteRienTargets(bajo ? "Bajo" : "Normal");
+
+  const imcDeseado = parseFloat(fd.gestante_imc_deseado) || 24;
+  const pesoSaludable = imcDeseado > 0 && estM > 0 ? imcDeseado * estM * estM : 0;
+  const pesoRef = parseFloat(fd.gestante_peso_ref) || pesoPreg;
+
+  return {
+    estM,
+    imcPreg,
+    imcGest,
+    z,
+    zClass,
+    gananciaPresentada,
+    gains,
+    debioGanar,
+    totalEsperado,
+    trimestre,
+    gananciaSugerida,
+    gananciaDiaria,
+    get: base.get,
+    reqBase: base.requerimiento,
+    factorAct: base.factor,
+    extra,
+    requerimientoFinal,
+    rien,
+    pesoSaludable,
+    pesoRef,
+    actividad,
+  };
+}
+
+/** Energía pediátrica según EVANUT 4.1 / FAO OMS 2005 */
+function calculatePediatriaEnergia(fd: Record<string, any>) {
+  const pesoActual = parseFloat(fd.pediatria_peso) || 0;
+  const tallaCm = parseFloat(fd.pediatria_talla_cm) || 0;
+  const tallaM = tallaCm > 0 ? tallaCm / 100 : 0;
+  const imc = pesoActual > 0 && tallaM > 0 ? pesoActual / (tallaM * tallaM) : 0;
+  const imcDeseado = parseFloat(fd.pediatria_imc_deseado) || 0;
+  const pesoRefImc = imcDeseado > 0 && tallaM > 0 ? imcDeseado * tallaM * tallaM : 0;
+  const pesoRef =
+    parseFloat(fd.pediatria_peso_referencia) ||
+    (pesoRefImc > 0 ? pesoRefImc : pesoActual);
+
+  const anos = parseFloat(fd.pediatria_edad_anos) || 0;
+  const meses = parseFloat(fd.pediatria_edad_meses) || 0;
+  const ageYears = anos + meses / 12;
+  const isMujer = (fd.pediatria_sexo || "").toLowerCase().startsWith("f") || fd.pediatria_sexo === "femenino" || fd.pediatria_sexo === "Mujer";
+
+  // GER 0-1 año
+  const gerLm = -152 + 92.8 * pesoRef;
+  const gerFormula = -29 + 82.6 * pesoRef;
+  const gerMixto = -95.4 + 88.3 * pesoRef;
+  // GER 1-18 años
+  const ger1a18 = isMujer
+    ? 263.4 + 65.3 * pesoRef - 0.454 * Math.pow(pesoRef, 2)
+    : 310.2 + 63.3 * pesoRef - 0.263 * Math.pow(pesoRef, 2);
+
+  let gerBase = 0;
+  let gerModo = "";
+  if (ageYears < 1 && ageYears >= 0) {
+    const feed = fd.pediatria_alimentacion_0_1 || "leche_materna";
+    if (feed === "formula") {
+      gerBase = gerFormula;
+      gerModo = "0-1 año solo fórmula";
+    } else if (feed === "mixto") {
+      gerBase = gerMixto;
+      gerModo = "0-1 año mixto";
+    } else {
+      gerBase = gerLm;
+      gerModo = "0-1 año leche materna";
+    }
+  } else {
+    gerBase = ger1a18;
+    gerModo = isMujer ? "1-18 años (mujer)" : "1-18 años (hombre)";
+  }
+
+  const ganancia = parseFloat(fd.pediatria_ganancia_g_dia) || 0;
+  const kcalGramo = parseFloat(fd.pediatria_kcal_por_gramo) || 5;
+  const adicionalesCrecimiento = ganancia * kcalGramo;
+  const gastoConCrecimiento = gerBase + adicionalesCrecimiento;
+
+  const act = fd.pediatria_actividad || "Moderado";
+  let factorAct = 1;
+  if (act === "Sedentario") factorAct = 0.85;
+  else if (act === "Activo") factorAct = 1.15;
+  const requerimientoBase = gastoConCrecimiento * factorAct;
+
+  const deficit = fd.pediatria_deficit || "Ninguno";
+  let factorDeficit = 0;
+  if (deficit === "Duplicar") factorDeficit = 2;
+  else if (deficit === "Triplicar") factorDeficit = 3;
+  const catchUpKcal = factorDeficit > 0 ? ganancia * factorDeficit * 5 : 0;
+  const requerimientoFinal = requerimientoBase + catchUpKcal;
+
+  // Antropometría braquial (mm)
+  const perimBrazo = parseFloat(fd.pediatria_perim_brazo_mm) || 0;
+  const pliegueTri = parseFloat(fd.pediatria_pliegue_tricipital_mm) || 0;
+  const pliegueSub = parseFloat(fd.pediatria_pliegue_subescapular_mm) || 0;
+  const perimMuscularBrazo = perimBrazo > 0 ? perimBrazo - Math.PI * pliegueTri : 0;
+  const areaMuscularBrazo = perimMuscularBrazo > 0 ? Math.pow(perimMuscularBrazo, 2) / (4 * Math.PI) : 0;
+  const areaTotalBrazo = perimBrazo > 0 ? (Math.PI / 4) * Math.pow(perimBrazo / Math.PI, 2) : 0;
+  const areaGrasaBrazo = areaTotalBrazo - areaMuscularBrazo;
+  const adiposidad = pliegueTri + pliegueSub;
+
+  const rien = getPediatriaRienTargets(ageYears || 1);
+
+  return {
+    pesoRef,
+    pesoRefImc,
+    tallaM,
+    imc,
+    ageYears,
+    gerLm,
+    gerFormula,
+    gerMixto,
+    ger1a18,
+    gerBase,
+    gerModo,
+    adicionalesCrecimiento,
+    gastoConCrecimiento,
+    factorAct,
+    requerimientoBase,
+    catchUpKcal,
+    requerimientoFinal,
+    perimMuscularBrazo,
+    areaMuscularBrazo,
+    areaTotalBrazo,
+    areaGrasaBrazo,
+    adiposidad,
+    rien,
+  };
+}
+
+/** Cálculos Fase 1 Deportista según EVANUT 4.1 (hoja Deportista) */
+function calculateDeportistaMetrics(fd: Record<string, any>) {
+  const triceps = parseFloat(fd.deportista_triceps) || 0;
+  const subescapular = parseFloat(fd.deportista_subescapular) || 0;
+  const supraespinal = parseFloat(fd.deportista_supraespinal) || 0;
+  const peso = parseFloat(fd.deportista_peso) || 0;
+  const est = parseFloat(fd.deportista_estatura) || 0;
+  const perimBrazo = parseFloat(fd.deportista_perim_brazo_tenso) || 0;
+  const plieguePant = parseFloat(fd.deportista_pliegue_pantorrilla) || 0;
+  const perimPant = parseFloat(fd.deportista_perim_pantorrilla) || 0;
+  const diamHum = parseFloat(fd.deportista_diametro_humero) || 0;
+  const diamFem = parseFloat(fd.deportista_diametro_femur) || 0;
+  const abdominal = parseFloat(fd.deportista_yuhasz_abdominal) || 0;
+  const musloMedio = parseFloat(fd.deportista_yuhasz_muslo_medio) || 0;
+  const pctEsperado = parseFloat(fd.deportista_pct_grasa_esperado) || 0;
+  const isHombre = fd.deportista_yuhasz_sexo !== "femenino";
+
+  // Excel: C9 = SUM(C6:C8)
+  const sumatoria = triceps + subescapular + supraespinal;
+  // Excel: C10 = C9*(170.18/C11)
+  const correccionProp = est > 0 ? sumatoria * (170.18 / est) : 0;
+  // Excel: C15 = C14-(C6/10)  → brazo tenso − (tríceps mm / 10)
+  const perimBrazoCorr = perimBrazo - triceps / 10;
+  // Excel: C18 = C16-(C17/10) → pantorrilla − (pliegue pantorrilla mm / 10)
+  const perimPantCorr = perimPant - plieguePant / 10;
+  // Excel: C19 = C11/(C5^0.333)
+  const hwr = peso > 0 && est > 0 ? est / Math.pow(peso, 1 / 3) : 0;
+
+  // Excel: C21 = (0.1451*C10)-(0.00068*(C10^2))+(0.0000014*(C10^3))-0.7182
+  const endomorfia =
+    correccionProp > 0
+      ? 0.1451 * correccionProp -
+        0.00068 * Math.pow(correccionProp, 2) +
+        0.0000014 * Math.pow(correccionProp, 3) -
+        0.7182
+      : 0;
+
+  // Excel: C22 = (0.858*C12)+(0.601*C13)+(0.188*C15)+(0.161*C18)-(0.131*C11)+4.5
+  const mesomorfia =
+    est > 0
+      ? 0.858 * diamHum +
+        0.601 * diamFem +
+        0.188 * perimBrazoCorr +
+        0.161 * perimPantCorr -
+        0.131 * est +
+        4.5
+      : 0;
+
+  // Excel: C23 ectomorfia
+  let ectomorfia = 0;
+  if (hwr >= 40.75) ectomorfia = hwr * 0.732 - 28.58;
+  else if (hwr > 38.25 && hwr < 40.75) ectomorfia = hwr * 0.463 - 17.63;
+  else if (hwr > 0) ectomorfia = 0.1;
+
+  // Excel: C25=X=C23-C21 ; C26=Y=(2*C22)-(C23+C21)
+  const coordX = ectomorfia - endomorfia;
+  const coordY = 2 * mesomorfia - (ectomorfia + endomorfia);
+
+  // Excel: R5 = SUM(C30:C35) pliegues Yuhasz
+  const sumYuhasz = triceps + subescapular + supraespinal + plieguePant + abdominal + musloMedio;
+  // Excel: C36 hombre (0.1051*R5)+2.585 ; mujer (0.1548*R5)+3.588
+  const pctGrasaYuhasz =
+    sumYuhasz > 0
+      ? isHombre
+        ? 0.1051 * sumYuhasz + 2.585
+        : 0.1548 * sumYuhasz + 3.588
+      : 0;
+  const pesoGraso = peso > 0 ? (peso * pctGrasaYuhasz) / 100 : 0;
+  const masaLibreGrasa = peso - pesoGraso;
+  // Excel: C39 = (C38*100000)/(C11^3)
+  const aks = est > 0 ? (masaLibreGrasa * 100000) / Math.pow(est, 3) : 0;
+  let clasificacionAks = "";
+  if (aks > 0) {
+    if (aks < 0.99) clasificacionAks = "Deficiente masa muscular";
+    else if (aks >= 1 && aks <= 1.12) clasificacionAks = "Adecuada masa muscular";
+    else clasificacionAks = "Excelente masa muscular";
+  }
+  // Excel: C43 = C38/(1-(C42/100))
+  const pesoOptimo =
+    masaLibreGrasa > 0 && pctEsperado < 100 ? masaLibreGrasa / (1 - pctEsperado / 100) : 0;
+
+  return {
+    sumatoria,
+    correccionProp,
+    perimBrazoCorr,
+    perimPantCorr,
+    hwr,
+    endomorfia,
+    mesomorfia,
+    ectomorfia,
+    coordX,
+    coordY,
+    sumYuhasz,
+    pctGrasaYuhasz,
+    pesoGraso,
+    masaLibreGrasa,
+    aks,
+    clasificacionAks,
+    pesoOptimo,
   };
 }
 
@@ -201,6 +643,15 @@ function getDraftKey(patientIdOrFormPatient: number | string | undefined | null)
 function mergeFormDataWithDefaults(saved: any): any {
   const defaultData = getDefaultFormData();
   if (!saved || typeof saved !== "object") return defaultData;
+  if (saved.tipo_plan === "deportista") {
+    defaultData.grupos_alimentos_f3 = buildGruposAlimentos("deportista");
+  }
+  if (saved.tipo_plan === "pediatria") {
+    defaultData.grupos_alimentos_f3 = buildGruposAlimentos("pediatria");
+  }
+  if (saved.tipo_plan === "gestante" || saved.tipo_plan === "gestante_adolescente") {
+    defaultData.grupos_alimentos_f3 = buildGruposAlimentos("gestante");
+  }
   const merged = { ...defaultData };
   for (const key of Object.keys(defaultData)) {
     if (saved[key] === undefined) continue;
@@ -244,6 +695,25 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
   const { toast } = useToast();
 
   const currentPhaseData = PHASES.find(p => p.id === currentPhase) || PHASES[0];
+  const phaseTitle = formData.tipo_plan === "deportista" && (currentPhaseData as any).titleDeportista
+    ? (currentPhaseData as any).titleDeportista
+    : formData.tipo_plan === "pediatria" && (currentPhaseData as any).titlePediatria
+      ? (currentPhaseData as any).titlePediatria
+      : isGestAdoles(formData.tipo_plan) && (currentPhaseData as any).titleGestAdoles
+        ? (currentPhaseData as any).titleGestAdoles
+      : formData.tipo_plan === "gestante" && (currentPhaseData as any).titleGestante
+        ? (currentPhaseData as any).titleGestante
+      : currentPhaseData.title;
+  const phaseDescription = formData.tipo_plan === "deportista" && (currentPhaseData as any).descriptionDeportista
+    ? (currentPhaseData as any).descriptionDeportista
+    : formData.tipo_plan === "pediatria" && (currentPhaseData as any).descriptionPediatria
+      ? (currentPhaseData as any).descriptionPediatria
+      : isGestAdoles(formData.tipo_plan) && (currentPhaseData as any).descriptionGestAdoles
+        ? (currentPhaseData as any).descriptionGestAdoles
+      : formData.tipo_plan === "gestante" && (currentPhaseData as any).descriptionGestante
+        ? (currentPhaseData as any).descriptionGestante
+      : currentPhaseData.description;
+  const gruposFase3 = getEvanutGruposForTipo(formData.tipo_plan);
 
   const computeTmbValue = (pesoValue: string, edadValue: string, generoValue: string) => {
     const peso = parseFloat(pesoValue);
@@ -286,7 +756,24 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
       years -= 1;
     }
-    return years > 0 ? String(years) : "";
+    return years >= 0 ? String(years) : "";
+  };
+
+  const computeAgeDetail = (fechaNacimiento?: string | null) => {
+    if (!fechaNacimiento) return { years: "", months: "", decimal: 0 };
+    const birth = new Date(fechaNacimiento);
+    if (Number.isNaN(birth.getTime())) return { years: "", months: "", decimal: 0 };
+    const today = new Date();
+    let months = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth());
+    if (today.getDate() < birth.getDate()) months -= 1;
+    if (months < 0) months = 0;
+    const years = Math.floor(months / 12);
+    const remMonths = months % 12;
+    return {
+      years: String(years),
+      months: String(remMonths),
+      decimal: months / 12,
+    };
   };
 
   const mapNivelActividadToPAL = (nivelActividad?: string | null) => {
@@ -395,12 +882,39 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       const estatura = patient?.altura != null ? String(patient.altura) : "";
       const generoRaw = patient?.genero ? String(patient.genero).toLowerCase() : "";
       const genero = generoRaw === "mujer" || generoRaw === "femenino" ? "femenino" : "masculino";
+      let edad = "";
+      if (patient?.fecha_nacimiento) {
+        const birth = new Date(patient.fecha_nacimiento);
+        if (!isNaN(birth.getTime())) {
+          const today = new Date();
+          let years = today.getFullYear() - birth.getFullYear();
+          const m = today.getMonth() - birth.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) years--;
+          if (years > 0) edad = String(years);
+        }
+      } else if (patient?.edad != null) {
+        edad = String(patient.edad);
+      }
       setFormData((prev: any) => ({
         ...prev,
         patient_id: pid,
+        tipo_plan: "deportista",
         deportista_peso: peso,
         deportista_estatura: estatura,
         deportista_yuhasz_sexo: genero || prev.deportista_yuhasz_sexo,
+        peso_actual: peso || prev.peso_actual,
+        altura: estatura || prev.altura,
+        edad: edad || prev.edad,
+        genero: genero || prev.genero,
+        // No forzar peso_referencia: en deportista se usa peso óptimo o se ingresa manual
+        grupos_alimentos_f3: {
+          ...buildGruposAlimentos("deportista"),
+          ...prev.grupos_alimentos_f3,
+          [SUPLEMENTOS_GRUPO]: prev.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO] || {
+            ...emptyGrupoNutrients(),
+            manual: true,
+          },
+        },
       }));
       toast({
         title: "Datos cargados",
@@ -408,6 +922,166 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       });
     } catch (error: any) {
       console.error("Error prefill deportista:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo cargar los datos del paciente",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPatient(false);
+    }
+  };
+
+  /** Prefill pediatría desde paciente */
+  const fetchPatientAndPrefillPediatria = async (pid: number) => {
+    setLoadingPatient(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${pid}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.detail || "No se pudo cargar el paciente");
+      }
+      const patient = await response.json();
+      const peso = patient?.peso_actual != null ? String(patient.peso_actual) : "";
+      const talla = patient?.altura != null ? String(patient.altura) : "";
+      const generoRaw = patient?.genero ? String(patient.genero).toLowerCase() : "";
+      const sexo =
+        generoRaw === "hombre" || generoRaw === "masculino" || generoRaw === "m"
+          ? "masculino"
+          : "femenino";
+      const age = computeAgeDetail(patient?.fecha_nacimiento);
+      const nivel = String(patient?.nivel_actividad || "").toLowerCase();
+      let actividad = "Moderado";
+      if (nivel.includes("sed")) actividad = "Sedentario";
+      else if (nivel.includes("vig") || nivel.includes("activo") || nivel.includes("alto")) actividad = "Activo";
+
+      const draft = {
+        pediatria_sexo: sexo,
+        pediatria_edad_anos: age.years,
+        pediatria_edad_meses: age.months,
+        pediatria_peso: peso,
+        pediatria_talla_cm: talla,
+        pediatria_peso_referencia: peso,
+        pediatria_actividad: actividad,
+        pediatria_kcal_por_gramo: "5",
+        pediatria_deficit: "Ninguno",
+        pediatria_alimentacion_0_1: "leche_materna",
+      };
+      const calc = calculatePediatriaEnergia({ ...getDefaultFormData(), ...draft });
+      setFormData((prev: any) => ({
+        ...prev,
+        ...draft,
+        patient_id: pid,
+        tipo_plan: "pediatria",
+        peso_actual: peso || prev.peso_actual,
+        altura: talla || prev.altura,
+        edad: age.years || prev.edad,
+        genero: sexo,
+        imc: calc.imc > 0 ? calc.imc.toFixed(2) : prev.imc,
+        ...withAjusteCaloriasFields(calc.requerimientoFinal, { ...getDefaultFormData(), ...draft }),
+        peso_referencia_f2: peso || prev.peso_referencia_f2,
+        peso_objetivo: peso || prev.peso_objetivo,
+        grupos_alimentos_f3: {
+          ...buildGruposAlimentos("pediatria"),
+          ...prev.grupos_alimentos_f3,
+        },
+      }));
+      toast({
+        title: "Datos cargados",
+        description: `Pediatría: datos de ${patient?.nombres || "el paciente"} (GER ${Math.round(calc.requerimientoFinal)} kcal)`,
+      });
+    } catch (error: any) {
+      console.error("Error prefill pediatria:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo cargar los datos del paciente",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPatient(false);
+    }
+  };
+
+  /** Prefill gestante / gestante adolescente desde paciente */
+  const fetchPatientAndPrefillGestante = async (pid: number, tipoPlan: string = "gestante") => {
+    setLoadingPatient(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${pid}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.detail || "No se pudo cargar el paciente");
+      }
+      const patient = await response.json();
+      const peso = patient?.peso_actual != null ? String(patient.peso_actual) : "";
+      const pesoIni = patient?.peso_inicial != null ? String(patient.peso_inicial) : peso;
+      const alturaCm = patient?.altura != null ? Number(patient.altura) : 0;
+      const estM = alturaCm > 0 ? (alturaCm / 100).toFixed(2) : "";
+      const age = computeAgeYears(patient?.fecha_nacimiento);
+      const pal = patient?.pal_factor
+        ? String(patient.pal_factor)
+        : mapNivelActividadToPAL(patient?.nivel_actividad) || "1.53";
+      const edadNum = parseFloat(age) || (isGestAdoles(tipoPlan) ? 15 : 25);
+      const gananciaDiaria = isGestAdoles(tipoPlan) ? String(getGestAdolesDailyGainG(edadNum)) : "";
+
+      const draft: any = {
+        gestante_edad: age || (isGestAdoles(tipoPlan) ? "15" : "25"),
+        gestante_peso_preg: pesoIni,
+        gestante_estatura_m: estM,
+        gestante_peso_actual: peso,
+        gestante_peso_ref: pesoIni,
+        gestante_pal: pal,
+        gestante_semana: "",
+        gestante_extra_normal_variant: "a",
+        gestante_actividad_adoles: "Moderado",
+        gestante_ganancia_diaria_g: gananciaDiaria,
+        gestante_puntaje_z: "",
+        gestante_imc_deseado: isGestAdoles(tipoPlan) ? "24" : "",
+      };
+
+      let req = "";
+      let imcLabel = "";
+      if (isGestAdoles(tipoPlan)) {
+        const calc = calculateGestanteAdolescenteEnergia({ ...getDefaultFormData(), ...draft });
+        req = calc.requerimientoFinal > 0 ? String(Math.round(calc.requerimientoFinal)) : "";
+        imcLabel = calc.imcPreg ? calc.imcPreg.toFixed(1) : "—";
+      } else {
+        const calc = calculateGestanteEnergia({ ...getDefaultFormData(), ...draft });
+        req = calc.requerimientoFinal > 0 ? String(Math.round(calc.requerimientoFinal)) : "";
+        imcLabel = `${calc.imcPreg ? calc.imcPreg.toFixed(1) : "—"} (${calc.atalah || "—"})`;
+      }
+
+      setFormData((prev: any) => ({
+        ...prev,
+        ...draft,
+        patient_id: pid,
+        tipo_plan: tipoPlan,
+        peso_actual: peso || prev.peso_actual,
+        altura: alturaCm ? String(alturaCm) : prev.altura,
+        edad: age || prev.edad,
+        genero: "femenino",
+        imc: imcLabel !== "—" ? imcLabel.split(" ")[0] : prev.imc,
+        factor_actividad: pal,
+        requerimiento_base_f1: req ? String(Math.round(parseFloat(req) || 0)) : "",
+        ...withAjusteCaloriasFields(parseFloat(req) || 0, { ...getDefaultFormData(), ...draft, ajuste_calorias_modo: prev?.ajuste_calorias_modo || "ninguno", ajuste_calorias_valor: prev?.ajuste_calorias_valor || "" }),
+        peso_referencia_f2: pesoIni || prev.peso_referencia_f2,
+        peso_objetivo: pesoIni || prev.peso_objetivo,
+        grupos_alimentos_f3: {
+          ...buildGruposAlimentos("gestante"),
+          ...prev.grupos_alimentos_f3,
+        },
+      }));
+      toast({
+        title: "Datos cargados",
+        description: `${isGestAdoles(tipoPlan) ? "Gestante adolescente" : "Gestante"}: ${patient?.nombres || "paciente"} — IMC preg ${imcLabel}`,
+      });
+    } catch (error: any) {
+      console.error("Error prefill gestante:", error);
       toast({
         title: "Error",
         description: error?.message || "No se pudo cargar los datos del paciente",
@@ -484,7 +1158,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     setCurrentPhase(initialTipoPlan ? 1 : 0);
     setCompletedPhases([]);
     if (typeof patientId === "number") {
-      fetchPatientAndPrefill(patientId);
+      const tipo = initialTipoPlan || defaultData.tipo_plan;
+      if (tipo === "deportista") {
+        fetchPatientAndPrefillDeportista(patientId);
+      } else if (tipo === "pediatria") {
+        fetchPatientAndPrefillPediatria(patientId);
+      } else if (tipo === "gestante" || tipo === "gestante_adolescente") {
+        fetchPatientAndPrefillGestante(patientId, tipo);
+      } else {
+        fetchPatientAndPrefill(patientId);
+      }
     }
   }, [open, patientId, initialTipoPlan]);
 
@@ -788,12 +1471,94 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
 
     if (isNaN(tmb) || isNaN(factor) || tmb <= 0 || factor <= 0) {
       handleChange("requerimiento_energetico", "");
+      handleChange("requerimiento_base_f1", "");
       return;
     }
 
-    // Excel usa TMR * PAL
-    const requerimiento = tmb * factor;
-    handleChange("requerimiento_energetico", Math.round(requerimiento).toString());
+    // Excel usa TMR * PAL; luego se aplica restricción/aumento opcional
+    const base = Math.round(tmb * factor);
+    const adjusted = applyAjusteCalorias(base, formData);
+    handleChange("requerimiento_base_f1", String(base));
+    handleChange("requerimiento_energetico", String(adjusted));
+    handleChange("total_calorias_f2", String(adjusted));
+  };
+
+  /** Actualiza modo/valor de ajuste y recalcula el total desde la base */
+  const updateAjusteCalorias = (partial: { ajuste_calorias_modo?: string; ajuste_calorias_valor?: string }) => {
+    setFormData((prev: any) => {
+      const next = { ...prev, ...partial };
+      let baseKcal = parseFloat(next.requerimiento_base_f1) || 0;
+      if (!(baseKcal > 0) && parseFloat(prev.requerimiento_energetico) > 0) {
+        // Recuperar base deshaciendo el delta previo
+        baseKcal = Math.round(parseFloat(prev.requerimiento_energetico) - getAjusteCaloriasDelta(prev));
+        if (!(baseKcal > 0)) baseKcal = Math.round(parseFloat(prev.requerimiento_energetico));
+      }
+      const fields = withAjusteCaloriasFields(baseKcal, next);
+      return { ...next, ...fields };
+    });
+  };
+
+  const renderAjusteCaloriasUI = () => {
+    const base = parseFloat(formData.requerimiento_base_f1) || 0;
+    const delta = getAjusteCaloriasDelta(formData);
+    const finalKcal = parseFloat(formData.requerimiento_energetico) || 0;
+    const hasAjuste = formData.ajuste_calorias_modo !== "ninguno";
+    return (
+      <div className="rounded-lg border border-dashed border-amber-300/70 bg-amber-50/50 dark:bg-amber-950/20 p-3 space-y-3">
+        <div>
+          <Label className="font-medium">Ajuste calórico (opcional)</Label>
+          <p className="text-xs text-muted-foreground">Restricción (déficit) o aumento (superávit) sobre el requerimiento calculado</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div className="space-y-1">
+            <Label className="text-xs">Tipo de ajuste</Label>
+            <Select
+              value={formData.ajuste_calorias_modo || "ninguno"}
+              onValueChange={(v) => updateAjusteCalorias({
+                ajuste_calorias_modo: v,
+                ajuste_calorias_valor: v === "ninguno" ? "" : (formData.ajuste_calorias_valor || ""),
+              })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ninguno">Sin ajuste</SelectItem>
+                <SelectItem value="restriccion">Restricción (− kcal)</SelectItem>
+                <SelectItem value="aumento">Aumento (+ kcal)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Cantidad (kcal)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="10"
+              disabled={!hasAjuste}
+              placeholder="Ej. 300"
+              value={formData.ajuste_calorias_valor}
+              onChange={(e) => updateAjusteCalorias({ ajuste_calorias_valor: e.target.value })}
+            />
+          </div>
+          <div className="rounded-md bg-background/80 border px-3 py-2 text-sm">
+            {base > 0 ? (
+              <p>
+                <span className="text-muted-foreground">Base </span>
+                <span className="font-medium">{Math.round(base)}</span>
+                {hasAjuste && delta !== 0 && (
+                  <span className={delta < 0 ? "text-destructive font-medium" : "text-emerald-600 font-medium"}>
+                    {" "}{delta > 0 ? `+${delta}` : delta}
+                  </span>
+                )}
+                <span className="text-muted-foreground"> = </span>
+                <span className="font-bold text-primary">{Math.round(finalKcal)} kcal</span>
+              </p>
+            ) : (
+              <p className="text-muted-foreground text-xs">Calcula primero el requerimiento base</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // Calcular valores de Fase 2
@@ -882,9 +1647,10 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     Object.keys(grupos).forEach(nombre => {
       const data = grupos[nombre];
       const porciones = parseFloat(data.porciones) || 0;
-      const nutrients = FOOD_NUTRIENTS[nombre];
+      if (porciones <= 0) return;
 
-      if (nutrients && porciones > 0) {
+      const nutrients = getFoodNutrientsForGroup(nombre);
+      if (nutrients) {
         totals.kcal += nutrients.kcal * porciones;
         totals.prot += nutrients.prot * porciones;
         totals.grasa += nutrients.grasa * porciones;
@@ -902,43 +1668,329 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         totals.mg += (nutrients.mg || 0) * porciones;
         totals.zn += (nutrients.zn || 0) * porciones;
         totals.cu += (nutrients.cu || 0) * porciones;
+      } else {
+        // Suplementos u otros grupos manuales: ya vienen multiplicados por porciones
+        totals.kcal += parseFloat(data.kcal) || 0;
+        totals.prot += parseFloat(data.prot) || 0;
+        totals.grasa += parseFloat(data.grasa) || 0;
+        totals.gs += parseFloat(data.gs) || 0;
+        totals.gm += parseFloat(data.gm) || 0;
+        totals.gp += parseFloat(data.gp) || 0;
+        totals.col += parseFloat(data.col) || 0;
+        totals.chos += parseFloat(data.chos) || 0;
+        totals.fd += parseFloat(data.fd) || 0;
+        totals.calcio += parseFloat(data.calcio) || 0;
+        totals.p += parseFloat(data.p) || 0;
+        totals.fe += parseFloat(data.fe) || 0;
+        totals.na += parseFloat(data.na) || 0;
+        totals.k += parseFloat(data.k) || 0;
+        totals.mg += parseFloat(data.mg) || 0;
+        totals.zn += parseFloat(data.zn) || 0;
+        totals.cu += parseFloat(data.cu) || 0;
       }
     });
 
     handleChange("totals_f3", totals);
   };
 
+  const applyManualGrupoTotals = (nombre: string, base: Record<string, any>) => {
+    const porciones = parseFloat(base.porciones) || 0;
+    const per = (key: string) => parseFloat(base[key]) || 0;
+    return {
+      ...base,
+      manual: true,
+      kcal: per("per_kcal") * porciones,
+      prot: per("per_prot") * porciones,
+      grasa: per("per_grasa") * porciones,
+      gs: per("per_gs") * porciones,
+      gm: per("per_gm") * porciones,
+      gp: per("per_gp") * porciones,
+      col: per("per_col") * porciones,
+      chos: per("per_chos") * porciones,
+      fd: per("per_fd") * porciones,
+    };
+  };
+
   // Manejar cambio en porciones de Fase 3
   const handleFase3PorcionesChange = (nombre: string, value: string) => {
     const porciones = parseFloat(value) || 0;
-    const nutrients = FOOD_NUTRIENTS[nombre];
+    const nutrients = getFoodNutrientsForGroup(nombre);
+    const prevGrupo = formData.grupos_alimentos_f3[nombre] || emptyGrupoNutrients();
+
+    let updatedGrupo: Record<string, any>;
+    if (nombre === SUPLEMENTOS_GRUPO || prevGrupo.manual || !nutrients) {
+      updatedGrupo = applyManualGrupoTotals(nombre, { ...prevGrupo, porciones: value });
+    } else {
+      updatedGrupo = {
+        ...prevGrupo,
+        porciones: value,
+        kcal: nutrients.kcal * porciones,
+        prot: nutrients.prot * porciones,
+        grasa: nutrients.grasa * porciones,
+        gs: nutrients.gs * porciones,
+        gm: nutrients.gm * porciones,
+        gp: nutrients.gp * porciones,
+        col: nutrients.col * porciones,
+        chos: nutrients.chos * porciones,
+        fd: nutrients.fd * porciones,
+        calcio: (nutrients.calcio || 0) * porciones,
+        p: (nutrients.p || 0) * porciones,
+        fe: (nutrients.fe || 0) * porciones,
+        na: (nutrients.na || 0) * porciones,
+        k: (nutrients.k || 0) * porciones,
+        mg: (nutrients.mg || 0) * porciones,
+        zn: (nutrients.zn || 0) * porciones,
+        cu: (nutrients.cu || 0) * porciones,
+      };
+    }
 
     const newGrupos = {
       ...formData.grupos_alimentos_f3,
-      [nombre]: {
-        porciones: value,
-        kcal: nutrients ? nutrients.kcal * porciones : 0,
-        prot: nutrients ? nutrients.prot * porciones : 0,
-        grasa: nutrients ? nutrients.grasa * porciones : 0,
-        gs: nutrients ? nutrients.gs * porciones : 0,
-        gm: nutrients ? nutrients.gm * porciones : 0,
-        gp: nutrients ? nutrients.gp * porciones : 0,
-        col: nutrients ? nutrients.col * porciones : 0,
-        chos: nutrients ? nutrients.chos * porciones : 0,
-        fd: nutrients ? nutrients.fd * porciones : 0,
-        calcio: nutrients ? (nutrients.calcio || 0) * porciones : 0,
-        p: nutrients ? (nutrients.p || 0) * porciones : 0,
-        fe: nutrients ? (nutrients.fe || 0) * porciones : 0,
-        na: nutrients ? (nutrients.na || 0) * porciones : 0,
-        k: nutrients ? (nutrients.k || 0) * porciones : 0,
-        mg: nutrients ? (nutrients.mg || 0) * porciones : 0,
-        zn: nutrients ? (nutrients.zn || 0) * porciones : 0,
-        cu: nutrients ? (nutrients.cu || 0) * porciones : 0,
-      }
+      [nombre]: updatedGrupo,
     };
 
     handleChange("grupos_alimentos_f3", newGrupos);
     calculateFase3Totals(newGrupos);
+  };
+
+  const handleSuplementoNutrientChange = (field: string, value: string) => {
+    const prevGrupo = formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO] || {
+      ...emptyGrupoNutrients(),
+      manual: true,
+    };
+    const updated = applyManualGrupoTotals(SUPLEMENTOS_GRUPO, { ...prevGrupo, [field]: value });
+    const newGrupos = {
+      ...formData.grupos_alimentos_f3,
+      [SUPLEMENTOS_GRUPO]: updated,
+    };
+    handleChange("grupos_alimentos_f3", newGrupos);
+    calculateFase3Totals(newGrupos);
+  };
+
+  const ensureDeportistaDefaultsForFase2 = () => {
+    const updates: Record<string, string> = {};
+    if (!formData.proteinas_kg_peso) updates.proteinas_kg_peso = "1.5";
+    if (!formData.grasas_amdr_f2) updates.grasas_amdr_f2 = "27.5";
+    if (!formData.proteinas_avb_porcentaje) updates.proteinas_avb_porcentaje = "70";
+    if (!formData.grasas_gs_amdr) updates.grasas_gs_amdr = "10";
+    if (!formData.grasas_gp_amdr) updates.grasas_gp_amdr = "8";
+    if (!formData.cho_concent_amdr) updates.cho_concent_amdr = "10";
+    if (!formData.peso_referencia_f2) {
+      const m = calculateDeportistaMetrics(formData);
+      const ref = m.pesoOptimo > 0
+        ? m.pesoOptimo.toFixed(2)
+        : (formData.deportista_peso || formData.peso_actual || "");
+      if (ref) {
+        updates.peso_referencia_f2 = ref;
+        updates.peso_objetivo = ref;
+      }
+    }
+    if (Object.keys(updates).length) {
+      setFormData((prev: any) => ({ ...prev, ...updates }));
+    }
+  };
+
+  const ensurePediatriaDefaultsForFase2 = () => {
+    const calc = calculatePediatriaEnergia(formData);
+    const rien = calc.rien;
+    const updates: Record<string, string> = {};
+    if (!formData.proteinas_kg_peso) updates.proteinas_kg_peso = String(rien.proteinas_kg);
+    if (!formData.grasas_amdr_f2) updates.grasas_amdr_f2 = String(rien.grasas_amdr);
+    if (!formData.proteinas_avb_porcentaje) updates.proteinas_avb_porcentaje = "70";
+    if (!formData.grasas_gs_amdr) updates.grasas_gs_amdr = "10";
+    if (!formData.grasas_gp_amdr) updates.grasas_gp_amdr = "8";
+    if (!formData.cho_concent_amdr) updates.cho_concent_amdr = "10";
+    const ref = formData.pediatria_peso_referencia || formData.pediatria_peso || "";
+    if (!formData.peso_referencia_f2 && ref) {
+      updates.peso_referencia_f2 = ref;
+      updates.peso_objetivo = ref;
+    }
+    if (calc.requerimientoFinal > 0) {
+      Object.assign(updates, withAjusteCaloriasFields(calc.requerimientoFinal, { ...formData, ...updates }));
+    }
+    if (Object.keys(updates).length) {
+      setFormData((prev: any) => ({ ...prev, ...updates }));
+    }
+  };
+
+  const ensureGestanteDefaultsForFase2 = () => {
+    const adoles = isGestAdoles(formData.tipo_plan);
+    const calc = adoles
+      ? calculateGestanteAdolescenteEnergia(formData)
+      : calculateGestanteEnergia(formData);
+    const updates: Record<string, string> = {};
+    if (!formData.proteinas_kg_peso) updates.proteinas_kg_peso = String(calc.rien.proteinas_kg);
+    if (!formData.grasas_amdr_f2) updates.grasas_amdr_f2 = String(calc.rien.grasas_amdr);
+    if (!formData.proteinas_avb_porcentaje) updates.proteinas_avb_porcentaje = "70";
+    if (!formData.grasas_gs_amdr) updates.grasas_gs_amdr = "10";
+    if (!formData.grasas_gp_amdr) updates.grasas_gp_amdr = "8";
+    if (!formData.cho_concent_amdr) updates.cho_concent_amdr = "10";
+    if (!formData.total_fibra) updates.total_fibra = String(calc.rien.fibra_g);
+    const ref = String(calc.pesoRef || formData.gestante_peso_ref || formData.gestante_peso_preg || "");
+    if (!formData.peso_referencia_f2 && ref) {
+      updates.peso_referencia_f2 = ref;
+      updates.peso_objetivo = ref;
+    }
+    if (calc.requerimientoFinal > 0) {
+      Object.assign(updates, withAjusteCaloriasFields(calc.requerimientoFinal, { ...formData, ...updates }));
+      if (!adoles && "tmr" in calc) updates.tmb = (calc as any).tmr.toFixed(1);
+    }
+    if (Object.keys(updates).length) {
+      setFormData((prev: any) => ({ ...prev, ...updates }));
+    }
+  };
+
+  const validateCurrentPhase = (): boolean => {
+    if (currentPhase === 0) {
+      if (!formData.tipo_plan) {
+        toast({ title: "Selecciona un tipo de plan", variant: "destructive" });
+        return false;
+      }
+      return true;
+    }
+
+    if (currentPhase === 1) {
+      if (formData.tipo_plan === "deportista") {
+        if (!(parseFloat(formData.deportista_peso) > 0) || !(parseFloat(formData.deportista_estatura) > 0)) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa peso y estatura del deportista",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (!(parseFloat(formData.requerimiento_energetico) > 0)) {
+          toast({
+            title: "Calorías requeridas",
+            description: "Define las calorías totales del plan (requerimientos generales o METs), como indica EVANUT",
+            variant: "destructive",
+          });
+          return false;
+        }
+        ensureDeportistaDefaultsForFase2();
+        // Asegurar grupo suplementos en Fase 3
+        if (!formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO]) {
+          handleChange("grupos_alimentos_f3", {
+            ...buildGruposAlimentos("deportista"),
+            ...formData.grupos_alimentos_f3,
+            [SUPLEMENTOS_GRUPO]: { ...emptyGrupoNutrients(), manual: true },
+          });
+        }
+      } else if (formData.tipo_plan === "pediatria") {
+        if (!(parseFloat(formData.pediatria_peso) > 0) || !(parseFloat(formData.pediatria_talla_cm) > 0)) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa peso y talla del paciente pediátrico",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const calc = calculatePediatriaEnergia(formData);
+        if (!(calc.requerimientoFinal > 0) && !(parseFloat(formData.requerimiento_energetico) > 0)) {
+          toast({
+            title: "Requerimiento energético",
+            description: "Completa edad, sexo y peso de referencia para calcular el GER FAO/OMS",
+            variant: "destructive",
+          });
+          return false;
+        }
+        ensurePediatriaDefaultsForFase2();
+        handleChange("grupos_alimentos_f3", {
+          ...buildGruposAlimentos("pediatria"),
+          ...formData.grupos_alimentos_f3,
+        });
+      } else if (isGestanteTipo(formData.tipo_plan)) {
+        if (!(parseFloat(formData.gestante_peso_preg) > 0) || !(parseFloat(formData.gestante_estatura_m) > 0)) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa peso pregestacional y estatura",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (!(parseFloat(formData.gestante_semana) > 0)) {
+          toast({
+            title: "Semana gestacional",
+            description: "Indica la semana de gestación para calcular extras y ganancia",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (isGestAdoles(formData.tipo_plan) && formData.gestante_puntaje_z === "") {
+          toast({
+            title: "Puntaje Z requerido",
+            description: "Ingresa el puntaje Z IMC/edad pregestacional (EVANUT Ges Adoles)",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const calc = isGestAdoles(formData.tipo_plan)
+          ? calculateGestanteAdolescenteEnergia(formData)
+          : calculateGestanteEnergia(formData);
+        if (!(calc.requerimientoFinal > 0) && !(parseFloat(formData.requerimiento_energetico) > 0)) {
+          toast({
+            title: "Requerimiento energético",
+            description: isGestAdoles(formData.tipo_plan)
+              ? "Completa edad, puntaje Z y actividad para calcular GET + extras"
+              : "Completa edad, PAL y datos antropométricos para calcular TMR + extras",
+            variant: "destructive",
+          });
+          return false;
+        }
+        ensureGestanteDefaultsForFase2();
+        handleChange("grupos_alimentos_f3", {
+          ...buildGruposAlimentos("gestante"),
+          ...formData.grupos_alimentos_f3,
+        });
+      } else {
+        if (!(parseFloat(formData.requerimiento_energetico) > 0)) {
+          toast({
+            title: "Requerimiento energético",
+            description: "Completa los datos para calcular el requerimiento energético",
+            variant: "destructive",
+          });
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (currentPhase === 2) {
+      const kcal = parseFloat(formData.total_calorias_f2) || parseFloat(formData.requerimiento_energetico) || 0;
+      const prot = parseFloat(formData.proteinas_gramos_f2) || 0;
+      if (kcal <= 0 || prot <= 0) {
+        toast({
+          title: "Fórmula sintética incompleta",
+          description: formData.tipo_plan === "deportista"
+            ? "Indica proteína g/kg (1.11–2.00) y % grasa AMDR para calcular los macros"
+            : formData.tipo_plan === "pediatria"
+              ? "Indica proteína g/kg RIEN y % grasa AMDR para calcular los macros"
+            : isGestanteTipo(formData.tipo_plan)
+              ? "Indica proteína g/kg (1.53–1.7) y % grasa AMDR para calcular los macros"
+            : "Completa proteína g/kg y % grasa AMDR para calcular los macros",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    }
+
+    if (currentPhase === 3) {
+      const hasPortions = Object.values(formData.grupos_alimentos_f3 || {}).some(
+        (g: any) => parseFloat(g?.porciones) > 0
+      );
+      if (!hasPortions) {
+        toast({
+          title: "Sin porciones",
+          description: "Asigna al menos una porción en los grupos de alimentos",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    }
+
+    return true;
   };
 
   // Efecto para calcular Fase 2 cuando cambian los valores
@@ -961,6 +2013,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
 
   const handleNext = () => {
     if (currentPhase < 4) {
+      if (!validateCurrentPhase()) return;
       if (!completedPhases.includes(currentPhase)) {
         setCompletedPhases([...completedPhases, currentPhase]);
       }
@@ -989,6 +2042,23 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     const carbsG = parseFloat(formData.cho_gramos_f2) || 0;
     const fatG = parseFloat(formData.grasas_gramos_f2) || 0;
 
+    if (calories <= 0) {
+      toast({
+        title: "No se puede guardar",
+        description: "El plan debe tener calorías totales mayores a 0",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!formData.nombre_plan?.trim()) {
+      toast({
+        title: "Nombre requerido",
+        description: "Ingresa un nombre para el plan",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const planData = {
       name: formData.nombre_plan || "Plan Nutricional",
       description: formData.descripcion,
@@ -1004,23 +2074,158 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
 
       // Datos de las 4 fases
       fase_1: formData.tipo_plan === "deportista"
-        ? {
-          tipo_fase: "deportista",
-          deportista_peso: formData.deportista_peso,
-          deportista_triceps: formData.deportista_triceps,
-          deportista_subescapular: formData.deportista_subescapular,
-          deportista_supraespinal: formData.deportista_supraespinal,
-          deportista_estatura: formData.deportista_estatura,
-          deportista_diametro_humero: formData.deportista_diametro_humero,
-          deportista_diametro_femur: formData.deportista_diametro_femur,
-          deportista_perim_brazo_tenso: formData.deportista_perim_brazo_tenso,
-          deportista_perim_pantorrilla: formData.deportista_perim_pantorrilla,
-          deportista_pliegue_pantorrilla: formData.deportista_pliegue_pantorrilla,
-          deportista_yuhasz_sexo: formData.deportista_yuhasz_sexo,
-          deportista_yuhasz_abdominal: formData.deportista_yuhasz_abdominal,
-          deportista_yuhasz_muslo_medio: formData.deportista_yuhasz_muslo_medio,
-          deportista_pct_grasa_esperado: formData.deportista_pct_grasa_esperado,
-        }
+        ? (() => {
+          const m = calculateDeportistaMetrics(formData);
+          return {
+            tipo_fase: "deportista",
+            deportista_peso: formData.deportista_peso,
+            deportista_triceps: formData.deportista_triceps,
+            deportista_subescapular: formData.deportista_subescapular,
+            deportista_supraespinal: formData.deportista_supraespinal,
+            deportista_estatura: formData.deportista_estatura,
+            deportista_diametro_humero: formData.deportista_diametro_humero,
+            deportista_diametro_femur: formData.deportista_diametro_femur,
+            deportista_perim_brazo_tenso: formData.deportista_perim_brazo_tenso,
+            deportista_perim_pantorrilla: formData.deportista_perim_pantorrilla,
+            deportista_pliegue_pantorrilla: formData.deportista_pliegue_pantorrilla,
+            deportista_yuhasz_sexo: formData.deportista_yuhasz_sexo,
+            deportista_yuhasz_abdominal: formData.deportista_yuhasz_abdominal,
+            deportista_yuhasz_muslo_medio: formData.deportista_yuhasz_muslo_medio,
+            deportista_pct_grasa_esperado: formData.deportista_pct_grasa_esperado,
+            requerimiento_energetico: formData.requerimiento_energetico,
+            requerimiento_antes_ajuste: formData.requerimiento_base_f1,
+            ajuste_calorias_modo: formData.ajuste_calorias_modo,
+            ajuste_calorias_valor: formData.ajuste_calorias_valor,
+            peso_referencia: formData.peso_referencia_f2,
+            sumatoria: m.sumatoria,
+            correccion_proporcionalidad: m.correccionProp,
+            perimetro_brazo_corregido: m.perimBrazoCorr,
+            perimetro_pantorrilla_corregido: m.perimPantCorr,
+            hwr: m.hwr,
+            endomorfia: m.endomorfia,
+            mesomorfia: m.mesomorfia,
+            ectomorfia: m.ectomorfia,
+            coordenada_x: m.coordX,
+            coordenada_y: m.coordY,
+            pct_grasa_yuhasz: m.pctGrasaYuhasz,
+            peso_graso: m.pesoGraso,
+            masa_libre_grasa: m.masaLibreGrasa,
+            aks: m.aks,
+            clasificacion_aks: m.clasificacionAks,
+            peso_optimo: m.pesoOptimo,
+          };
+        })()
+        : formData.tipo_plan === "pediatria"
+        ? (() => {
+          const p = calculatePediatriaEnergia(formData);
+          return {
+            tipo_fase: "pediatria",
+            pediatria_sexo: formData.pediatria_sexo,
+            pediatria_edad_anos: formData.pediatria_edad_anos,
+            pediatria_edad_meses: formData.pediatria_edad_meses,
+            pediatria_peso: formData.pediatria_peso,
+            pediatria_talla_cm: formData.pediatria_talla_cm,
+            pediatria_peso_referencia: formData.pediatria_peso_referencia || p.pesoRef,
+            pediatria_imc_deseado: formData.pediatria_imc_deseado,
+            pediatria_alimentacion_0_1: formData.pediatria_alimentacion_0_1,
+            pediatria_ganancia_g_dia: formData.pediatria_ganancia_g_dia,
+            pediatria_kcal_por_gramo: formData.pediatria_kcal_por_gramo,
+            pediatria_actividad: formData.pediatria_actividad,
+            pediatria_deficit: formData.pediatria_deficit,
+            pediatria_perim_brazo_mm: formData.pediatria_perim_brazo_mm,
+            pediatria_pliegue_tricipital_mm: formData.pediatria_pliegue_tricipital_mm,
+            pediatria_pliegue_subescapular_mm: formData.pediatria_pliegue_subescapular_mm,
+            imc: p.imc,
+            age_years: p.ageYears,
+            ger_modo: p.gerModo,
+            ger_base: p.gerBase,
+            adicionales_crecimiento: p.adicionalesCrecimiento,
+            requerimiento_base: p.requerimientoBase,
+            catch_up_kcal: p.catchUpKcal,
+            requerimiento_energetico: formData.requerimiento_energetico || Math.round(p.requerimientoFinal),
+            requerimiento_antes_ajuste: formData.requerimiento_base_f1 || Math.round(p.requerimientoFinal),
+            ajuste_calorias_modo: formData.ajuste_calorias_modo,
+            ajuste_calorias_valor: formData.ajuste_calorias_valor,
+            peso_referencia: formData.peso_referencia_f2 || p.pesoRef,
+            rien_band: p.rien.band,
+            rien_proteinas_kg: p.rien.proteinas_kg,
+            rien_grasas_amdr: p.rien.grasas_amdr,
+            perimetro_muscular_brazo: p.perimMuscularBrazo,
+            area_muscular_brazo: p.areaMuscularBrazo,
+            area_grasa_brazo: p.areaGrasaBrazo,
+            adiposidad: p.adiposidad,
+          };
+        })()
+        : isGestanteTipo(formData.tipo_plan)
+        ? (() => {
+          if (isGestAdoles(formData.tipo_plan)) {
+            const g = calculateGestanteAdolescenteEnergia(formData);
+            return {
+              tipo_fase: "gestante_adolescente",
+              gestante_edad: formData.gestante_edad,
+              gestante_peso_preg: formData.gestante_peso_preg,
+              gestante_estatura_m: g.estM,
+              gestante_semana: formData.gestante_semana,
+              gestante_peso_actual: formData.gestante_peso_actual,
+              gestante_peso_ref: formData.gestante_peso_ref || g.pesoRef,
+              gestante_puntaje_z: formData.gestante_puntaje_z,
+              gestante_ganancia_diaria_g: formData.gestante_ganancia_diaria_g || g.gananciaDiaria,
+              gestante_actividad_adoles: formData.gestante_actividad_adoles || g.actividad,
+              imc_pregestacional: g.imcPreg,
+              clasificacion_z: g.zClass,
+              puntaje_z: g.z,
+              imc_gestacional: g.imcGest,
+              ganancia_presentada: g.gananciaPresentada,
+              debio_ganar: g.debioGanar,
+              ganancia_esperada_total: g.totalEsperado,
+              trimestre: g.trimestre,
+              get_fao: g.get,
+              requerimiento_base: g.reqBase,
+              calorias_adicionales: g.extra,
+              requerimiento_energetico: formData.requerimiento_energetico || Math.round(g.requerimientoFinal),
+              requerimiento_antes_ajuste: formData.requerimiento_base_f1 || Math.round(g.requerimientoFinal),
+              ajuste_calorias_modo: formData.ajuste_calorias_modo,
+              ajuste_calorias_valor: formData.ajuste_calorias_valor,
+              peso_referencia: formData.peso_referencia_f2 || g.pesoRef,
+              rien_proteinas_kg: g.rien.proteinas_kg,
+            };
+          }
+          const g = calculateGestanteEnergia(formData);
+          return {
+            tipo_fase: "gestante",
+            gestante_edad: formData.gestante_edad,
+            gestante_peso_preg: formData.gestante_peso_preg,
+            gestante_estatura_m: g.estM,
+            gestante_semana: formData.gestante_semana,
+            gestante_peso_actual: formData.gestante_peso_actual,
+            gestante_peso_ref: formData.gestante_peso_ref || g.pesoRef,
+            gestante_imc_deseado: formData.gestante_imc_deseado,
+            gestante_pal: formData.gestante_pal,
+            gestante_extra_normal_variant: formData.gestante_extra_normal_variant,
+            gestante_perim_brazo_mm: formData.gestante_perim_brazo_mm,
+            gestante_pliegue_tricipital_mm: formData.gestante_pliegue_tricipital_mm,
+            gestante_pliegue_subescapular_mm: formData.gestante_pliegue_subescapular_mm,
+            imc_pregestacional: g.imcPreg,
+            clasificacion_atalah: g.atalah,
+            imc_gestacional: g.imcGest,
+            ganancia_presentada: g.gananciaPresentada,
+            debio_ganar: g.debioGanar,
+            ganancia_esperada_total: g.totalEsperado,
+            trimestre: g.trimestre,
+            tmr: g.tmr,
+            requerimiento_base: g.reqBase,
+            calorias_adicionales: g.extra,
+            requerimiento_energetico: formData.requerimiento_energetico || Math.round(g.requerimientoFinal),
+            requerimiento_antes_ajuste: formData.requerimiento_base_f1 || Math.round(g.requerimientoFinal),
+            ajuste_calorias_modo: formData.ajuste_calorias_modo,
+            ajuste_calorias_valor: formData.ajuste_calorias_valor,
+            peso_referencia: formData.peso_referencia_f2 || g.pesoRef,
+            rien_proteinas_kg: g.rien.proteinas_kg,
+            perimetro_muscular_brazo: g.perimMuscularBrazo,
+            area_muscular_brazo: g.areaMuscularBrazo,
+            area_grasa_brazo: g.areaGrasaBrazo,
+          };
+        })()
         : {
           peso_actual: formData.peso_actual,
           altura: formData.altura,
@@ -1030,6 +2235,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
           peso_ajustado: formData.peso_ajustado,
           peso_objetivo: formData.peso_objetivo,
           requerimiento_energetico: formData.requerimiento_energetico,
+          requerimiento_antes_ajuste: formData.requerimiento_base_f1,
+          ajuste_calorias_modo: formData.ajuste_calorias_modo,
+          ajuste_calorias_valor: formData.ajuste_calorias_valor,
           imc: formData.imc,
           tmb: formData.tmb,
           factor_actividad: formData.factor_actividad,
@@ -1231,6 +2439,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                   className="h-auto py-5 flex flex-col items-center justify-center gap-1 font-medium text-base hover:border-primary hover:bg-primary/5"
                   onClick={async () => {
                     handleChange("tipo_plan", value);
+                    if (value === "deportista") {
+                      handleChange("grupos_alimentos_f3", buildGruposAlimentos("deportista"));
+                      if (!formData.factor_actividad) handleChange("factor_actividad", "2.25");
+                    } else {
+                      handleChange("grupos_alimentos_f3", buildGruposAlimentos(value));
+                    }
                     setCurrentPhase(1);
                     if (value === "adulto") {
                       const id = await getPatientIdToLoad();
@@ -1238,6 +2452,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     } else if (value === "deportista") {
                       const id = await getPatientIdToLoad();
                       if (id != null) await fetchPatientAndPrefillDeportista(id);
+                      else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
+                    } else if (value === "pediatria") {
+                      const id = await getPatientIdToLoad();
+                      if (id != null) await fetchPatientAndPrefillPediatria(id);
+                      else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
+                    } else if (value === "gestante" || value === "gestante_adolescente") {
+                      const id = await getPatientIdToLoad();
+                      if (id != null) await fetchPatientAndPrefillGestante(id, value);
                       else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
                     }
                   }}
@@ -1255,8 +2477,21 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             <div className="space-y-2">
               <Label className="text-base font-semibold text-primary">Tipo de plan</Label>
               <Select
-                value={formData.tipo_plan}
-                onValueChange={(value) => handleChange("tipo_plan", value)}
+                value={formData.tipo_plan || "adulto"}
+                onValueChange={(value) => {
+                  handleChange("tipo_plan", value);
+                  handleChange("grupos_alimentos_f3", {
+                    ...buildGruposAlimentos(value),
+                    ...Object.fromEntries(
+                      Object.entries(formData.grupos_alimentos_f3 || {}).filter(([k, v]: any) =>
+                        parseFloat(v?.porciones) > 0 || v?.manual
+                      )
+                    ),
+                  });
+                  if (value === "deportista" && !formData.factor_actividad) {
+                    handleChange("factor_actividad", "2.25");
+                  }
+                }}
               >
                 <SelectTrigger className="max-w-xs">
                   <SelectValue placeholder="Seleccionar tipo" />
@@ -1314,33 +2549,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         )}
 
         <div>
-          {/* Phase 1 Deportista: Somatotipo y composición corporal */}
+          {/* Phase 1 Deportista: Somatotipo y composición corporal (EVANUT 4.1) */}
           {currentPhase === 1 && formData.tipo_plan === "deportista" && (() => {
-            const t = formData.deportista_triceps; const s = formData.deportista_subescapular; const sp = formData.deportista_supraespinal;
-            const peso = parseFloat(formData.deportista_peso) || 0; const est = parseFloat(formData.deportista_estatura) || 0;
-            const sumPliegues = (parseFloat(t) || 0) + (parseFloat(s) || 0) + (parseFloat(sp) || 0);
-            const perimBrazo = parseFloat(formData.deportista_perim_brazo_tenso) || 0;
-            const plieguePant = parseFloat(formData.deportista_pliegue_pantorrilla) || 0;
-            const perimPant = parseFloat(formData.deportista_perim_pantorrilla) || 0;
-            const diamHum = parseFloat(formData.deportista_diametro_humero) || 0;
-            const diamFem = parseFloat(formData.deportista_diametro_femur) || 0;
-            const correccionProp = est > 0 ? (170.18 / est) : 0;
-            const perimBrazoCorr = perimBrazo - (Math.PI * (plieguePant / 10)); // pliegue en mm, simplificado
-            const perimPantCorr = perimPant - (Math.PI * (plieguePant / 10));
-            const hwr = peso > 0 && est > 0 ? est / (Math.pow(peso, 1 / 3)) : 0;
-            const endomorfia = est > 0 && sumPliegues > 0 ? (sumPliegues * (170.18 / est) - 0.00001) * 0.7182 + 0.00001 : 0;
-            const mesomorfia = est > 0 && diamHum > 0 && diamFem > 0 ? 0.858 * diamHum + 0.601 * diamFem + 0.188 * perimBrazoCorr + 0.161 * perimPantCorr - est * 0.131 + 4.5 : 0;
-            let ectomorfia = 0;
-            if (hwr >= 40.75) ectomorfia = 0.732 * hwr - 28.58;
-            else if (hwr > 38.25) ectomorfia = 0.463 * hwr - 17.63;
-            else if (hwr > 0) ectomorfia = 0.1;
-            const sumYuhasz = (parseFloat(t) || 0) + (parseFloat(s) || 0) + (parseFloat(sp) || 0) + (parseFloat(formData.deportista_yuhasz_abdominal) || 0) + (parseFloat(formData.deportista_yuhasz_muslo_medio) || 0) + (parseFloat(formData.deportista_pliegue_pantorrilla) || 0);
-            const isHombre = formData.deportista_yuhasz_sexo === "masculino";
-            const pctGrasaYuhasz = sumYuhasz > 0 ? (isHombre ? 0.1051 * sumYuhasz + 2.585 : 0.1548 * sumYuhasz + 3.58) : 0;
-            const pesoGraso = peso > 0 ? (peso * pctGrasaYuhasz) / 100 : 0;
-            const masaLibreGrasa = peso - pesoGraso;
-            const pctEsperado = parseFloat(formData.deportista_pct_grasa_esperado) || 0;
-            const pesoOptimo = masaLibreGrasa > 0 && pctEsperado < 100 ? masaLibreGrasa / (1 - pctEsperado / 100) : 0;
+            const m = calculateDeportistaMetrics(formData);
             return (
               <Card>
                 <CardHeader>
@@ -1348,14 +2559,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     <PieChart className="h-5 w-5 text-primary" />
                     Somatotipo y composición corporal (Deportista)
                   </CardTitle>
-                  <p className="text-sm text-muted-foreground">Mediciones antropométricas y % grasa Yuhasz para el plan deportista</p>
+                  <p className="text-sm text-muted-foreground">
+                    Mediciones según EVANUT 4.1 — hoja Deportista (Heath-Carter / Yuhasz)
+                  </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
                     <div className="space-y-1 min-w-[200px]">
                       <Label>Paciente (cargar desde BD)</Label>
                       <Select
-                        value={formData.patient_id ? String(formData.patient_id) : ""}
+                        value={formData.patient_id ? String(formData.patient_id) : undefined}
                         onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
                         disabled={loadingPatientsList}
                       >
@@ -1390,25 +2603,27 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     <div className="space-y-1"><Label>Pliegue pantorrilla (mm)</Label><Input type="number" step="0.1" value={formData.deportista_pliegue_pantorrilla} onChange={(e) => handleChange("deportista_pliegue_pantorrilla", e.target.value)} /></div>
                   </div>
                   <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    <div><span className="text-muted-foreground">Sumatoria</span><p className="font-medium">{sumPliegues > 0 ? sumPliegues.toFixed(2) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">Corrección prop.</span><p className="font-medium">{correccionProp > 0 ? correccionProp.toFixed(4) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">Perím. brazo corregido</span><p className="font-medium">{perimBrazoCorr > 0 ? perimBrazoCorr.toFixed(2) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">Perím. pant. corregido</span><p className="font-medium">{perimPantCorr > 0 ? perimPantCorr.toFixed(2) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">HWR</span><p className="font-medium">{hwr > 0 ? hwr.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Sumatoria</span><p className="font-medium">{m.sumatoria > 0 ? m.sumatoria.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Corrección prop.</span><p className="font-medium">{m.correccionProp > 0 ? m.correccionProp.toFixed(4) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Perím. brazo corregido</span><p className="font-medium">{formData.deportista_perim_brazo_tenso ? m.perimBrazoCorr.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Perím. pant. corregido</span><p className="font-medium">{formData.deportista_perim_pantorrilla ? m.perimPantCorr.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">HWR</span><p className="font-medium">{m.hwr > 0 ? m.hwr.toFixed(2) : "—"}</p></div>
                   </div>
                   <div>
                     <h4 className="font-semibold mb-2">Componentes del somatotipo</h4>
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Endomorfia</span><p className="font-bold">{endomorfia > 0 ? endomorfia.toFixed(2) : "—"}</p></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Mesomorfia</span><p className="font-bold">{mesomorfia > 0 ? mesomorfia.toFixed(2) : "—"}</p></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Ectomorfia</span><p className="font-bold">{ectomorfia > 0 ? ectomorfia.toFixed(2) : "—"}</p></div>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Endomorfia</span><p className="font-bold">{m.endomorfia ? m.endomorfia.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Mesomorfia</span><p className="font-bold">{m.mesomorfia ? m.mesomorfia.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Ectomorfia</span><p className="font-bold">{m.ectomorfia ? m.ectomorfia.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">X</span><p className="font-bold">{m.endomorfia || m.ectomorfia ? m.coordX.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block">Y</span><p className="font-bold">{m.mesomorfia ? m.coordY.toFixed(2) : "—"}</p></div>
                     </div>
                   </div>
                   <div>
                     <h4 className="font-semibold mb-2">% Grasa Yuhasz</h4>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="space-y-1"><Label>Sexo</Label>
-                        <Select value={formData.deportista_yuhasz_sexo} onValueChange={(v) => handleChange("deportista_yuhasz_sexo", v)}>
+                        <Select value={formData.deportista_yuhasz_sexo || "masculino"} onValueChange={(v) => handleChange("deportista_yuhasz_sexo", v)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent><SelectItem value="masculino">Hombre</SelectItem><SelectItem value="femenino">Mujer</SelectItem></SelectContent>
                         </Select>
@@ -1417,16 +2632,127 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       <div className="space-y-1"><Label>Muslo medio (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_muslo_medio} onChange={(e) => handleChange("deportista_yuhasz_muslo_medio", e.target.value)} /></div>
                     </div>
                     <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                      <div><span className="text-muted-foreground">% Grasa</span><p className="font-bold">{pctGrasaYuhasz > 0 ? pctGrasaYuhasz.toFixed(2) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">Peso graso (kg)</span><p className="font-medium">{pesoGraso > 0 ? pesoGraso.toFixed(2) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">Masa libre grasa (kg)</span><p className="font-medium">{masaLibreGrasa > 0 ? masaLibreGrasa.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">% Grasa</span><p className="font-bold">{m.pctGrasaYuhasz > 0 ? m.pctGrasaYuhasz.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Peso graso (kg)</span><p className="font-medium">{m.pesoGraso > 0 ? m.pesoGraso.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Masa libre grasa (kg)</span><p className="font-medium">{m.masaLibreGrasa > 0 ? m.masaLibreGrasa.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Índice AKS</span><p className="font-medium">{m.aks > 0 ? m.aks.toFixed(3) : "—"}</p></div>
+                      <div className="sm:col-span-2"><span className="text-muted-foreground">Clasificación AKS</span><p className="font-medium">{m.clasificacionAks || "—"}</p></div>
                     </div>
                   </div>
                   <div>
                     <h4 className="font-semibold mb-2">Peso óptimo</h4>
                     <div className="flex flex-wrap gap-3 items-end">
                       <div className="space-y-1"><Label>% grasa esperado</Label><Input type="number" step="0.1" value={formData.deportista_pct_grasa_esperado} onChange={(e) => handleChange("deportista_pct_grasa_esperado", e.target.value)} placeholder="Ej. 15" className="w-24" /></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block text-sm">Peso óptimo (kg)</span><p className="font-bold text-lg">{pesoOptimo > 0 ? pesoOptimo.toFixed(2) : "—"}</p></div>
+                      <div className="rounded border p-2"><span className="text-muted-foreground block text-sm">Peso óptimo (kg)</span><p className="font-bold text-lg">{m.pesoOptimo > 0 ? m.pesoOptimo.toFixed(2) : "—"}</p></div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Nota EVANUT:</strong> para definir las calorías totales utilice las fórmulas de requerimientos generales o el cálculo de METs.
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <Label>Edad (años)</Label>
+                        <Input type="number" value={formData.edad} onChange={(e) => handleChange("edad", e.target.value)} placeholder="25" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Factor PAL</Label>
+                        <Select
+                          value={formData.factor_actividad || "2.25"}
+                          onValueChange={(v) => handleChange("factor_actividad", v)}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Actividad" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1.53">Sedentario (1.53)</SelectItem>
+                            <SelectItem value="1.76">Moderado (1.76)</SelectItem>
+                            <SelectItem value="2.25">Vigoroso (2.25)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1 sm:col-span-2 flex items-end">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => {
+                            const pesoRef = m.pesoOptimo > 0
+                              ? m.pesoOptimo
+                              : (parseFloat(formData.deportista_peso) || 0);
+                            const edad = parseFloat(formData.edad) || 25;
+                            const genero = formData.deportista_yuhasz_sexo === "femenino" ? "femenino" : "masculino";
+                            const pal = parseFloat(formData.factor_actividad) || 2.25;
+                            if (!(pesoRef > 0)) {
+                              toast({ title: "Falta el peso", description: "Ingresa peso o % grasa esperado para peso óptimo", variant: "destructive" });
+                              return;
+                            }
+                            let tmb = 0;
+                            if (genero === "masculino") {
+                              if (edad <= 30) tmb = 15.057 * pesoRef + 692.2;
+                              else if (edad <= 60) tmb = 11.472 * pesoRef + 873.1;
+                              else tmb = 11.711 * pesoRef + 587.7;
+                            } else {
+                              if (edad <= 30) tmb = 14.818 * pesoRef + 486.6;
+                              else if (edad <= 60) tmb = 8.126 * pesoRef + 845.6;
+                              else tmb = 9.082 * pesoRef + 658.5;
+                            }
+                            const baseReq = Math.round(tmb * pal);
+                            const adjFields = withAjusteCaloriasFields(baseReq, formData);
+                            handleChange("tmb", tmb.toFixed(1));
+                            handleChange("requerimiento_base_f1", adjFields.requerimiento_base_f1);
+                            handleChange("requerimiento_energetico", adjFields.requerimiento_energetico);
+                            handleChange("total_calorias_f2", adjFields.total_calorias_f2);
+                            const delta = getAjusteCaloriasDelta(formData);
+                            const deltaTxt = delta ? ` (ajuste ${delta > 0 ? "+" : ""}${delta})` : "";
+                            toast({ title: "Calorías calculadas", description: `TMR ${tmb.toFixed(0)} × PAL ${pal} = ${baseReq} kcal${deltaTxt} → ${adjFields.requerimiento_energetico} kcal` });
+                          }}
+                        >
+                          Calcular kcal (TMR × PAL)
+                        </Button>
+                      </div>
+                    </div>
+                    {renderAjusteCaloriasUI()}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="deportista_kcal">Calorías totales del plan (kcal) *</Label>
+                        <Input
+                          id="deportista_kcal"
+                          type="number"
+                          step="1"
+                          value={formData.requerimiento_energetico}
+                          onChange={(e) => {
+                            handleChange("requerimiento_energetico", e.target.value);
+                            handleChange("total_calorias_f2", e.target.value);
+                          }}
+                          placeholder="Ej. 2800"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Peso de referencia Fase 2 (kg)</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={formData.peso_referencia_f2}
+                          onChange={(e) => {
+                            handleChange("peso_referencia_f2", e.target.value);
+                            handleChange("peso_objetivo", e.target.value);
+                          }}
+                          placeholder={m.pesoOptimo > 0 ? m.pesoOptimo.toFixed(2) : "Peso o peso óptimo"}
+                        />
+                        {m.pesoOptimo > 0 && (
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="h-auto p-0 text-xs"
+                            onClick={() => {
+                              handleChange("peso_referencia_f2", m.pesoOptimo.toFixed(2));
+                              handleChange("peso_objetivo", m.pesoOptimo.toFixed(2));
+                            }}
+                          >
+                            Usar peso óptimo ({m.pesoOptimo.toFixed(2)} kg)
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -1434,15 +2760,393 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             );
           })()}
 
-          {/* Phase 1: Requerimiento Energético y Peso Saludable (no deportista) */}
-          {currentPhase === 1 && formData.tipo_plan !== "deportista" && (
+          {/* Phase 1 Pediatría: GER FAO/OMS 2005 */}
+          {currentPhase === 1 && formData.tipo_plan === "pediatria" && (() => {
+            const syncReq = (next: Record<string, any>) => {
+              const merged = { ...formData, ...next };
+              const calc = calculatePediatriaEnergia(merged);
+              const adj = withAjusteCaloriasFields(calc.requerimientoFinal, merged);
+              setFormData((prev: any) => ({
+                ...prev,
+                ...next,
+                ...adj,
+                imc: calc.imc > 0 ? calc.imc.toFixed(2) : prev.imc,
+                peso_referencia_f2: String(next.pediatria_peso_referencia ?? prev.peso_referencia_f2 ?? calc.pesoRef),
+              }));
+            };
+            const p = calculatePediatriaEnergia(formData);
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5 text-primary" />
+                    Evaluación y requerimiento pediátrico
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    GER FAO/OMS 2005 según EVANUT 4.1 — hoja Pediatría
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                    <div className="space-y-1 min-w-[200px]">
+                      <Label>Paciente (cargar desde BD)</Label>
+                      <Select
+                        value={formData.patient_id ? String(formData.patient_id) : undefined}
+                        onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
+                        disabled={loadingPatientsList}
+                      >
+                        <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" disabled>Selecciona un paciente</SelectItem>
+                          {patientsList.map((pat) => (
+                            <SelectItem key={pat.id} value={String(pat.id)}>{pat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={loadingPatient || !formData.patient_id}
+                      onClick={() => formData.patient_id && fetchPatientAndPrefillPediatria(Number(formData.patient_id))}
+                    >
+                      {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label>Sexo</Label>
+                      <Select value={formData.pediatria_sexo || "femenino"} onValueChange={(v) => syncReq({ pediatria_sexo: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="femenino">Mujer</SelectItem>
+                          <SelectItem value="masculino">Hombre</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1"><Label>Edad (años)</Label><Input type="number" min="0" value={formData.pediatria_edad_anos} onChange={(e) => syncReq({ pediatria_edad_anos: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Edad (meses)</Label><Input type="number" min="0" max="11" value={formData.pediatria_edad_meses} onChange={(e) => syncReq({ pediatria_edad_meses: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.pediatria_peso} onChange={(e) => syncReq({ pediatria_peso: e.target.value, pediatria_peso_referencia: formData.pediatria_peso_referencia || e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Talla/Longitud (cm)</Label><Input type="number" step="0.1" value={formData.pediatria_talla_cm} onChange={(e) => syncReq({ pediatria_talla_cm: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Peso referencia (kg)</Label><Input type="number" step="0.1" value={formData.pediatria_peso_referencia} onChange={(e) => syncReq({ pediatria_peso_referencia: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>IMC deseado (opc.)</Label><Input type="number" step="0.1" value={formData.pediatria_imc_deseado} onChange={(e) => syncReq({ pediatria_imc_deseado: e.target.value })} placeholder="Ej. 17" /></div>
+                    <div className="space-y-1">
+                      <Label>IMC actual</Label>
+                      <Input readOnly className="bg-muted" value={p.imc > 0 ? p.imc.toFixed(2) : "—"} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Usa peso de referencia solo en exceso de peso (&lt;5 años: Peso/Talla ref; ≥5: IMC/Edad). IMC deseado calcula peso ref automáticamente.
+                    {p.pesoRefImc > 0 ? ` Peso ref por IMC deseado: ${p.pesoRefImc.toFixed(2)} kg.` : ""}
+                  </p>
+
+                  {p.ageYears < 1 && (
+                    <div className="space-y-2">
+                      <Label>Alimentación 0–1 año</Label>
+                      <Select value={formData.pediatria_alimentacion_0_1 || "leche_materna"} onValueChange={(v) => syncReq({ pediatria_alimentacion_0_1: v })}>
+                        <SelectTrigger className="max-w-md"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="leche_materna">Leche materna</SelectItem>
+                          <SelectItem value="formula">Solo fórmula infantil</SelectItem>
+                          <SelectItem value="mixto">Mixto</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1"><Label>Ganancia (g/día)</Label><Input type="number" step="0.1" value={formData.pediatria_ganancia_g_dia} onChange={(e) => syncReq({ pediatria_ganancia_g_dia: e.target.value })} placeholder="0" /></div>
+                    <div className="space-y-1"><Label>kcal × gramo</Label><Input type="number" step="0.1" value={formData.pediatria_kcal_por_gramo} onChange={(e) => syncReq({ pediatria_kcal_por_gramo: e.target.value })} /></div>
+                    <div className="space-y-1">
+                      <Label>Actividad física</Label>
+                      <Select value={formData.pediatria_actividad || "Moderado"} onValueChange={(v) => syncReq({ pediatria_actividad: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Sedentario">Sedentario (×0.85)</SelectItem>
+                          <SelectItem value="Moderado">Moderado (×1.0)</SelectItem>
+                          <SelectItem value="Activo">Activo (×1.15)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Déficit de peso</Label>
+                      <Select value={formData.pediatria_deficit || "Ninguno"} onValueChange={(v) => syncReq({ pediatria_deficit: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Ninguno">Ninguno</SelectItem>
+                          <SelectItem value="Duplicar">Duplicar ganancia</SelectItem>
+                          <SelectItem value="Triplicar">Triplicar ganancia</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    <div><span className="text-muted-foreground">Modo GER</span><p className="font-medium">{p.gerModo || "—"}</p></div>
+                    <div><span className="text-muted-foreground">GER base</span><p className="font-medium">{p.gerBase > 0 ? Math.round(p.gerBase) : "—"} kcal</p></div>
+                    <div><span className="text-muted-foreground">+ Crecimiento</span><p className="font-medium">{Math.round(p.adicionalesCrecimiento)} kcal</p></div>
+                    <div><span className="text-muted-foreground">× Actividad</span><p className="font-medium">{p.factorAct}</p></div>
+                    <div><span className="text-muted-foreground">Catch-up</span><p className="font-medium">{Math.round(p.catchUpKcal)} kcal</p></div>
+                    <div className="sm:col-span-2"><span className="text-muted-foreground">RIEN</span><p className="font-medium">{p.rien.band}: {p.rien.proteinas_kg} g/kg · grasa {p.rien.grasas_amdr}%</p></div>
+                    <div>
+                      <span className="text-muted-foreground">Requerimiento total</span>
+                      <p className="font-bold text-lg text-primary">{Math.round(p.requerimientoFinal)} kcal</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">Antropometría braquial (opcional)</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1"><Label>Perímetro brazo (mm)</Label><Input type="number" step="0.1" value={formData.pediatria_perim_brazo_mm} onChange={(e) => handleChange("pediatria_perim_brazo_mm", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Pliegue tricipital (mm)</Label><Input type="number" step="0.1" value={formData.pediatria_pliegue_tricipital_mm} onChange={(e) => handleChange("pediatria_pliegue_tricipital_mm", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Pliegue subescapular (mm)</Label><Input type="number" step="0.1" value={formData.pediatria_pliegue_subescapular_mm} onChange={(e) => handleChange("pediatria_pliegue_subescapular_mm", e.target.value)} /></div>
+                    </div>
+                    <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                      <div><span className="text-muted-foreground">PMB (mm)</span><p className="font-medium">{p.perimMuscularBrazo > 0 ? p.perimMuscularBrazo.toFixed(1) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">AMB (mm²)</span><p className="font-medium">{p.areaMuscularBrazo > 0 ? p.areaMuscularBrazo.toFixed(1) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">AGB (mm²)</span><p className="font-medium">{p.areaGrasaBrazo > 0 ? p.areaGrasaBrazo.toFixed(1) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Adiposidad</span><p className="font-medium">{p.adiposidad > 0 ? p.adiposidad.toFixed(1) : "—"}</p></div>
+                    </div>
+                  </div>
+
+                  {renderAjusteCaloriasUI()}
+                  <div className="space-y-1 max-w-xs">
+                    <Label>Calorías del plan (editables)</Label>
+                    <Input
+                      type="number"
+                      value={formData.requerimiento_energetico}
+                      onChange={(e) => {
+                        handleChange("requerimiento_energetico", e.target.value);
+                        handleChange("total_calorias_f2", e.target.value);
+                      }}
+                    />
+                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => syncReq({})}>
+                      Recalcular desde fórmulas FAO/OMS
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+          {/* Phase 1 Gestante / Gestante adolescente */}
+          {currentPhase === 1 && isGestanteTipo(formData.tipo_plan) && (() => {
+            const adoles = isGestAdoles(formData.tipo_plan);
+            const syncReq = (next: Record<string, any>) => {
+              const merged = { ...formData, ...next };
+              if (adoles) {
+                const calc = calculateGestanteAdolescenteEnergia(merged);
+                const adj = withAjusteCaloriasFields(calc.requerimientoFinal, merged);
+                setFormData((prev: any) => ({
+                  ...prev,
+                  ...next,
+                  ...adj,
+                  imc: calc.imcPreg > 0 ? calc.imcPreg.toFixed(2) : prev.imc,
+                  peso_referencia_f2: String(next.gestante_peso_ref ?? prev.peso_referencia_f2 ?? calc.pesoRef),
+                }));
+              } else {
+                const calc = calculateGestanteEnergia(merged);
+                const adj = withAjusteCaloriasFields(calc.requerimientoFinal, merged);
+                setFormData((prev: any) => ({
+                  ...prev,
+                  ...next,
+                  ...adj,
+                  imc: calc.imcPreg > 0 ? calc.imcPreg.toFixed(2) : prev.imc,
+                  tmb: calc.tmr > 0 ? calc.tmr.toFixed(1) : prev.tmb,
+                  factor_actividad: String(next.gestante_pal ?? prev.gestante_pal ?? prev.factor_actividad),
+                  peso_referencia_f2: String(next.gestante_peso_ref ?? prev.peso_referencia_f2 ?? calc.pesoRef),
+                }));
+              }
+            };
+            const gAdult = !adoles ? calculateGestanteEnergia(formData) : null;
+            const gAd = adoles ? calculateGestanteAdolescenteEnergia(formData) : null;
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5 text-primary" />
+                    {adoles ? "Evaluación gestante adolescente" : "Evaluación y requerimiento gestante"}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {adoles
+                      ? "Puntaje Z, GET FAO + crecimiento por edad + extras (EVANUT Ges Adoles)"
+                      : "IMC Atalah, ganancia gestacional y TMR × PAL + extras por trimestre (EVANUT Gestante)"}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                    <div className="space-y-1 min-w-[200px]">
+                      <Label>Paciente (cargar desde BD)</Label>
+                      <Select
+                        value={formData.patient_id ? String(formData.patient_id) : undefined}
+                        onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
+                        disabled={loadingPatientsList}
+                      >
+                        <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" disabled>Selecciona un paciente</SelectItem>
+                          {patientsList.map((pat) => (
+                            <SelectItem key={pat.id} value={String(pat.id)}>{pat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={loadingPatient || !formData.patient_id}
+                      onClick={() => formData.patient_id && fetchPatientAndPrefillGestante(Number(formData.patient_id), formData.tipo_plan)}
+                    >
+                      {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1"><Label>Edad (años)</Label><Input type="number" value={formData.gestante_edad} onChange={(e) => {
+                      const v = e.target.value;
+                      const next: any = { gestante_edad: v };
+                      if (adoles) next.gestante_ganancia_diaria_g = String(getGestAdolesDailyGainG(parseFloat(v) || 0));
+                      syncReq(next);
+                    }} /></div>
+                    <div className="space-y-1"><Label>Peso pregestacional (kg)</Label><Input type="number" step="0.1" value={formData.gestante_peso_preg} onChange={(e) => syncReq({ gestante_peso_preg: e.target.value, gestante_peso_ref: formData.gestante_peso_ref || e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Estatura (m)</Label><Input type="number" step="0.01" value={formData.gestante_estatura_m} onChange={(e) => syncReq({ gestante_estatura_m: e.target.value })} placeholder="1.55" /></div>
+                    <div className="space-y-1"><Label>Semana gestacional *</Label><Input type="number" min="1" max="42" value={formData.gestante_semana} onChange={(e) => syncReq({ gestante_semana: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Peso actual (kg)</Label><Input type="number" step="0.1" value={formData.gestante_peso_actual} onChange={(e) => syncReq({ gestante_peso_actual: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Peso ref (kg)</Label><Input type="number" step="0.1" value={formData.gestante_peso_ref} onChange={(e) => syncReq({ gestante_peso_ref: e.target.value })} /></div>
+                    {adoles ? (
+                      <>
+                        <div className="space-y-1"><Label>Puntaje Z (IMC/edad) *</Label><Input type="number" step="0.01" value={formData.gestante_puntaje_z} onChange={(e) => syncReq({ gestante_puntaje_z: e.target.value })} placeholder="Ej. -0.5" /></div>
+                        <div className="space-y-1"><Label>Ganancia diaria crecimiento (g)</Label><Input type="number" step="0.1" value={formData.gestante_ganancia_diaria_g} onChange={(e) => syncReq({ gestante_ganancia_diaria_g: e.target.value })} /></div>
+                        <div className="space-y-1">
+                          <Label>Actividad física</Label>
+                          <Select value={formData.gestante_actividad_adoles || "Moderado"} onValueChange={(v) => syncReq({ gestante_actividad_adoles: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Sedentario">Sedentario (×0.85)</SelectItem>
+                              <SelectItem value="Moderado">Moderado (×1.0)</SelectItem>
+                              <SelectItem value="Activo">Activo (×1.15)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1"><Label>IMC deseado (opc.)</Label><Input type="number" step="0.1" value={formData.gestante_imc_deseado} onChange={(e) => syncReq({ gestante_imc_deseado: e.target.value })} /></div>
+                        <div className="space-y-1">
+                          <Label>Actividad (PAL)</Label>
+                          <Select value={formData.gestante_pal || "1.53"} onValueChange={(v) => syncReq({ gestante_pal: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1.53">Sedentario (1.53)</SelectItem>
+                              <SelectItem value="1.76">Moderado (1.76)</SelectItem>
+                              <SelectItem value="2.25">Vigoroso (2.25)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {adoles && gAd ? (
+                    <>
+                      <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-muted-foreground">IMC pregestacional</span><p className="font-medium">{gAd.imcPreg > 0 ? gAd.imcPreg.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Clasificación Z</span><p className="font-bold">{gAd.zClass || "—"}</p></div>
+                        <div><span className="text-muted-foreground">IMC gestacional</span><p className="font-medium">{gAd.imcGest > 0 ? gAd.imcGest.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Trimestre</span><p className="font-medium">{formData.gestante_semana ? `${gAd.trimestre}°` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Debió ganar</span><p className="font-medium">{gAd.debioGanar > 0 ? `${gAd.debioGanar.toFixed(2)} kg` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Ganancia presentada</span><p className="font-medium">{formData.gestante_peso_actual ? `${gAd.gananciaPresentada.toFixed(2)} kg` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Esperada total</span><p className="font-medium">{gAd.totalEsperado > 0 ? `${gAd.totalEsperado.toFixed(1)} kg` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Ganancia diaria sugerida</span><p className="font-medium">{gAd.gananciaSugerida} g</p></div>
+                      </div>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-muted-foreground">GET FAO</span><p className="font-medium">{gAd.get > 0 ? Math.round(gAd.get) : "—"} kcal</p></div>
+                        <div><span className="text-muted-foreground">Base (+ crec. × act.)</span><p className="font-medium">{gAd.reqBase > 0 ? Math.round(gAd.reqBase) : "—"} kcal</p></div>
+                        <div><span className="text-muted-foreground">+ Gestación ({gAd.trimestre}°)</span><p className="font-medium">{gAd.extra} kcal</p></div>
+                        <div><span className="text-muted-foreground">Total</span><p className="font-bold text-lg text-primary">{Math.round(gAd.requerimientoFinal)} kcal</p></div>
+                        <div className="sm:col-span-2"><span className="text-muted-foreground">RIEN</span><p className="font-medium">{gAd.rien.proteinas_kg} g prot/kg · grasa {gAd.rien.grasas_amdr}%</p></div>
+                      </div>
+                    </>
+                  ) : gAdult ? (
+                    <>
+                      <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-muted-foreground">IMC pregestacional</span><p className="font-medium">{gAdult.imcPreg > 0 ? gAdult.imcPreg.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Clasificación Atalah</span><p className="font-bold">{gAdult.atalah || "—"}</p></div>
+                        <div><span className="text-muted-foreground">IMC gestacional</span><p className="font-medium">{gAdult.imcGest > 0 ? gAdult.imcGest.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Trimestre</span><p className="font-medium">{formData.gestante_semana ? `${gAdult.trimestre}°` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Debió ganar</span><p className="font-medium">{gAdult.debioGanar > 0 ? `${gAdult.debioGanar.toFixed(2)} kg` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Ganancia presentada</span><p className="font-medium">{formData.gestante_peso_actual ? `${gAdult.gananciaPresentada.toFixed(2)} kg` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Esperada total</span><p className="font-medium">{gAdult.totalEsperado > 0 ? `${gAdult.totalEsperado.toFixed(1)} kg` : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Dif. ganancia</span><p className="font-medium">{formData.gestante_peso_actual && gAdult.debioGanar ? `${(gAdult.gananciaPresentada - gAdult.debioGanar).toFixed(2)} kg` : "—"}</p></div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label>Extras normopeso (fila Excel)</Label>
+                          <Select value={formData.gestante_extra_normal_variant || "a"} onValueChange={(v) => syncReq({ gestante_extra_normal_variant: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="a">85 / 285 / 475 kcal</SelectItem>
+                              <SelectItem value="b">— / 360 / 475 kcal</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-muted-foreground">TMR (Schofield)</span><p className="font-medium">{gAdult.tmr > 0 ? Math.round(gAdult.tmr) : "—"} kcal</p></div>
+                        <div><span className="text-muted-foreground">TMR × PAL</span><p className="font-medium">{gAdult.reqBase > 0 ? Math.round(gAdult.reqBase) : "—"} kcal</p></div>
+                        <div><span className="text-muted-foreground">+ Gestación ({gAdult.trimestre}° trim)</span><p className="font-medium">{gAdult.extra} kcal</p></div>
+                        <div><span className="text-muted-foreground">Total</span><p className="font-bold text-lg text-primary">{Math.round(gAdult.requerimientoFinal)} kcal</p></div>
+                        <div className="sm:col-span-2"><span className="text-muted-foreground">RIEN</span><p className="font-medium">{gAdult.rien.proteinas_kg} g prot/kg · grasa {gAdult.rien.grasas_amdr}% · fibra {gAdult.rien.fibra_g}g</p></div>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold mb-2">Antropometría braquial (opcional)</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          <div className="space-y-1"><Label>Perímetro brazo (mm)</Label><Input type="number" step="0.1" value={formData.gestante_perim_brazo_mm} onChange={(e) => handleChange("gestante_perim_brazo_mm", e.target.value)} /></div>
+                          <div className="space-y-1"><Label>Pliegue tricipital (mm)</Label><Input type="number" step="0.1" value={formData.gestante_pliegue_tricipital_mm} onChange={(e) => handleChange("gestante_pliegue_tricipital_mm", e.target.value)} /></div>
+                          <div className="space-y-1"><Label>Pliegue subescapular (mm)</Label><Input type="number" step="0.1" value={formData.gestante_pliegue_subescapular_mm} onChange={(e) => handleChange("gestante_pliegue_subescapular_mm", e.target.value)} /></div>
+                        </div>
+                        <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                          <div><span className="text-muted-foreground">PMB</span><p className="font-medium">{gAdult.perimMuscularBrazo > 0 ? gAdult.perimMuscularBrazo.toFixed(1) : "—"}</p></div>
+                          <div><span className="text-muted-foreground">AMB</span><p className="font-medium">{gAdult.areaMuscularBrazo > 0 ? gAdult.areaMuscularBrazo.toFixed(1) : "—"}</p></div>
+                          <div><span className="text-muted-foreground">AGB</span><p className="font-medium">{gAdult.areaGrasaBrazo > 0 ? gAdult.areaGrasaBrazo.toFixed(1) : "—"}</p></div>
+                          <div><span className="text-muted-foreground">Adiposidad</span><p className="font-medium">{gAdult.adiposidad > 0 ? gAdult.adiposidad.toFixed(1) : "—"}</p></div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {renderAjusteCaloriasUI()}
+                  <div className="space-y-1 max-w-xs">
+                    <Label>Calorías del plan (editables)</Label>
+                    <Input
+                      type="number"
+                      value={formData.requerimiento_energetico}
+                      onChange={(e) => {
+                        handleChange("requerimiento_energetico", e.target.value);
+                        handleChange("total_calorias_f2", e.target.value);
+                      }}
+                    />
+                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => syncReq({})}>
+                      {adoles ? "Recalcular GET + crecimiento + extras" : "Recalcular TMR × PAL + extras gestación"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+          {/* Phase 1: Requerimiento Energético y Peso Saludable (adulto y otros) */}
+          {currentPhase === 1 && formData.tipo_plan !== "deportista" && formData.tipo_plan !== "pediatria" && !isGestanteTipo(formData.tipo_plan) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calculator className="h-5 w-5 text-primary" />
-                  {currentPhaseData.title}
+                  {phaseTitle}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
+                <p className="text-sm text-muted-foreground">{phaseDescription}</p>
               </CardHeader>
               <CardContent className="space-y-4">
 
@@ -1495,7 +3199,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="genero">Género</Label>
-                    <Select value={formData.genero} disabled onValueChange={(value) => {
+                    <Select value={formData.genero || undefined} disabled onValueChange={(value) => {
                       handleChange("genero", value);
                       // Usar peso de referencia (objetivo) para TMB
                       calculateTMB(formData.peso_referencia_f2, formData.edad, value);
@@ -1612,6 +3316,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     />
                   </div>
                 </div>
+                <div className="mt-4">{renderAjusteCaloriasUI()}</div>
               </CardContent>
             </Card>
           )}
@@ -1622,9 +3327,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardList className="h-5 w-5 text-primary" />
-                  {currentPhaseData.title}
+                  {phaseTitle}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
+                <p className="text-sm text-muted-foreground">{phaseDescription}</p>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Tabla de Resumen */}
@@ -1688,7 +3393,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       <tr className="bg-white">
                         <td className="border border-teal-200 p-2 font-medium" rowSpan={3}>
                           Proteínas
-                          <div className="text-[10px] text-teal-600 font-normal">Target: 14-20% AMDR</div>
+                          <div className="text-[10px] text-teal-600 font-normal">
+                            Target: {formData.tipo_plan === "pediatria" ? "10-20% AMDR (≥1 año)" : "14-20% AMDR"}
+                            {formData.tipo_plan === "deportista" ? " · g/kg: 1.11–2.00" : ""}
+                            {formData.tipo_plan === "pediatria" ? ` · g/kg RIEN según edad` : ""}
+                            {isGestanteTipo(formData.tipo_plan) ? " · g/kg: 1.53 (1.7 si bajo peso)" : ""}
+                          </div>
                         </td>
                         <td className="border border-teal-200 p-1" rowSpan={3}>
                           <Input
@@ -1743,7 +3453,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g/kg/peso</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">g/kg</td>
                         <td className="border border-teal-200 p-1 text-xs bg-teal-50">
                           <Input
                             type="number"
@@ -1761,7 +3471,11 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       <tr className="bg-teal-50/30">
                         <td className="border border-teal-200 p-2 font-medium" rowSpan={7}>
                           Grasas
-                          <div className="text-[10px] text-teal-600 font-normal">Target: 20-35% AMDR</div>
+                          <div className="text-[10px] text-teal-600 font-normal">
+                            {formData.tipo_plan === "pediatria"
+                              ? "Target RIEN: 30-40% (1-3a) / 25-35% (4-18a)"
+                              : "Target: 20-35% AMDR"}
+                          </div>
                         </td>
                         <td className="border border-teal-200 p-1" rowSpan={7}>
                           <Input
@@ -1868,7 +3582,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         </td>
                       </tr>
                       <tr className="bg-teal-50/30">
-                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">Colesterol</td>
+                        <td className="border border-teal-200 p-1 text-xs bg-teal-50">Colesterol/mg</td>
                         <td className="border border-teal-200 p-1 text-xs bg-teal-50">
                           <Input
                             type="number"
@@ -2004,11 +3718,52 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-primary" />
-                  {currentPhaseData.title}
+                  {phaseTitle}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
+                <p className="text-sm text-muted-foreground">{phaseDescription}</p>
               </CardHeader>
               <CardContent className="space-y-4">
+                {formData.tipo_plan === "deportista" && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 p-4 space-y-3">
+                    <div>
+                      <h4 className="font-semibold text-sm">Suplementos (por porción)</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Según EVANUT: introduce manualmente los nutrientes de 1 porción del suplemento que use o recomiende el deportista. Luego asigna las porciones en la tabla.
+                      </p>
+                    </div>
+                    {(() => {
+                      const s = formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO] || {};
+                      const fields = [
+                        ["per_kcal", "Kcal"],
+                        ["per_prot", "Prot"],
+                        ["per_grasa", "Grasa"],
+                        ["per_gs", "GS"],
+                        ["per_gm", "GM"],
+                        ["per_gp", "GP"],
+                        ["per_col", "COL"],
+                        ["per_chos", "CHOS"],
+                        ["per_fd", "FD"],
+                      ] as const;
+                      return (
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {fields.map(([key, label]) => (
+                            <div key={key} className="space-y-1">
+                              <Label className="text-xs">{label}/porción</Label>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                value={s[key] || ""}
+                                onChange={(e) => handleSuplementoNutrientChange(key, e.target.value)}
+                                className="h-8 text-xs"
+                                placeholder="0"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
                 <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
                   <table className="w-full border-collapse text-sm">
                     <thead>
@@ -2032,14 +3787,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       </tr>
                     </thead>
                     <tbody>
-                      {GRUPOS_ALIMENTOS.map((grupo, index) => {
+                      {gruposFase3.map((grupo, index) => {
                         const grupoData = formData.grupos_alimentos_f3[grupo] || {};
                         const isEven = index % 2 === 0;
 
                         return (
-                          <tr key={grupo} className={`transition-colors hover:bg-gray-100 ${isEven ? "bg-gray-50" : "bg-white"}`}>
+                          <tr key={grupo} className={`transition-colors hover:bg-gray-100 ${isEven ? "bg-gray-50" : "bg-white"} ${grupo === SUPLEMENTOS_GRUPO ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
                             <td className="border border-gray-300 p-2 font-medium text-gray-800 sticky left-0 z-10 bg-inherit shadow-sm min-w-[250px] text-xs">
-                              {grupo}
+                              {grupo === SUPLEMENTOS_GRUPO ? "Suplementos (manual)" : grupo}
                             </td>
                             <td className="border border-gray-200 p-1">
                               <Input
@@ -2149,9 +3904,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Utensils className="h-5 w-5 text-primary" />
-                  {currentPhaseData.title}
+                  {phaseTitle}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">{currentPhaseData.description}</p>
+                <p className="text-sm text-muted-foreground">{phaseDescription}</p>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Resumen de Fases Previas - Sticky */}
@@ -2170,7 +3925,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       <div className="max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
                         <table className="w-full text-xs">
                           <tbody className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-1">
-                            {GRUPOS_ALIMENTOS.map(grupo => {
+                            {gruposFase3.map(grupo => {
                               const porciones = parseFloat(formData.grupos_alimentos_f3[grupo]?.porciones) || 0;
                               if (porciones <= 0) return null;
                               return (

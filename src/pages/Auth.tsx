@@ -21,7 +21,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { NutriDataParticles } from "@/components/NutriDataParticles";
 
 const Auth = () => {
-
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -178,10 +177,10 @@ const Auth = () => {
         )}
       </button>
 
-      {/* Left side - Form + partículas que forman "NutriData" */}
+      {/* Left side - Form + puntos verdes que forman "NutriData" y se distorsionan con el mouse */}
       <div className="flex-1 flex items-center justify-center p-8 bg-background relative overflow-hidden">
         <NutriDataParticles className="opacity-90 max-lg:opacity-70" />
-        <div className="w-full max-w-md space-y-8 animate-login-entrance relative z-10">
+        <div className="w-full max-w-md space-y-8 animate-login-entrance relative z-10 pointer-events-auto">
           {/* Logo */}
           <div
             className="flex flex-col items-center gap-4 animate-login-stagger"

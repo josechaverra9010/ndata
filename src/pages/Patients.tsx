@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Filter, Mail, Phone, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList, Users, UserCheck, Clock, FileText, Loader2 } from "lucide-react";
+import { Search, Plus, Filter, Mail, Phone, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList, Users, UserCheck, Clock, FileText } from "lucide-react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NewPatientDialog } from "@/components/admin/NewPatientDialog";
 import { PatientDetailsDialog } from "@/components/admin/PatientDetailsDialog";
@@ -16,6 +16,7 @@ import { PatientPlansDialog } from "@/components/admin/PatientPlansDialog";
 import { AssignPlanToPatientDialog } from "@/components/admin/AssignPlanToPatientDialog";
 import { AssignPlanWithMenuDialog } from "@/components/admin/AssignPlanWithMenuDialog";
 import { NewPlanWizard } from "@/components/admin/NewPlanWizard";
+import { ClinicalHistoryDialog } from "@/components/admin/ClinicalHistoryDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -83,8 +84,9 @@ const Patients = () => {
   const [assignPlanOpen, setAssignPlanOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
-  const [generatingReportFor, setGeneratingReportFor] = useState<number | null>(null);
   const [createPlanOpen, setCreatePlanOpen] = useState(false);
+  const [clinicalHistoryOpen, setClinicalHistoryOpen] = useState(false);
+  const [clinicalHistoryPatient, setClinicalHistoryPatient] = useState<Patient | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -213,39 +215,17 @@ const Patients = () => {
     setCreatePlanOpen(true);
   };
 
-  const handleGenerateReport = async (patient: Patient, e?: React.MouseEvent) => {
+  const handleGenerateReport = (patient: Patient, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setGeneratingReportFor(patient.id);
-    try {
-      const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patients/${patient.id}/reports/nutrition`, {
-        method: "GET",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!response.ok) throw new Error(`Error ${response.status}`);
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const filename = `informe_nutricional_${(patient.nombres + '_' + patient.apellidos).replace(/\s+/g, '_')}_${dateStr}.pdf`;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      toast({ title: "Informe generado", description: "La descarga iniciará en breve." });
-    } catch (error) {
-      console.error("Error generando informe:", error);
-      toast({ title: "Error", description: "No se pudo generar el informe", variant: "destructive" });
-    } finally {
-      setGeneratingReportFor(null);
-    }
+    setSelectedPatient(patient);
+    setClinicalHistoryPatient(patient);
+    setDetailsOpen(false);
+    setPlansOpen(false);
+    setScheduleOpen(false);
+    setAssignPlanOpen(false);
+    setAssignOpen(false);
+    setCreatePlanOpen(false);
+    setClinicalHistoryOpen(true);
   };
 
   // Handler para eliminar paciente
@@ -478,12 +458,8 @@ const Patients = () => {
                             Ver planes
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => handleGenerateReport(patient, e)}>
-                            {generatingReportFor === patient.id ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <FileText className="mr-2 h-4 w-4" />
-                            )}
-                            Generar informe
+                            <FileText className="mr-2 h-4 w-4" />
+                            Generar historia clínica
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => handleCreatePlan(patient, e)}>
                             <Plus className="mr-2 h-4 w-4" />
@@ -621,12 +597,19 @@ const Patients = () => {
             }}
           />
 
+          <ClinicalHistoryDialog
+            open={clinicalHistoryOpen}
+            onOpenChange={setClinicalHistoryOpen}
+            patient={clinicalHistoryPatient || selectedPatient}
+          />
+
           <PatientDetailsDialog
             patient={selectedPatient}
             open={detailsOpen}
             onOpenChange={setDetailsOpen}
             onUpdate={handlePatientUpdate}
             onEdit={() => handleEdit(selectedPatient)}
+            onClinicalHistory={() => handleGenerateReport(selectedPatient)}
             onViewPlans={() => handleViewPlans(selectedPatient)}
           />
 

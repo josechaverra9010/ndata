@@ -133,6 +133,7 @@ interface PatientDetailsDialogProps {
   onUpdate?: () => void;
   onEdit?: () => void;
   onViewPlans?: () => void;
+  onClinicalHistory?: () => void;
 }
 
 const statusStyles: Record<string, string> = {
@@ -148,6 +149,7 @@ export function PatientDetailsDialog({
   onUpdate,
   onEdit,
   onViewPlans,
+  onClinicalHistory,
 }: PatientDetailsDialogProps) {
   const { toast } = useToast();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -155,7 +157,6 @@ export function PatientDetailsDialog({
   const [recalls, setRecalls] = useState<any[]>([]);
   const [loadingRecalls, setLoadingRecalls] = useState(false);
   const [showRecallForm, setShowRecallForm] = useState(false);
-  const [sendingReport, setSendingReport] = useState(false);
 
   // SOLUCIÓN AL ERROR: Si no hay paciente, no renderizamos nada para evitar el crash
   if (!patient) return null;
@@ -199,32 +200,6 @@ export function PatientDetailsDialog({
       console.error("Error fetching recalls:", error);
     } finally {
       setLoadingRecalls(false);
-    }
-  };
-
-  const handleSendReport = async () => {
-    if (!patient) return;
-    setSendingReport(true);
-    try {
-      const token = localStorage.getItem("userToken");
-      const res = await fetch(`${API_URL}/patients/${patient.id}/reports/nutrition/send`, {
-        method: "POST",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Status ${res.status}`);
-      }
-
-      toast({ title: "Enviado", description: "El informe fue enviado al correo del paciente." });
-    } catch (error) {
-      console.error("Error enviando informe:", error);
-      toast({ title: "Error", description: "No se pudo enviar el informe", variant: "destructive" });
-    } finally {
-      setSendingReport(false);
     }
   };
 
@@ -296,9 +271,16 @@ export function PatientDetailsDialog({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={handleSendReport} disabled={sendingReport}>
-                    {sendingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 mr-2" />}
-                    Enviar informe
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onClinicalHistory?.();
+                    }}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Generar historia clínica
                   </Button>
                 </div>
               </div>
