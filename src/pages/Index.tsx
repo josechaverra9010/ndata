@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 
 // API Configuration
 import { API_URL } from "@/config/api";
+import { todayInColombiaISO, todayLabelColombia } from "@/lib/timezone";
 
 interface DashboardStats {
   patients: {
@@ -215,11 +216,7 @@ const Index = () => {
 
   const firstName =
     (user?.name || user?.email || "Nutricionista").split(" ")[0] || "Nutricionista";
-  const todayLabel = new Date().toLocaleDateString("es-ES", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+  const todayLabel = todayLabelColombia();
 
   return (
     <AdminLayout>
@@ -279,7 +276,7 @@ const Index = () => {
             iconColor="info"
             style={{ animationDelay: "80ms" }}
             onClick={() => {
-              const today = new Date().toISOString().slice(0, 10);
+              const today = todayInColombiaISO();
               navigate(`/appointments?date=${today}&view=day`);
             }}
           />

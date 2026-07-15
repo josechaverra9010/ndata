@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ScheduleAppointmentDialog } from "@/components/admin/ScheduleAppointmentDialog";
 import { AssignPlanWithMenuDialog } from "@/components/admin/AssignPlanWithMenuDialog";
+import { todayInColombiaISO } from "@/lib/timezone";
 import {
   Calendar,
   CheckCircle2,
@@ -227,7 +228,7 @@ export default function Consultation() {
     if (!prep?.patient?.id || !weight) return;
     try {
       setSavingWeight(true);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayInColombiaISO();
       const res = await fetch(`${API_URL}/progress/metrics`, {
         method: "POST",
         headers: tokenHeaders(),

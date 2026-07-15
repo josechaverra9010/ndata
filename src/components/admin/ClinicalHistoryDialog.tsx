@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, FileText, Download } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
+import { todayInColombiaISO, toColombiaDateISO } from "@/lib/timezone";
 
 export interface ClinicalHistoryPatient {
   id: number;
@@ -109,7 +110,7 @@ type HistoryForm = {
 };
 
 const emptyForm = (): HistoryForm => ({
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: todayInColombiaISO(),
   numero_historia: "",
   nombre: "",
   fecha_nacimiento: "",
@@ -182,12 +183,14 @@ function calcImc(peso?: number | null, alturaCm?: number | null): string {
 
 function formatDob(raw?: string | null): string {
   if (!raw) return "";
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   try {
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return String(raw).slice(0, 10);
-    return d.toISOString().slice(0, 10);
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+    return toColombiaDateISO(d);
   } catch {
-    return String(raw).slice(0, 10);
+    return s.slice(0, 10);
   }
 }
 
@@ -362,7 +365,7 @@ export function ClinicalHistoryDialog({ open, onOpenChange, patient }: ClinicalH
         const fam = String(p.antecedentes_familiares || "").toLowerCase();
         const next: HistoryForm = {
           ...emptyForm(),
-          fecha: new Date().toISOString().slice(0, 10),
+          fecha: todayInColombiaISO(),
           numero_historia: `HN-${p.id}-${new Date().getFullYear()}`,
           nombre: `${p.nombres || ""} ${p.apellidos || ""}`.trim(),
           fecha_nacimiento: formatDob(p.fecha_nacimiento),
@@ -434,7 +437,7 @@ export function ClinicalHistoryDialog({ open, onOpenChange, patient }: ClinicalH
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const dateStr = new Date().toISOString().slice(0, 10);
+      const dateStr = todayInColombiaISO();
       a.download = `historia_clinica_${form.nombre.replace(/\s+/g, "_") || patient.id}_${dateStr}.pdf`;
       document.body.appendChild(a);
       a.click();

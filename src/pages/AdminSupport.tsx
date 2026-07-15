@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { MessageSquare, Filter, Send, CheckCircle, Clock, AlertCircle, Plus } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTimeInColombia } from "@/lib/timezone";
 
 interface Ticket {
     id: number;
@@ -312,7 +313,7 @@ const AdminSupport = () => {
                                                 <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2">
                                                     <span>Categoría: {categories.find(c => c.value === ticket.category)?.label}</span>
                                                     <span>•</span>
-                                                    <span>{new Date(ticket.created_at).toLocaleString()}</span>
+                                                    <span>{formatDateTimeInColombia(ticket.created_at)}</span>
                                                 </div>
                                             </div>
 

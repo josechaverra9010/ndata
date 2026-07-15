@@ -7,6 +7,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import ClickSpark from "@/components/ClickSpark";
+import Home from "./pages/Home";
+import ArticleDetail from "./pages/ArticleDetail";
+import Articles from "./pages/Articles";
 import Index from "./pages/Index";
 import Patients from "./pages/Patients";
 import MealPlans from "./pages/MealPlans";
@@ -38,6 +41,8 @@ import SuperadminOrganizations from "./pages/superadmin/SuperadminOrganizations"
 import SuperadminBilling from "./pages/superadmin/SuperadminBilling";
 import SuperadminSettings from "./pages/superadmin/SuperadminSettings";
 import SuperadminRecipes from "./pages/superadmin/SuperadminRecipes";
+import SuperadminArticles from "./pages/superadmin/SuperadminArticles";
+import SuperadminArticleEditor from "./pages/superadmin/SuperadminArticleEditor";
 import ResetPassword from "./pages/ResetPassword";
 import RegisterNutritionist from "./pages/RegisterNutritionist";
 
@@ -59,13 +64,18 @@ const App = () => (
               duration={400}
             >
               <Routes>
+              {/* Public Home */}
+              <Route path="/" element={<Home />} />
+              <Route path="/articles" element={<Articles />} />
+              <Route path="/article/:id" element={<ArticleDetail />} />
+              
               {/* Auth */}
               <Route path="/auth" element={<Auth />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/register-nutritionist" element={<RegisterNutritionist />} />
 
               {/* Admin Routes */}
-              <Route path="/" element={<ProtectedRoute allowedRoles={['admin']}><Index /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><Index /></ProtectedRoute>} />
               <Route path="/patients" element={<ProtectedRoute allowedRoles={['admin', 'superadmin']}><Patients /></ProtectedRoute>} />
               <Route path="/meal-plans" element={<ProtectedRoute allowedRoles={['admin']}><MealPlans /></ProtectedRoute>} />
               <Route path="/appointments" element={<ProtectedRoute allowedRoles={['admin']}><AdminCalendar /></ProtectedRoute>} />
@@ -94,6 +104,9 @@ const App = () => (
               <Route path="/superadmin/users" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminUsers /></ProtectedRoute>} />
               <Route path="/superadmin/nutritionists" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminNutritionists /></ProtectedRoute>} />
               <Route path="/superadmin/recipes" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminRecipes /></ProtectedRoute>} />
+              <Route path="/superadmin/articles" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminArticles /></ProtectedRoute>} />
+              <Route path="/superadmin/articles/new" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminArticleEditor /></ProtectedRoute>} />
+              <Route path="/superadmin/articles/:id/edit" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminArticleEditor /></ProtectedRoute>} />
               <Route path="/superadmin/organizations" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminOrganizations /></ProtectedRoute>} />
               <Route path="/superadmin/billing" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminBilling /></ProtectedRoute>} />
               <Route path="/superadmin/settings" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminSettings /></ProtectedRoute>} />

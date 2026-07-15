@@ -1,35 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { PatientLayout } from "@/layouts/PatientLayout";
-import { LoadingScreen } from "@/components/LoadingScreen";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Apple,
   Flame,
-  Droplets,
   Target,
   Calendar,
   TrendingUp,
-  CheckCircle2,
   Clock,
   Plus,
+  Minus,
   Loader2,
-  ChefHat,
-  List,
-  Utensils,
-  ClipboardList,
-  Activity
+  Activity,
+  Sparkles,
+  ArrowRight,
+  Lightbulb,
+  Scale,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { MealCard } from "@/components/patient/MealCard";
 import { MealDetailDialog } from "@/components/patient/MealDetailDialog";
+import { todayInColombiaISO, todayLabelColombia } from "@/lib/timezone";
 
 interface DashboardStats {
   calories: {
@@ -38,6 +38,8 @@ interface DashboardStats {
     percentage: number;
   };
   edad_formateada?: string;
+  peso_actual?: number;
+  altura?: number;
   water: {
     consumed_ml: number;
     consumed_liters: number;
@@ -107,6 +109,31 @@ interface DashboardData {
   tip_of_day: string;
 }
 
+function imcCategory(imc: number) {
+  if (imc < 18.5) {
+    return {
+      label: "Bajo peso",
+      className: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-transparent",
+    };
+  }
+  if (imc < 25) {
+    return {
+      label: "Peso normal",
+      className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-transparent",
+    };
+  }
+  if (imc < 30) {
+    return {
+      label: "Sobrepeso",
+      className: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-transparent",
+    };
+  }
+  return {
+    label: "Obesidad",
+    className: "bg-destructive/15 text-destructive border-transparent",
+  };
+}
+
 export default function PatientDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -124,15 +151,17 @@ export default function PatientDashboard() {
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const patientId = user?.id;
+  const firstName = (user as { nombres?: string } | null)?.nombres?.split(" ")[0] || "bienvenido/a";
 
-  // Al abrir el modal, si la comida tiene recipe_id, cargar siempre la receta completa para mostrar ingredientes e instrucciones
+  const todayLabel = useMemo(() => todayLabelColombia(), []);
+
   useEffect(() => {
     if (!isDetailsOpen || !selectedMeal) {
       setMealDetailForModal(null);
       setLoadingMealDetail(false);
       return;
     }
-    const rid = (selectedMeal as Meal & { recipe_id?: number }).recipe_id;
+    const rid = selectedMeal.recipe_id;
     if (!rid) {
       setMealDetailForModal(selectedMeal);
       setLoadingMealDetail(false);
@@ -145,28 +174,41 @@ export default function PatientDashboard() {
     fetch(`${API_URL}/recipes/${rid}`, {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     })
-      .then((r) => r.ok ? r.json() : null)
-      .then((recipe: { name?: string; ingredients?: string[]; instructions?: string[]; image?: string; Ingredients?: string[]; Instructions?: string[] } | null) => {
-        if (cancelled) return;
-        setLoadingMealDetail(false);
-        if (recipe) {
-          const ing = recipe.ingredients ?? (recipe as { Ingredients?: string[] }).Ingredients;
-          const inst = recipe.instructions ?? (recipe as { Instructions?: string[] }).Instructions;
-          setMealDetailForModal({
-            ...selectedMeal,
-            receta: recipe.name ?? selectedMeal.receta,
-            food: recipe.name ?? selectedMeal.food,
-            description: recipe.name ?? selectedMeal.description,
-            ingredients: Array.isArray(ing) ? ing : (selectedMeal.ingredients ?? []),
-            instructions: Array.isArray(inst) ? inst : (selectedMeal.instructions ?? []),
-            image: recipe.image ?? selectedMeal.image,
-          });
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          recipe: {
+            name?: string;
+            ingredients?: string[];
+            instructions?: string[];
+            image?: string;
+            Ingredients?: string[];
+            Instructions?: string[];
+          } | null
+        ) => {
+          if (cancelled) return;
+          setLoadingMealDetail(false);
+          if (recipe) {
+            const ing = recipe.ingredients ?? recipe.Ingredients;
+            const inst = recipe.instructions ?? recipe.Instructions;
+            setMealDetailForModal({
+              ...selectedMeal,
+              receta: recipe.name ?? selectedMeal.receta,
+              food: recipe.name ?? selectedMeal.food,
+              description: recipe.name ?? selectedMeal.description,
+              ingredients: Array.isArray(ing) ? ing : selectedMeal.ingredients ?? [],
+              instructions: Array.isArray(inst) ? inst : selectedMeal.instructions ?? [],
+              image: recipe.image ?? selectedMeal.image,
+            });
+          }
         }
-      })
+      )
       .catch(() => {
         if (!cancelled) setLoadingMealDetail(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isDetailsOpen, selectedMeal]);
 
   const getImageUrl = (imagePath: string | undefined) => {
@@ -183,7 +225,6 @@ export default function PatientDashboard() {
   }, [isDetailsOpen, selectedMeal]);
 
   useEffect(() => {
-    // If the data is empty, ensure the details dialog is closed
     if (dashboardData?.today_meals.length === 0 && isDetailsOpen) {
       setIsDetailsOpen(false);
     }
@@ -197,7 +238,6 @@ export default function PatientDashboard() {
 
   useEffect(() => {
     if (!isAuthLoading && patientId) {
-      // Refrescar datos cada 5 minutos
       const interval = setInterval(fetchDashboardData, 5 * 60 * 1000);
       return () => clearInterval(interval);
     }
@@ -206,25 +246,22 @@ export default function PatientDashboard() {
   const fetchDashboardData = async () => {
     try {
       const token = localStorage.getItem("userToken");
-      const response = await fetch(
-        `${API_URL}/patient/${patientId}/dashboard/complete`,
-        {
-          headers: {
-            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-          }
-        }
-      );
+      const response = await fetch(`${API_URL}/patient/${patientId}/dashboard/complete`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
 
-      if (!response.ok) throw new Error('Error al cargar datos');
+      if (!response.ok) throw new Error("Error al cargar datos");
 
       const data = await response.json();
       setDashboardData(data);
     } catch (error) {
-      console.error('Error fetching dashboard:', error);
+      console.error("Error fetching dashboard:", error);
       toast({
         title: "Error",
         description: "No se pudieron cargar los datos del dashboard",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -236,65 +273,56 @@ export default function PatientDashboard() {
 
     try {
       const token = localStorage.getItem("userToken");
-      const endpoint = meal.completed ? 'uncomplete' : 'complete';
-      const response = await fetch(
-        `${API_URL}/tracking/meal-toggle/${patientId}/${endpoint}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            meal_type: meal.meal_type,
-            date: new Date().toISOString().split('T')[0]
-          })
-        }
-      );
+      const endpoint = meal.completed ? "uncomplete" : "complete";
+      const response = await fetch(`${API_URL}/tracking/meal-toggle/${patientId}/${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          meal_type: meal.meal_type,
+          date: todayInColombiaISO(),
+        }),
+      });
 
-      if (!response.ok) throw new Error('Error al actualizar comida');
+      if (!response.ok) throw new Error("Error al actualizar comida");
 
-      // Refrescar datos
       await fetchDashboardData();
 
       toast({
         title: meal.completed ? "Comida desmarcada" : "¡Comida completada!",
-        description: `${meal.name} ${meal.completed ? 'desmarcada' : 'marcada como completada'} `,
+        description: `${meal.name} ${meal.completed ? "desmarcada" : "marcada como completada"}`,
       });
     } catch (error) {
-      console.error('Error toggling meal:', error);
+      console.error("Error toggling meal:", error);
       toast({
         title: "Error",
         description: "No se pudo actualizar la comida",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setUpdatingMeal(null);
     }
   };
 
-  const handleAddWater = async () => {
+  const adjustWater = async (glassMl: number) => {
     setAddingWater(true);
-
     try {
       const token = localStorage.getItem("userToken");
-      const response = await fetch(
-        `${API_URL}/patient/${patientId}/water/add`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ glass_ml: 250 })
-        }
-      );
+      const response = await fetch(`${API_URL}/patient/${patientId}/water/add`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ glass_ml: glassMl }),
+      });
 
-      if (!response.ok) throw new Error('Error al agregar agua');
+      if (!response.ok) throw new Error("Error al actualizar agua");
 
       const data = await response.json();
 
-      // Actualizar solo el tracking de agua sin recargar todo
       if (dashboardData) {
         setDashboardData({
           ...dashboardData,
@@ -305,22 +333,22 @@ export default function PatientDashboard() {
               consumed_liters: data.amount_liters,
               target_ml: data.target_ml,
               target_liters: dashboardData.stats.water.target_liters,
-              percentage: data.percentage
-            }
-          }
+              percentage: data.percentage,
+            },
+          },
         });
       }
 
       toast({
-        title: "¡Agua agregada!",
-        description: `+ 250ml • Total: ${data.amount_liters} L`,
+        title: glassMl > 0 ? "¡Agua agregada!" : "Agua actualizada",
+        description: `${glassMl > 0 ? "+" : ""}${glassMl}ml • Total: ${data.amount_liters} L`,
       });
     } catch (error) {
-      console.error('Error adding water:', error);
+      console.error("Error updating water:", error);
       toast({
         title: "Error",
-        description: "No se pudo agregar el agua",
-        variant: "destructive"
+        description: "No se pudo actualizar el agua",
+        variant: "destructive",
       });
     } finally {
       setAddingWater(false);
@@ -329,7 +357,11 @@ export default function PatientDashboard() {
 
   const handleUpdateWeight = async () => {
     if (!newWeight || isNaN(parseFloat(newWeight))) {
-      return toast({ title: "Error", description: "Ingresa un peso válido", variant: "destructive" });
+      return toast({
+        title: "Error",
+        description: "Ingresa un peso válido",
+        variant: "destructive",
+      });
     }
 
     setSavingWeight(true);
@@ -339,7 +371,7 @@ export default function PatientDashboard() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ email: user?.email, peso_actual: parseFloat(newWeight) }),
       });
@@ -350,17 +382,24 @@ export default function PatientDashboard() {
         fetchDashboardData();
       }
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo actualizar el peso", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el peso",
+        variant: "destructive",
+      });
     } finally {
       setSavingWeight(false);
     }
   };
 
-  if (loading) {
+  if (loading || isAuthLoading) {
     return (
       <PatientLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <LoadingScreen message="Cargando" />
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+          <p className="text-sm text-muted-foreground">Cargando tu dashboard…</p>
         </div>
       </PatientLayout>
     );
@@ -369,332 +408,372 @@ export default function PatientDashboard() {
   if (!dashboardData) {
     return (
       <PatientLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">No se pudieron cargar los datos</p>
-            <Button onClick={fetchDashboardData} className="mt-4">
+        <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
+          <div className="max-w-md w-full rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center">
+            <p className="font-semibold text-foreground">No se pudieron cargar los datos</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Revisa tu conexión e inténtalo de nuevo.
+            </p>
+            <Button className="mt-5 rounded-full" onClick={fetchDashboardData}>
               Reintentar
             </Button>
-          </Card>
+          </div>
         </div>
       </PatientLayout>
     );
   }
 
   const { stats, today_meals, week_progress, next_appointment, tip_of_day } = dashboardData;
+  const peso =
+    stats.peso_actual ?? (user as { peso_actual?: number } | null)?.peso_actual ?? null;
+  const altura = stats.altura ?? (user as { altura?: number } | null)?.altura ?? null;
+  const imcValue =
+    peso && altura
+      ? (() => {
+          const h = altura > 3 ? altura / 100 : altura;
+          return peso / (h * h);
+        })()
+      : null;
+  const imcMeta = imcValue != null ? imcCategory(imcValue) : null;
+  const weekCompleted = week_progress.filter((d) => d.completed).length;
+
+  const macros = [
+    {
+      label: "Proteínas",
+      pct: stats.macronutrients?.protein_percentage ?? 30,
+      grams: stats.macronutrients?.protein_grams ?? 0,
+      bar: "bg-gradient-to-r from-sky-500 to-sky-400",
+      dot: "bg-sky-500",
+    },
+    {
+      label: "Carbohidratos",
+      pct: stats.macronutrients?.carbs_percentage ?? 45,
+      grams: stats.macronutrients?.carbs_grams ?? 0,
+      bar: "bg-gradient-to-r from-amber-500 to-amber-400",
+      dot: "bg-amber-500",
+    },
+    {
+      label: "Grasas",
+      pct: stats.macronutrients?.fat_percentage ?? 25,
+      grams: stats.macronutrients?.fat_grams ?? 0,
+      bar: "bg-gradient-to-r from-emerald-500 to-emerald-400",
+      dot: "bg-emerald-500",
+    },
+  ];
 
   return (
     <PatientLayout>
-      <div className="space-y-6 animate-fade-in">
-        {/* Header con Bienvenida y Edad */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            {stats.edad_formateada && (
-              <Badge variant="secondary" className="w-fit bg-primary/10 text-primary border-primary/20 py-1.5 px-3">
-                <Clock className="h-3.5 w-3.5 mr-2" />
-                {stats.edad_formateada}
-              </Badge>
-            )}
+      <div className="space-y-5 lg:space-y-7 animate-fade-in">
+        {/* Hero */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.08] p-5 sm:p-6 shadow-card">
+          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-14 left-1/4 h-36 w-36 rounded-full bg-emerald-500/10 blur-2xl" />
+
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80 mb-2 flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                Panel del paciente
+              </p>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground capitalize">
+                Hola, {firstName}
+              </h1>
+              <p className="mt-1.5 text-sm sm:text-base text-muted-foreground max-w-xl capitalize">
+                {todayLabel}. Aquí tienes tu resumen del día.
+              </p>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {stats.edad_formateada && (
+                  <Badge className="rounded-full border-0 bg-primary/10 text-primary text-[10px] uppercase font-bold tracking-wide">
+                    <Clock className="h-3 w-3 mr-1.5" />
+                    {stats.edad_formateada}
+                  </Badge>
+                )}
+                <Badge variant="secondary" className="rounded-full tabular-nums">
+                  {stats.meals.completed}/{stats.meals.total} comidas
+                </Badge>
+                <Badge variant="outline" className="rounded-full tabular-nums">
+                  {stats.calories.consumed}/{stats.calories.target} kcal
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="rounded-full gap-2"
+                onClick={() => {
+                  setNewWeight(peso ? String(peso) : "");
+                  setIsWeightDialogOpen(true);
+                }}
+              >
+                <Scale className="h-4 w-4" />
+                Actualizar peso
+              </Button>
+              <Button
+                className="rounded-full gap-2"
+                onClick={() => navigate("/patient/my-plan")}
+              >
+                Ver mi plan
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-          {/* Calorías */}
-          <Card className="border-border shadow-card relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-1 h-full bg-accent" />
-            <CardContent className="p-3 lg:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-muted-foreground truncate">Calorías Hoy</p>
-                  <p className="text-lg lg:text-2xl font-bold text-foreground">
-                    {stats.calories.consumed}
-                  </p>
-                  <p className="text-[10px] lg:text-xs text-muted-foreground">
-                    de {stats.calories.target} kcal
-                  </p>
-                </div>
-                <div className="flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10 group-hover:scale-110 transition-transform">
-                  <Flame className="h-5 w-5 lg:h-6 lg:w-6 text-accent" />
-                </div>
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-orange-500 to-amber-400" />
+            <div className="pl-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Calorías hoy
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  {stats.calories.consumed}
+                </p>
+                <p className="text-xs text-muted-foreground">de {stats.calories.target} kcal</p>
               </div>
-              <Progress
-                value={stats.calories.percentage}
-                className="mt-2 lg:mt-3 h-1.5 lg:h-2"
-              />
-            </CardContent>
-          </Card>
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500/15 to-orange-500/5 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+                <Flame className="h-[18px] w-[18px]" />
+              </div>
+            </div>
+            <Progress value={Math.min(100, stats.calories.percentage)} className="mt-3 h-1.5" />
+          </div>
 
-          {/* Agua */}
-          <Card className="border-border shadow-card relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-1 h-full bg-info" />
-            <CardContent className="p-3 lg:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-muted-foreground truncate">Agua</p>
-                  <p className="text-lg lg:text-2xl font-bold text-foreground">
-                    {stats.water.consumed_liters}L
-                  </p>
-                  <p className="text-[10px] lg:text-xs text-muted-foreground">
-                    Meta: {stats.water.target_liters}L
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={async () => {
-                      setAddingWater(true);
-                      try {
-                        const token = localStorage.getItem("userToken");
-                        const response = await fetch(`${API_URL}/patient/${patientId}/water/add`, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-                          },
-                          body: JSON.stringify({ glass_ml: -250 })
-                        });
-                        if (response.ok) fetchDashboardData();
-                      } finally {
-                        setAddingWater(false);
-                      }
-                    }}
-                    disabled={addingWater || stats.water.consumed_ml <= 0}
-                    className="h-8 w-8 lg:h-9 lg:w-9 shrink-0 rounded-lg bg-destructive/5 hover:bg-destructive/10 text-destructive"
-                  >
-                    <Plus className="h-4 w-4 rotate-45" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={handleAddWater}
-                    disabled={addingWater}
-                    className="h-8 w-8 lg:h-9 lg:w-9 shrink-0 rounded-lg bg-info/10 hover:bg-info/20 text-info shadow-sm"
-                  >
-                    {addingWater ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  </Button>
-                </div>
+          <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-sky-500 to-cyan-400" />
+            <div className="pl-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Agua
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  {stats.water.consumed_liters}
+                  <span className="text-sm font-medium text-muted-foreground ml-0.5">L</span>
+                </p>
+                <p className="text-xs text-muted-foreground">Meta: {stats.water.target_liters}L</p>
               </div>
-              <Progress
-                value={stats.water.percentage}
-                className="mt-2 lg:mt-3 h-1.5 lg:h-2"
-              />
-            </CardContent>
-          </Card>
+              <div className="flex flex-col gap-1">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => adjustWater(-250)}
+                  disabled={addingWater || stats.water.consumed_ml <= 0}
+                  className="h-8 w-8 rounded-lg bg-destructive/5 hover:bg-destructive/10 text-destructive"
+                  title="Quitar 250ml"
+                >
+                  <Minus className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => adjustWater(250)}
+                  disabled={addingWater}
+                  className="h-8 w-8 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400"
+                  title="Agregar 250ml"
+                >
+                  {addingWater ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <Progress value={Math.min(100, stats.water.percentage)} className="mt-3 h-1.5" />
+          </div>
 
-          {/* Comidas */}
-          <Card className="border-border shadow-card relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-            <CardContent className="p-3 lg:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-muted-foreground truncate">Comidas</p>
-                  <p className="text-lg lg:text-2xl font-bold text-foreground">
-                    {stats.meals.completed}/{stats.meals.total}
-                  </p>
-                  <p className="text-[10px] lg:text-xs text-muted-foreground">completadas hoy</p>
-                </div>
-                <div className="flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 group-hover:scale-110 transition-transform">
-                  <Apple className="h-5 w-5 lg:h-6 lg:w-6 text-primary" />
-                </div>
+          <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary to-emerald-400" />
+            <div className="pl-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Comidas
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  {stats.meals.completed}/{stats.meals.total}
+                </p>
+                <p className="text-xs text-muted-foreground">completadas hoy</p>
               </div>
-              <Progress
-                value={stats.meals.percentage}
-                className="mt-2 lg:mt-3 h-1.5 lg:h-2"
-              />
-            </CardContent>
-          </Card>
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary flex items-center justify-center">
+                <Apple className="h-[18px] w-[18px]" />
+              </div>
+            </div>
+            <Progress value={Math.min(100, stats.meals.percentage)} className="mt-3 h-1.5" />
+          </div>
 
-          {/* Meta Semanal */}
-          <Card className="border-border shadow-card relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-1 h-full bg-success" />
-            <CardContent className="p-3 lg:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-muted-foreground truncate">Adherencia</p>
-                  <p className="text-lg lg:text-2xl font-bold text-foreground">
-                    {stats.weekly_goal.percentage}%
-                  </p>
-                  <p className={`text-[10px] lg:text-xs flex items-center gap-1 ${stats.weekly_goal.change >= 0 ? 'text-success' : 'text-destructive'}`}>
-                    <TrendingUp className={`h-3 w-3 ${stats.weekly_goal.change < 0 ? 'rotate-180' : ''}`} />
-                    {stats.weekly_goal.change >= 0 ? '+' : ''}{stats.weekly_goal.change}%
-                  </p>
-                </div>
-                <div className="flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-success/10 group-hover:scale-110 transition-transform">
-                  <Target className="h-5 w-5 lg:h-6 lg:w-6 text-success" />
-                </div>
+          <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-500 to-lime-400" />
+            <div className="pl-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Adherencia
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  {stats.weekly_goal.percentage}%
+                </p>
+                <p
+                  className={`text-xs flex items-center gap-1 ${
+                    stats.weekly_goal.change >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-destructive"
+                  }`}
+                >
+                  <TrendingUp
+                    className={`h-3 w-3 ${stats.weekly_goal.change < 0 ? "rotate-180" : ""}`}
+                  />
+                  {stats.weekly_goal.change >= 0 ? "+" : ""}
+                  {stats.weekly_goal.change}%
+                </p>
               </div>
-              <Progress
-                value={stats.weekly_goal.percentage}
-                className="mt-2 lg:mt-3 h-1.5 lg:h-2"
-              />
-            </CardContent>
-          </Card>
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <Target className="h-[18px] w-[18px]" />
+              </div>
+            </div>
+            <Progress value={Math.min(100, stats.weekly_goal.percentage)} className="mt-3 h-1.5" />
+          </div>
         </div>
 
-        {/* Charts Grid - 50/50 Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          {/* Weekly Progress Chart */}
-          <Card className="border-border shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                Progreso Semanal
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {week_progress.map((day, index) => {
-                  const percentage = day.completed ? 100 : 0;
-                  return (
-                    <div key={index} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium text-foreground">{day.day}</span>
-                        <span className="text-muted-foreground text-xs">{day.date}</span>
-                      </div>
-                      <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full transition-all duration-500 ${day.completed
-                            ? 'bg-gradient-to-r from-primary to-primary/80'
-                            : 'bg-muted-foreground/20'
-                            }`}
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Macronutrient Distribution Chart */}
-          <Card className="border-border shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground">
-                <Activity className="h-5 w-5 text-primary" />
-                Distribución de Macronutrientes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {/* Proteínas */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-blue-500" />
-                      <span className="font-medium text-foreground">Proteínas</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground font-semibold">
-                        {stats.macronutrients?.protein_percentage ?? 30}%
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        ({stats.macronutrients?.protein_grams ?? 0}g)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-blue-400 animate-progress-fill transition-all duration-500"
-                      style={{ ['--progress-end' as string]: `${stats.macronutrients?.protein_percentage ?? 30}%` } as React.CSSProperties}
-                    />
-                  </div>
-                </div>
-
-                {/* Carbohidratos */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-amber-500" />
-                      <span className="font-medium text-foreground">Carbohidratos</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground font-semibold">
-                        {stats.macronutrients?.carbs_percentage ?? 45}%
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        ({stats.macronutrients?.carbs_grams ?? 0}g)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 animate-progress-fill transition-all duration-500"
-                      style={{ ['--progress-end' as string]: `${stats.macronutrients?.carbs_percentage ?? 45}%` } as React.CSSProperties}
-                    />
-                  </div>
-                </div>
-
-                {/* Grasas */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-emerald-500" />
-                      <span className="font-medium text-foreground">Grasas</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground font-semibold">
-                        {stats.macronutrients?.fat_percentage ?? 25}%
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        ({stats.macronutrients?.fat_grams ?? 0}g)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 animate-progress-fill transition-all duration-500"
-                      style={{ ['--progress-end' as string]: `${stats.macronutrients?.fat_percentage ?? 25}%` } as React.CSSProperties}
-                    />
-                  </div>
-                </div>
-
-                {/* Summary */}
-                <div className="pt-4 border-t border-border">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Meta diaria de calorías</span>
-                    <span className="font-semibold text-foreground">
-                      {stats.calories.target > 0 ? `${stats.calories.target} kcal` : "Sin meta asignada"}
+        {/* Progress + macros */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6">
+          <Card className="border-border/70 shadow-card overflow-hidden rounded-2xl">
+            <CardHeader className="pb-3 border-b border-border/60 bg-gradient-to-br from-card via-card to-primary/[0.04]">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <TrendingUp className="h-4 w-4" />
                     </span>
+                    Progreso semanal
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-1">
+                    {weekCompleted} de {week_progress.length} días completados
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary" className="rounded-full tabular-nums">
+                  {week_progress.length
+                    ? Math.round((weekCompleted / week_progress.length) * 100)
+                    : 0}
+                  %
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 lg:p-5 space-y-3.5">
+              {week_progress.map((day, index) => (
+                <div key={index} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">{day.day}</span>
+                    <span className="text-xs text-muted-foreground">{day.date}</span>
+                  </div>
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        day.completed
+                          ? "bg-gradient-to-r from-primary to-emerald-500 w-full"
+                          : "bg-muted-foreground/15 w-0"
+                      }`}
+                    />
                   </div>
                 </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 shadow-card overflow-hidden rounded-2xl">
+            <CardHeader className="pb-3 border-b border-border/60 bg-gradient-to-br from-card via-card to-amber-500/[0.04]">
+              <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Activity className="h-4 w-4" />
+                </span>
+                Macronutrientes
+              </CardTitle>
+              <CardDescription className="text-xs mt-1">
+                Distribución de tu meta diaria
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 lg:p-5 space-y-4">
+              {macros.map((m) => (
+                <div key={m.label} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2.5 w-2.5 rounded-full ${m.dot}`} />
+                      <span className="font-medium text-foreground">{m.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-semibold text-foreground tabular-nums">{m.pct}%</span>
+                      <span className="text-muted-foreground tabular-nums">({m.grams}g)</span>
+                    </div>
+                  </div>
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full ${m.bar} transition-all duration-700`}
+                      style={{ width: `${Math.max(0, Math.min(100, m.pct))}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <div className="pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Meta diaria de calorías</span>
+                <span className="font-semibold text-foreground tabular-nums">
+                  {stats.calories.target > 0
+                    ? `${stats.calories.target} kcal`
+                    : "Sin meta asignada"}
+                </span>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-6">
           {/* Today's Meals */}
-          <Card className="lg:col-span-2 border-border shadow-card">
-            <CardHeader className="pb-3 lg:pb-6">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-foreground text-base lg:text-lg">
-                  <Apple className="h-4 w-4 lg:h-5 lg:w-5 text-primary" />
-                  Comidas de Hoy
-                </CardTitle>
-                <Badge variant="secondary" className="text-xs">
+          <Card className="lg:col-span-2 border-border/70 shadow-card overflow-hidden rounded-2xl">
+            <CardHeader className="pb-3 border-b border-border/60 bg-gradient-to-br from-card via-card to-primary/[0.04]">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base lg:text-lg">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Apple className="h-4 w-4" />
+                    </span>
+                    Comidas de hoy
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-1">
+                    Marca lo que ya comiste
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary" className="rounded-full tabular-nums">
                   {stats.meals.completed}/{stats.meals.total}
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="p-4 lg:p-5 space-y-3">
               {today_meals.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 mx-auto mb-4">
-                    <Apple className="h-8 w-8 text-muted-foreground/50" />
+                <div className="text-center py-12 rounded-2xl border border-dashed border-border bg-muted/15">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/70 mx-auto mb-3 ring-1 ring-border/50">
+                    <Apple className="h-7 w-7 text-muted-foreground/50" />
                   </div>
-                  <p className="text-base font-medium text-foreground mb-1">No tienes comidas programadas hoy</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-base font-medium text-foreground mb-1">
+                    No tienes comidas programadas hoy
+                  </p>
+                  <p className="text-sm text-muted-foreground max-w-sm mx-auto">
                     Consulta con tu nutricionista para asignar un plan
                   </p>
+                  <Button
+                    className="mt-4 rounded-full"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate("/patient/my-plan")}
+                  >
+                    Ir a mi plan
+                  </Button>
                 </div>
               ) : (
-                <div className="grid gap-4">
+                <div className="grid gap-3">
                   {today_meals.map((meal, index) => (
                     <MealCard
-                      key={index}
+                      key={`${meal.meal_type}-${index}`}
                       meal={meal}
                       onToggle={() => handleToggleMeal(meal)}
                       onViewDetails={() => {
@@ -710,79 +789,84 @@ export default function PatientDashboard() {
           </Card>
 
           {/* Side Panel */}
-          <div className="space-y-4 lg:space-y-6">
-            {/* IMC Card */}
-            <Card className="border-border shadow-card">
-              <CardHeader className="pb-3 lg:pb-6">
-                <CardTitle className="flex items-center gap-2 text-foreground text-sm lg:text-base">
-                  <Target className="h-4 w-4 lg:h-5 lg:w-5 text-primary" />
-                  IMC (Índice de Masa Corporal)
+          <div className="space-y-4 lg:space-y-5">
+            {/* IMC */}
+            <Card className="border-border/70 shadow-card overflow-hidden rounded-2xl">
+              <CardHeader className="pb-3 border-b border-border/60 bg-gradient-to-br from-card via-card to-violet-500/[0.04]">
+                <CardTitle className="flex items-center gap-2 text-sm lg:text-base">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                    <Target className="h-4 w-4" />
+                  </span>
+                  IMC
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center p-2">
-                  {((dashboardData?.stats as any)?.peso_actual || user?.peso_actual) && ((dashboardData?.stats as any)?.altura || user?.altura) ? (
-                    <>
-                      <div className="relative h-24 w-48 overflow-hidden mb-2">
-                        <div className="absolute inset-0 flex items-end justify-center">
-                          <span className="text-3xl font-bold">
-                            {(() => {
-                              const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
-                              const altura = (dashboardData?.stats as any)?.altura || user?.altura;
-                              const h = altura > 3 ? altura / 100 : altura;
-                              return (peso / (h * h)).toFixed(2);
-                            })()}
-                          </span>
-                          <span className="text-sm font-medium text-muted-foreground ml-1 mb-1">kg/m²</span>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className={(() => {
-                        const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
-                        const altura = (dashboardData?.stats as any)?.altura || user?.altura;
-                        const h = altura > 3 ? altura / 100 : altura;
-                        const imc = peso / (h * h);
-                        if (imc < 18.5) return "text-blue-500 border-blue-200 bg-blue-50";
-                        if (imc < 25) return "text-green-600 border-green-200 bg-green-50";
-                        if (imc < 30) return "text-yellow-600 border-yellow-200 bg-yellow-50";
-                        return "text-red-600 border-red-200 bg-red-50";
-                      })()}>
-                        {(() => {
-                          const peso = (dashboardData?.stats as any)?.peso_actual || user?.peso_actual;
-                          const altura = (dashboardData?.stats as any)?.altura || user?.altura;
-                          const h = altura > 3 ? altura / 100 : altura;
-                          const imc = peso / (h * h);
-                          if (imc < 18.5) return "Bajo peso";
-                          if (imc < 25) return "Peso normal";
-                          if (imc < 30) return "Sobrepeso";
-                          return "Obesidad";
-                        })()}
-                      </Badge>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center">
+              <CardContent className="p-5">
+                {imcValue != null && imcMeta ? (
+                  <div className="flex flex-col items-center text-center gap-2">
+                    <p className="text-3xl font-bold tabular-nums text-foreground">
+                      {imcValue.toFixed(1)}
+                      <span className="text-sm font-medium text-muted-foreground ml-1">
+                        kg/m²
+                      </span>
+                    </p>
+                    <Badge className={`rounded-full ${imcMeta.className}`}>{imcMeta.label}</Badge>
+                    {peso != null && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Peso actual:{" "}
+                        <span className="font-semibold text-foreground">{peso} kg</span>
+                      </p>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 rounded-full text-xs"
+                      onClick={() => {
+                        setNewWeight(peso ? String(peso) : "");
+                        setIsWeightDialogOpen(true);
+                      }}
+                    >
+                      Actualizar peso
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-2">
+                    <p className="text-sm text-muted-foreground">
                       Completa tu perfil (peso y altura) para ver tu IMC
                     </p>
-                  )}
-                </div>
+                    <Button
+                      size="sm"
+                      className="mt-3 rounded-full"
+                      variant="outline"
+                      onClick={() => setIsWeightDialogOpen(true)}
+                    >
+                      Registrar peso
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Week Progress */}
-            <Card className="border-border shadow-card">
-              <CardHeader className="pb-3 lg:pb-6">
-                <CardTitle className="flex items-center gap-2 text-foreground text-sm lg:text-base">
-                  <TrendingUp className="h-4 w-4 lg:h-5 lg:w-5 text-primary" />
-                  Progreso Semanal
+            {/* Week dots */}
+            <Card className="border-border/70 shadow-card overflow-hidden rounded-2xl">
+              <CardHeader className="pb-3 border-b border-border/60">
+                <CardTitle className="flex items-center gap-2 text-sm lg:text-base">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Calendar className="h-4 w-4" />
+                  </span>
+                  Esta semana
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex justify-between">
+              <CardContent className="p-4">
+                <div className="flex justify-between gap-1">
                   {week_progress.map((day, index) => (
-                    <div key={index} className="flex flex-col items-center gap-1.5 lg:gap-2">
-                      <div className={`h-8 w-8 lg:h-10 lg:w-10 rounded-full flex items-center justify-center text-xs lg:text-sm font-medium ${day.completed
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                        }`}>
+                    <div key={index} className="flex flex-col items-center gap-1.5 flex-1">
+                      <div
+                        className={`h-9 w-9 lg:h-10 lg:w-10 rounded-xl flex items-center justify-center text-xs lg:text-sm font-semibold transition-colors ${
+                          day.completed
+                            ? "bg-gradient-to-br from-primary to-emerald-500 text-primary-foreground shadow-sm"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
                         {day.completed ? "✓" : day.day.charAt(0)}
                       </div>
                       <span className="text-[10px] lg:text-xs text-muted-foreground">
@@ -795,89 +879,103 @@ export default function PatientDashboard() {
             </Card>
 
             {/* Next Appointment */}
-            <Card className="border-border shadow-card">
-              <CardHeader className="pb-3 lg:pb-6">
-                <CardTitle className="flex items-center gap-2 text-foreground text-sm lg:text-base">
-                  <Calendar className="h-4 w-4 lg:h-5 lg:w-5 text-primary" />
-                  Próxima Cita
+            <Card className="border-border/70 shadow-card overflow-hidden rounded-2xl">
+              <CardHeader className="pb-3 border-b border-border/60 bg-gradient-to-br from-card via-card to-sky-500/[0.04]">
+                <CardTitle className="flex items-center gap-2 text-sm lg:text-base">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                    <Calendar className="h-4 w-4" />
+                  </span>
+                  Próxima cita
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4">
                 {next_appointment ? (
-                  <div
-                    onClick={() => navigate('/patient/appointments')}
-                    className="p-3 lg:p-4 rounded-xl bg-primary/5 border border-primary/20 cursor-pointer hover:bg-primary/10 transition-colors"
+                  <button
+                    type="button"
+                    onClick={() => navigate("/patient/appointments")}
+                    className="w-full text-left p-3.5 rounded-2xl bg-gradient-to-br from-primary/8 to-transparent border border-primary/20 hover:border-primary/40 hover:shadow-sm transition-all"
                   >
-                    <p className="font-semibold text-foreground text-sm lg:text-base">
-                      {next_appointment.doctor}
-                    </p>
-                    <p className="text-xs lg:text-sm text-muted-foreground mt-1">
-                      {next_appointment.type}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2 lg:mt-3">
-                      <Badge variant="secondary" className="text-[10px] lg:text-xs">
-                        {next_appointment.date}, {next_appointment.time}
-                      </Badge>
-                    </div>
-                  </div>
+                    <p className="font-semibold text-foreground text-sm">{next_appointment.doctor}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{next_appointment.type}</p>
+                    <Badge
+                      variant="secondary"
+                      className="mt-3 text-[10px] rounded-full gap-1"
+                    >
+                      <Clock className="h-3 w-3" />
+                      {next_appointment.date}, {next_appointment.time}
+                    </Badge>
+                  </button>
                 ) : (
-                  <div className="p-3 lg:p-4 rounded-xl bg-muted/30 border border-border text-center flex flex-col items-center gap-3">
-                    <p className="text-sm text-muted-foreground">
+                  <div className="p-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center">
+                    <p className="text-sm text-muted-foreground mb-3">
                       No tienes citas programadas
                     </p>
                     <Button
                       size="sm"
-                      onClick={() => navigate('/patient/appointments')}
-                      className="w-full"
+                      className="w-full rounded-full"
+                      onClick={() => navigate("/patient/appointments")}
                     >
-                      Agendar Cita
+                      Agendar cita
                     </Button>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Tip of the day */}
-            <Card className="border-border shadow-card gradient-primary text-primary-foreground">
-              <CardContent className="p-4 lg:p-5">
-                <p className="text-xs lg:text-sm font-medium opacity-90">💡 Consejo del día</p>
-                <p className="text-xs lg:text-sm mt-2 opacity-80">
-                  {tip_of_day}
-                </p>
-              </CardContent>
-            </Card>
+            {/* Tip */}
+            <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary to-emerald-600 p-5 text-primary-foreground shadow-card">
+              <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl" />
+              <div className="relative flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                  <Lightbulb className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide opacity-90">
+                    Consejo del día
+                  </p>
+                  <p className="text-sm mt-1.5 leading-relaxed opacity-95">{tip_of_day}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-
-      {/* Weight Update Dialog */}
       <Dialog open={isWeightDialogOpen} onOpenChange={setIsWeightDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px] rounded-2xl">
           <DialogHeader>
-            <DialogTitle>Actualizar mi Peso</DialogTitle>
+            <DialogTitle>Actualizar mi peso</DialogTitle>
             <DialogDescription>
               Registra tu peso actual para seguir tu progreso con precisión.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="weight" className="text-right">Peso (kg)</Label>
-              <input
-                id="weight"
-                type="number"
-                step="0.1"
-                className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                value={newWeight}
-                onChange={(e) => setNewWeight(e.target.value)}
-                autoFocus
-              />
-            </div>
+          <div className="grid gap-3 py-2">
+            <Label htmlFor="weight">Peso (kg)</Label>
+            <Input
+              id="weight"
+              type="number"
+              step="0.1"
+              className="rounded-xl"
+              value={newWeight}
+              onChange={(e) => setNewWeight(e.target.value)}
+              autoFocus
+              placeholder="72.5"
+            />
           </div>
-          <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setIsWeightDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleUpdateWeight} disabled={savingWeight} className="gradient-primary">
-              {savingWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar Cambios"}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              className="rounded-full"
+              onClick={() => setIsWeightDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="rounded-full"
+              onClick={handleUpdateWeight}
+              disabled={savingWeight}
+            >
+              {savingWeight ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar"}
             </Button>
           </div>
         </DialogContent>
@@ -890,169 +988,6 @@ export default function PatientDashboard() {
         getImageUrl={getImageUrl}
         loading={loadingMealDetail}
       />
-      {/* MealDetailDialog is the shared component from Mi plan - used above */}
-      {false && (
-        <Dialog open={false} onOpenChange={() => { }}>
-          <DialogContent>
-            {(() => {
-              const meal = mealDetailForModal ?? selectedMeal;
-              if (!meal) return null;
-              return (
-                <>
-                  {loadingMealDetail && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 rounded-3xl">
-                      <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        <p className="text-sm text-muted-foreground">Cargando receta...</p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="relative h-32 shrink-0 bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b border-border/50">
-                    <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#6366f1_1px,transparent_1px)] [background-size:16px_16px]" />
-                    <div className="absolute bottom-6 left-6 right-6">
-                      <div className="flex items-end justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider mb-1">
-                            <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                            {meal.meal || "Comida"}
-                          </div>
-                          <DialogTitle className="text-2xl font-extrabold tracking-tight text-foreground line-clamp-1">
-                            {meal.receta || meal.food || meal.name || "Detalle de Comida"}
-                          </DialogTitle>
-                        </div>
-                        <Badge variant="secondary" className="mb-1 font-bold bg-primary/10 text-primary border-primary/20 px-3 py-1">
-                          {meal.calories ?? meal.calorias ?? 0} kcal
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  <ScrollArea className="flex-1 min-h-0 px-6">
-                    <div className="space-y-8 py-6 pb-10">
-                      {meal.image && (
-                        <div className="group relative rounded-2xl overflow-hidden border border-border/50 shadow-2xl transition-all duration-500 hover:shadow-primary/10">
-                          <div className="aspect-video w-full">
-                            <img
-                              src={getImageUrl(meal.image)}
-                              alt={meal.receta || meal.food || "Comida"}
-                              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).parentElement?.parentElement?.style.setProperty('display', 'none');
-                              }}
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* Ingredients Column */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                            <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600">
-                              <List className="h-5 w-5" />
-                            </div>
-                            <h3 className="font-bold text-foreground tracking-tight">
-                              Ingredientes
-                            </h3>
-                          </div>
-
-                          {Array.isArray(meal?.ingredients) && meal.ingredients.length > 0 ? (
-                            <div className="grid gap-2.5">
-                              {meal.ingredients.map((ingredient: any, idx: number) => {
-                                const isObject = typeof ingredient === "object" && ingredient !== null;
-                                let name: string;
-                                let amount: string | null = null;
-                                if (isObject) {
-                                  name = ingredient.name ?? ingredient.ingredient ?? "";
-                                  amount = ingredient.portion ?? ingredient.grams ?? ingredient.cantidad ?? ingredient.amount ?? ingredient.quantity ?? null;
-                                } else {
-                                  const str = String(ingredient ?? "").trim();
-                                  const colonIdx = str.indexOf(":");
-                                  if (colonIdx > 0) {
-                                    name = str.slice(0, colonIdx).trim();
-                                    amount = str.slice(colonIdx + 1).trim() || null;
-                                  } else {
-                                    name = str;
-                                  }
-                                }
-
-                                return (
-                                  <div
-                                    key={idx}
-                                    className="flex items-center justify-between p-3.5 rounded-xl bg-muted/30 border border-border/20 hover:border-primary/30 hover:bg-primary/5 transition-all duration-300 group"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="h-1.5 w-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors" />
-                                      <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground capitalize leading-tight">
-                                        {name}
-                                      </span>
-                                    </div>
-                                    {amount && (
-                                      <Badge variant="outline" className="text-[10px] uppercase font-black px-2 py-0 border-primary/20 text-primary bg-primary/10 shadow-sm">
-                                        {amount}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-10 bg-muted/20 rounded-2xl border-2 border-dashed border-border/50 text-center px-4">
-                              <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-                                <List className="h-6 w-6 text-muted-foreground/60" />
-                              </div>
-                              <p className="text-sm font-medium text-muted-foreground">
-                                No hay ingredientes listados.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Instructions Column */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                              <Utensils className="h-5 w-5" />
-                            </div>
-                            <h3 className="font-bold text-foreground tracking-tight">
-                              Preparación
-                            </h3>
-                          </div>
-
-                          {Array.isArray(meal?.instructions) && meal.instructions.length > 0 ? (
-                            <div className="space-y-4">
-                              {meal.instructions.map((step: string, idx: number) => (
-                                <div key={idx} className="flex gap-4 group">
-                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary text-xs font-black shadow-sm group-hover:bg-primary group-hover:text-white transition-all duration-300">
-                                    {idx + 1}
-                                  </span>
-                                  <p className="text-sm leading-relaxed text-muted-foreground group-hover:text-foreground transition-colors pt-0.5 font-medium">
-                                    {step}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-10 bg-muted/20 rounded-2xl border-2 border-dashed border-border/50 text-center px-4">
-                              <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-                                <Utensils className="h-6 w-6 text-muted-foreground/60" />
-                              </div>
-                              <p className="text-sm font-medium text-muted-foreground">
-                                No hay pasos disponibles.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </ScrollArea>
-                </>
-              );
-            })()}
-          </DialogContent>
-        </Dialog>
-      )}
-    </PatientLayout >
+    </PatientLayout>
   );
 }

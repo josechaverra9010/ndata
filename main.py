@@ -26,6 +26,7 @@ import copy
 # Cargar variables de entorno
 load_dotenv()
 from datetime import datetime, timedelta, date
+from timezone_co import now_co, today_co, now_co_str, today_co_str, TZ_LABEL
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy import func, and_, or_
 import io
@@ -86,6 +87,12 @@ UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 app = FastAPI(docs_url=None, redoc_url=None)
+
+
+@app.on_event("startup")
+def set_colombia_timezone_context():
+    """Documenta y valida que la app opera en zona Colombia."""
+    print(f"[TZ] NutriData timezone: America/Bogota (COT) | now={now_co_str()}")
 
 
 # URL base para las fotos (usar variable de entorno o localhost por defecto)
@@ -552,8 +559,8 @@ class UserDB(Base):
     role = Column(Enum('superadmin', 'admin', 'patient'), default="patient")
     status = Column(Enum('activo', 'pendiente', 'inactivo'), default='activo')
 
-    created_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    updated_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"), onupdate=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"), onupdate=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
     
     
     telefono = Column(String(20))
@@ -592,7 +599,7 @@ class Recordatorio24hDB(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("users.id"), index=True)
-    date = Column(Date, default=lambda: datetime.now().date())
+    date = Column(Date, default=lambda: today_co())
     
     desayuno = Column(Text, nullable=True)
     media_manana = Column(Text, nullable=True)
@@ -1145,6 +1152,13 @@ def require_admin_or_superadmin(current_user: UserDB = Depends(get_current_user)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
     return current_user
 
+
+def require_superadmin(current_user: UserDB = Depends(get_current_user)):
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo el superadmin puede realizar esta acción")
+    return current_user
+
+
 def authorize_patient_access(patient_id: int, current_user: UserDB, db: Session):
     if current_user.role == "patient":
         if current_user.id != patient_id:
@@ -1301,7 +1315,7 @@ def compute_available_slots_for_date(
         occupied = occupied_query.all()
 
     occupied_times = sorted({apt.time for apt in occupied})
-    now = datetime.now()
+    now = now_co()
     available: List[str] = []
 
     for slot in STANDARD_APPOINTMENT_SLOTS:
@@ -1427,7 +1441,7 @@ class NotificationDB(Base):
     title = Column(String(255))
     description = Column(Text)
     read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=now_co)
 
 class MessageDB(Base):
     __tablename__ = "messages"
@@ -1435,7 +1449,7 @@ class MessageDB(Base):
     sender_id = Column(Integer, ForeignKey("users.id"))
     receiver_id = Column(Integer, ForeignKey("users.id"))
     content = Column(Text)
-    timestamp = Column(DateTime, default=datetime.now)
+    timestamp = Column(DateTime, default=now_co)
     read = Column(Boolean, default=False)
     type = Column(String(20), default="text")
 
@@ -1453,7 +1467,7 @@ class WaterTrackingDB(Base):
     date = Column(Date)
     amount_ml = Column(Integer, default=0)
     target_ml = Column(Integer, default=2500)
-    updated_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=now_co)
 
 class MealTrackingDB(Base):
     __tablename__ = "meal_tracking"
@@ -1466,7 +1480,7 @@ class MealTrackingDB(Base):
     completed = Column(Integer, default=0)
     completed_at = Column(String(50), nullable=True)
     created_at = Column(String(50))
-    updated_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=now_co)
 
 class MealFoodItemDB(Base):
     __tablename__ = "meal_food_items"
@@ -1854,8 +1868,8 @@ class SupportTicketDB(Base):
     priority = Column(String(20), default="normal")  # low, normal, high
     admin_response = Column(Text, nullable=True)
     admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # quien respondió
-    created_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    updated_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
     resolved_at = Column(String(50), nullable=True)
 
 class FAQDB(Base):
@@ -1867,8 +1881,29 @@ class FAQDB(Base):
     answer = Column(Text, nullable=False)
     order = Column(Integer, default=0)  # para ordenar las FAQs
     is_active = Column(Boolean, default=True)
-    created_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    updated_at = Column(String(50), default=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+class ArticleDB(Base):
+    """Artículos del home público, publicados por el superadmin."""
+    __tablename__ = "articles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    excerpt = Column(Text, nullable=True)
+    content = Column(Text, nullable=False)
+    category = Column(String(80), default="Nutrición")
+    author = Column(String(150), nullable=True)
+    image = Column(String(500), nullable=True)
+    is_published = Column(Boolean, default=False)
+    published_at = Column(String(50), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+Base.metadata.create_all(bind=engine)
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -2000,7 +2035,7 @@ def calcular_edad_detallada(fecha_nacimiento: Optional[date]) -> str:
     if not fecha_nacimiento:
         return "Edad no registrada"
     
-    hoy = datetime.now().date()
+    hoy = today_co()
     
     # Calcular años
     años = hoy.year - fecha_nacimiento.year
@@ -2116,7 +2151,7 @@ def build_nutrition_report_bytes(patient_id: int, db: Session):
     p.setFont("Helvetica-Bold", 20)
     p.drawString(50, height - 48, "NutriData — Informe Nutricional Profesional")
     p.setFont("Helvetica", 9)
-    p.drawString(50, height - 66, f"Generado: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    p.drawString(50, height - 66, f"Generado: {now_co().strftime('%Y-%m-%d %H:%M COT')}")
 
     card_x = 40
     card_w = width - 80
@@ -2429,7 +2464,7 @@ def build_nutrition_report_bytes(patient_id: int, db: Session):
     buffer.seek(0)
     pdf_bytes = buffer.getvalue()
     safe_name = (f"{patient.nombres or ''}_{patient.apellidos or ''}".strip() or "paciente").replace(" ", "_")
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    date_str = now_co().strftime("%Y-%m-%d")
     filename = f"informe_nutricional_{safe_name}_{date_str}.pdf"
     return pdf_bytes, filename
 
@@ -2587,7 +2622,7 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
         p.setFont("Helvetica-Bold", 16)
         p.drawCentredString(width / 2, height - 40, "HISTORIA CLÍNICA NUTRICIONAL")
         p.setFont("Helvetica", 9)
-        p.drawCentredString(width / 2, height - 55, f"NutriData  ·  Fecha documento: {data.get('fecha') or datetime.utcnow().strftime('%Y-%m-%d')}")
+        p.drawCentredString(width / 2, height - 55, f"NutriData  ·  Fecha documento: {data.get('fecha') or now_co().strftime('%Y-%m-%d')}")
         y = height - 80
     except Exception:
         # Fallback a encabezado de texto si la imagen no carga
@@ -2597,7 +2632,7 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
         p.setFont("Helvetica-Bold", 16)
         p.drawString(left, height - 32, "FORMATO HISTORIA CLÍNICA NUTRICIONAL")
         p.setFont("Helvetica", 9)
-        p.drawString(left, height - 48, f"NutriData  ·  Fecha documento: {data.get('fecha') or datetime.utcnow().strftime('%Y-%m-%d')}")
+        p.drawString(left, height - 48, f"NutriData  ·  Fecha documento: {data.get('fecha') or now_co().strftime('%Y-%m-%d')}")
         heading("Información general")
     label_value("Nº historia nutricional", str(data.get("numero_historia") or ""))
     label_value("Nombre", str(data.get("nombre") or f"{patient.nombres or ''} {patient.apellidos or ''}".strip()))
@@ -2701,7 +2736,7 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
     buffer.seek(0)
     pdf_bytes = buffer.getvalue()
     safe_name = (f"{patient.nombres or ''}_{patient.apellidos or ''}".strip() or "paciente").replace(" ", "_")
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    date_str = now_co().strftime("%Y-%m-%d")
     filename = f"historia_clinica_{safe_name}_{date_str}.pdf"
     return pdf_bytes, filename
 
@@ -2710,7 +2745,7 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
 
 def _patient_next_appointment_label(db: Session, patient_id: int) -> str:
     """Próxima cita real (agenda), no start_date del plan."""
-    today = datetime.now().date()
+    today = today_co()
     next_apt = (
         db.query(AppointmentDB)
         .filter(
@@ -2918,7 +2953,7 @@ def get_consultation_queue(
     current_user: UserDB = Depends(require_admin_or_superadmin),
 ):
     """Cola de próximas consultas para el flujo de atención."""
-    today = datetime.now().date()
+    today = today_co()
     end = today + timedelta(days=max(0, min(days, 14)))
     query = db.query(AppointmentDB).filter(
         AppointmentDB.date >= today,
@@ -3060,7 +3095,7 @@ def get_consultation_prep(
             "notes": m.notes,
         }
 
-    today_str = datetime.now().date().strftime("%Y-%m-%d")
+    today_str = today_co().strftime("%Y-%m-%d")
     return {
         "appointment": appointment_to_response(apt),
         "patient": _patient_to_response_dict(patient, db),
@@ -3092,7 +3127,7 @@ def send_appointment_reminders_24h(
     current_user: UserDB = Depends(require_admin_or_superadmin),
 ):
     """Notificaciones in-app (+ WhatsApp best-effort) para citas de mañana."""
-    tomorrow = datetime.now().date() + timedelta(days=1)
+    tomorrow = today_co() + timedelta(days=1)
     query = db.query(AppointmentDB).filter(
         AppointmentDB.date == tomorrow,
         AppointmentDB.status != "cancelada",
@@ -3447,7 +3482,7 @@ def create_patient_recall(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    recall_date = datetime.now().date()
+    recall_date = today_co()
     if recall_data.date:
         try:
             recall_date = datetime.strptime(recall_data.date, "%Y-%m-%d").date()
@@ -3752,7 +3787,7 @@ def get_dashboard_chart_data(
     current_user: UserDB = Depends(require_admin_or_superadmin),
 ):
     """Datos para el gráfico de actividad. Si es admin, solo consultas y asignaciones de sus pacientes."""
-    end_date = datetime.now()
+    end_date = now_co()
     start_date = end_date - timedelta(days=180)
     
     my_patient_ids = []
@@ -4101,7 +4136,7 @@ async def _save_recipe_image(image: Optional[UploadFile]) -> Optional[str]:
         return None
     await validate_upload_file(image)
     safe_name = sanitize_filename(image.filename)
-    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_name}"
+    filename = f"{now_co().strftime('%Y%m%d%H%M%S')}_{safe_name}"
     file_path = os.path.join(UPLOAD_DIR, filename)
     with open(file_path, "wb") as buffer:
         import shutil
@@ -4345,7 +4380,7 @@ def create_meal_plan(plan: MealPlanCreate, db: Session = Depends(get_db)):
         fase_2=fase_2,
         fase_3=fase_3,
         fase_4=fase_4,
-        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
     )
     db.add(new_plan)
     db.commit()
@@ -4596,7 +4631,7 @@ def assign_plan_with_weekly_menu(
     assignment = PatientMealPlanDB(
         patient_id=patient_id,
         meal_plan_id=meal_plan_id,
-        assigned_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        assigned_date=now_co().strftime("%Y-%m-%d %H:%M:%S"),
         start_date=start_date_str,
         status="active",
         current_week=1,
@@ -4808,7 +4843,7 @@ def assign_plan_to_patient(
     new_assignment = PatientMealPlanDB(
         patient_id=assignment.patient_id,
         meal_plan_id=assignment.meal_plan_id,
-        assigned_date=datetime.now().strftime("%Y-%m-%d"),
+        assigned_date=now_co().strftime("%Y-%m-%d"),
         start_date=assignment.start_date,
         end_date=assignment.end_date,
         notes=assignment.notes,
@@ -4938,7 +4973,7 @@ def get_appointments_stats(
     current_user: UserDB = Depends(require_admin_or_superadmin),
 ):
     """Estadísticas generales de citas (alcance del nutricionista)."""
-    today = datetime.now().date()
+    today = today_co()
 
     today_query = scope_appointments_query_for_user(
         db.query(AppointmentDB).filter(AppointmentDB.date == today),
@@ -5037,7 +5072,7 @@ def get_patient_appointments(
     query = db.query(AppointmentDB).filter(AppointmentDB.patient_id == patient_id)
 
     if not include_past:
-        query = query.filter(AppointmentDB.date >= datetime.now().date())
+        query = query.filter(AppointmentDB.date >= today_co())
 
     appointments = query.order_by(AppointmentDB.date, AppointmentDB.time).all()
     return [appointment_to_response(apt) for apt in appointments]
@@ -5089,7 +5124,7 @@ def create_appointment(
             detail=f"Ya existe una cita que se solapa con {appointment_data.date} a las {appointment_data.time}",
         )
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
     new_appointment = AppointmentDB(
         patient_id=appointment_data.patient_id,
         patient_name=appointment_data.patient_name,
@@ -5174,7 +5209,7 @@ def update_appointment(
     for key, value in update_data.items():
         setattr(appointment, key, value)
 
-    appointment.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    appointment.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
 
     db.commit()
     db.refresh(appointment)
@@ -5200,7 +5235,7 @@ def update_appointment_status(
         raise HTTPException(status_code=400, detail="Estado inválido")
 
     appointment.status = status_data.status
-    appointment.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    appointment.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
 
     db.commit()
 
@@ -5260,7 +5295,7 @@ def calculate_trend(metrics: List[ProgressMetricDB]) -> str:
 
 def calculate_weekly_adherence(patient_id: int, db: Session) -> int:
     """Calcula la adherencia de la semana actual basada en comidas completadas"""
-    today = datetime.now().date()
+    today = today_co()
     # Inicio de la semana (Lunes)
     week_start = today - timedelta(days=today.weekday())
     
@@ -5351,7 +5386,7 @@ def get_patients_progress(
             trend_value = "up" if patient.peso_actual > metrics[0].weight else "down"
         adherence = calculate_weekly_adherence(patient.id, db)
         
-        last_update = metrics[0].date.strftime("%Y-%m-%d") if metrics else datetime.now().strftime("%Y-%m-%d")
+        last_update = metrics[0].date.strftime("%Y-%m-%d") if metrics else now_co().strftime("%Y-%m-%d")
         
         progress_calc = calcular_progreso(current_weight, goal_weight, initial_weight)
         
@@ -5397,7 +5432,7 @@ def get_patient_progress_details(
     ).first()
     
     plan_name = "Sin plan"
-    start_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = now_co().strftime("%Y-%m-%d")
     
     if active_plan_assignment:
         plan = db.query(MealPlanDB).filter(
@@ -5470,7 +5505,7 @@ def get_patient_progress_details(
     if metrics and patient.peso_actual is not None and abs(patient.peso_actual - metrics[-1].weight) >= 0.3:
         trend_value = "up" if patient.peso_actual > metrics[-1].weight else "down"
     adherence = calculate_weekly_adherence(patient_id, db)
-    last_update = metrics[-1].date.strftime("%Y-%m-%d") if metrics else datetime.now().strftime("%Y-%m-%d")
+    last_update = metrics[-1].date.strftime("%Y-%m-%d") if metrics else now_co().strftime("%Y-%m-%d")
     progress_percentage = calcular_progreso(current_weight, goal_weight, initial_weight)
 
     return {
@@ -5525,7 +5560,7 @@ def create_progress_metric(
         chest=metric_data.chest,
         arm=metric_data.arm,
         notes=metric_data.notes,
-        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
     )
     
     db.add(new_metric)
@@ -5808,7 +5843,7 @@ def create_nutritionist_note(
         patient_id=note_data.patient_id,
         note=note_data.note,
         created_by=author_id,
-        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
     )
     
     db.add(new_note)
@@ -5957,7 +5992,7 @@ def _relative_joined_label(created_at) -> str:
     created = _parse_user_created_date(created_at)
     if not created:
         return "Reciente"
-    days = (datetime.now().date() - created).days
+    days = (today_co() - created).days
     if days <= 0:
         return "Hoy"
     if days == 1:
@@ -6020,7 +6055,7 @@ def get_dashboard_stats(
     ]
 
     # Nuevos pacientes por mes (created_at) — cuentas reales
-    today = datetime.now().date()
+    today = today_co()
     this_month_start, next_month_start = _month_bounds(today)
     prev_month_end = this_month_start - timedelta(days=1)
     prev_month_start, _ = _month_bounds(prev_month_end)
@@ -6267,7 +6302,7 @@ def get_upcoming_appointments(
     Obtener próximas citas programadas.
     Si el usuario es admin (nutricionista), solo citas de sus pacientes asignados.
     """
-    today = datetime.now().date()
+    today = today_co()
     query = db.query(AppointmentDB).filter(
         AppointmentDB.date >= today,
         AppointmentDB.status != "cancelada",
@@ -6387,7 +6422,7 @@ def get_weekly_overview(
     """
     Obtener resumen semanal de actividad
     """
-    today = datetime.now().date()
+    today = today_co()
     week_start = today - timedelta(days=today.weekday())
     
     weekly_data = []
@@ -6482,12 +6517,12 @@ def get_activity_feed(
             "type": "new_patient",
             "title": "Nuevo paciente registrado",
             "description": f"{patient.nombres} {patient.apellidos} se unió a la plataforma",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": now_co().strftime("%Y-%m-%d %H:%M:%S"),
             "icon": "user-plus"
         })
     
     # Citas completadas hoy
-    today = datetime.now().date()
+    today = today_co()
     completed_appointments = db.query(AppointmentDB).filter(
         AppointmentDB.date == today,
         AppointmentDB.status == "confirmada"
@@ -6560,7 +6595,7 @@ def get_appointments_by_type(
     """
     Obtener distribución de citas por tipo (presencial/videollamada)
     """
-    today = datetime.now().date()
+    today = today_co()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     
@@ -6591,7 +6626,7 @@ def get_patient_upcoming_appointments(
     """
     authorize_patient_access(patient_id, current_user, db)
     
-    today = datetime.now().date()
+    today = today_co()
     
     # Obtener citas futuras del paciente
     upcoming_appointments = db.query(AppointmentDB).filter(
@@ -6644,7 +6679,7 @@ def get_patient_past_appointments(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     
     # Obtener citas pasadas
     past_appointments = db.query(AppointmentDB).filter(
@@ -6765,7 +6800,7 @@ def request_appointment(
             detail="El horario seleccionado no está disponible"
         )
     
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     new_appointment = AppointmentDB(
         patient_id=patient_id,
@@ -6848,7 +6883,7 @@ def reschedule_appointment(
         )
     
     # No permitir reprogramar citas ya completadas
-    if appointment.date < datetime.now().date():
+    if appointment.date < today_co():
         raise HTTPException(
             status_code=400,
             detail="No se pueden reprogramar citas pasadas"
@@ -6883,7 +6918,7 @@ def reschedule_appointment(
     appointment.date = new_date
     appointment.time = new_time
     appointment.status = "pendiente"  # Volver a pendiente para confirmación
-    appointment.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    appointment.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     db.refresh(appointment)
@@ -6922,21 +6957,21 @@ def cancel_appointment_patient(
         )
     
     # Verificar que la cita no sea en el pasado
-    if appointment.date < datetime.now().date():
+    if appointment.date < today_co():
         raise HTTPException(
             status_code=400,
             detail="No se pueden cancelar citas pasadas"
         )
     
     # Verificar que no sea una cita muy próxima (opcional, menos de 24 horas)
-    hours_until = (datetime.combine(appointment.date, datetime.strptime(appointment.time, "%H:%M").time()) - datetime.now()).total_seconds() / 3600
+    hours_until = (datetime.combine(appointment.date, datetime.strptime(appointment.time, "%H:%M").time()) - now_co()).total_seconds() / 3600
     
     if hours_until < 24:
         # Aún permitir cancelación pero con advertencia
         pass
     
     appointment.status = "cancelada"
-    appointment.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    appointment.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     
@@ -6959,7 +6994,7 @@ def get_patient_appointment_stats(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     
     # Total de citas
     total_appointments = db.query(AppointmentDB).filter(
@@ -7033,7 +7068,7 @@ def get_available_times_for_patient(
         raise HTTPException(status_code=400, detail="Formato de fecha inválido")
     
     # No permitir fechas pasadas
-    if target_date < datetime.now().date():
+    if target_date < today_co():
         raise HTTPException(status_code=400, detail="No se pueden agendar citas en fechas pasadas")
     
     available_slots_list, _occupied = compute_available_slots_for_date(
@@ -7075,7 +7110,7 @@ def get_patient_dashboard_summary(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     
     # Próxima cita
     next_appointment = db.query(AppointmentDB).filter(
@@ -7194,7 +7229,7 @@ def update_admin_profile(
     
     user.telefono = profile_data.phone
     user.direccion = profile_data.address
-    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     # Obtener o crear perfil extendido
     admin_profile = db.query(AdminProfileDB).filter(
@@ -7306,7 +7341,7 @@ def change_admin_password(
     
     # Actualizar contraseña
     user.password = pwd_context.hash(password_data.new_password)
-    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     
@@ -7612,6 +7647,9 @@ class PatientAppearanceSettingsDB(Base):
     user = relationship("UserDB", foreign_keys=[user_id])
 
 # Modelo para configuración del sistema (superadmin)
+DEFAULT_HERO_IMAGE = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=2000&q=80"
+
+
 class SystemSettingsDB(Base):
     __tablename__ = "system_settings"
     id = Column(Integer, primary_key=True, index=True)
@@ -7626,10 +7664,22 @@ class SystemSettingsDB(Base):
     maintenance_mode = Column(Integer, default=0)
     email_notifications = Column(Integer, default=1)
     slack_notifications = Column(Integer, default=0)
+    hero_image = Column(String(500), nullable=True)
     updated_at = Column(String(50))
 
 # Crear las tablas
 Base.metadata.create_all(bind=engine)
+
+# Migración: columna hero_image en system_settings
+try:
+    _inspector = inspect(engine)
+    if "system_settings" in _inspector.get_table_names():
+        _cols = {c["name"] for c in _inspector.get_columns("system_settings")}
+        if "hero_image" not in _cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE system_settings ADD COLUMN hero_image VARCHAR(500) NULL"))
+except Exception as _mig_err:
+    print(f"[MIGRATE] system_settings.hero_image: {_mig_err}")
 
 # Esquemas Pydantic para pacientes
 class PatientNotificationSettingsUpdate(BaseModel):
@@ -7834,7 +7884,7 @@ def change_patient_password(
     
     # Actualizar contraseña
     user.password = pwd_context.hash(password_data.new_password)
-    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     
@@ -7844,6 +7894,77 @@ def change_patient_password(
     }
 
 # ==================== ENDPOINTS DE CONFIGURACIÓN PARA SUPERADMIN ====================
+
+def _resolve_media_url(path: Optional[str], fallback: str = "") -> str:
+    if not path:
+        return fallback
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    if path.startswith("/uploads/"):
+        return f"{BASE_URL.rstrip('/')}{path}"
+    return path
+
+
+def _get_or_create_system_settings(db: Session) -> SystemSettingsDB:
+    settings = db.query(SystemSettingsDB).first()
+    if settings:
+        return settings
+    settings = SystemSettingsDB(
+        site_name="NutriData",
+        support_email="soporte@nutridata.com",
+        max_users_per_org=100,
+        max_patients_per_nutritionist=50,
+        enable_registration=1,
+        require_email_verification=1,
+        enable_two_factor=0,
+        maintenance_mode=0,
+        email_notifications=1,
+        slack_notifications=0,
+        hero_image=DEFAULT_HERO_IMAGE,
+        updated_at=now_co().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+@app.get("/api/home/hero")
+def get_public_home_hero(db: Session = Depends(get_db)):
+    """Imagen del hero del home público."""
+    settings = db.query(SystemSettingsDB).first()
+    raw = (settings.hero_image if settings and settings.hero_image else None) or DEFAULT_HERO_IMAGE
+    return {"heroImage": _resolve_media_url(raw, DEFAULT_HERO_IMAGE)}
+
+
+@app.put("/api/superadmin/home/hero")
+async def update_home_hero(
+    image_url: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Actualizar imagen del hero del home (URL o archivo)."""
+    settings = _get_or_create_system_settings(db)
+
+    saved = await _save_recipe_image(image)
+    if saved:
+        settings.hero_image = saved
+    elif image_url is not None:
+        cleaned = image_url.strip()
+        settings.hero_image = cleaned or DEFAULT_HERO_IMAGE
+    else:
+        raise HTTPException(status_code=400, detail="Envía una imagen o una URL")
+
+    settings.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    db.refresh(settings)
+    return {
+        "success": True,
+        "heroImage": _resolve_media_url(settings.hero_image, DEFAULT_HERO_IMAGE),
+        "message": "Imagen del hero actualizada",
+    }
+
 
 @app.get("/api/superadmin/settings/{user_id}")
 def get_system_settings(user_id: int, db: Session = Depends(get_db)):
@@ -7856,26 +7977,7 @@ def get_system_settings(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=403, detail="Acceso denegado")
     
-    # Obtener o crear configuración del sistema
-    settings = db.query(SystemSettingsDB).first()
-    
-    if not settings:
-        settings = SystemSettingsDB(
-            site_name="NutriData",
-            support_email="soporte@nutridata.com",
-            max_users_per_org=100,
-            max_patients_per_nutritionist=50,
-            enable_registration=1,
-            require_email_verification=1,
-            enable_two_factor=0,
-            maintenance_mode=0,
-            email_notifications=1,
-            slack_notifications=0,
-            updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-        db.add(settings)
-        db.commit()
-        db.refresh(settings)
+    settings = _get_or_create_system_settings(db)
     
     return {
         "siteName": settings.site_name,
@@ -7887,7 +7989,8 @@ def get_system_settings(user_id: int, db: Session = Depends(get_db)):
         "enableTwoFactor": bool(settings.enable_two_factor),
         "maintenanceMode": bool(settings.maintenance_mode),
         "emailNotifications": bool(settings.email_notifications),
-        "slackNotifications": bool(settings.slack_notifications)
+        "slackNotifications": bool(settings.slack_notifications),
+        "heroImage": _resolve_media_url(settings.hero_image, DEFAULT_HERO_IMAGE),
     }
 
 @app.put("/api/superadmin/settings/{user_id}")
@@ -7921,7 +8024,7 @@ def update_system_settings(
     settings.maintenance_mode = int(settings_data.maintenanceMode)
     settings.email_notifications = int(settings_data.emailNotifications)
     settings.slack_notifications = int(settings_data.slackNotifications)
-    settings.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    settings.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     
@@ -7950,7 +8053,7 @@ def get_patient_dashboard(patient_id: int, db: Session = Depends(get_db)):
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     
     # 1. Información básica del paciente
     patient_info = {
@@ -8111,7 +8214,7 @@ def get_today_meals(patient_id: int, db: Session = Depends(get_db)):
     
     if not active_plan:
         return {
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": now_co().strftime("%Y-%m-%d"),
             "meals": [],
             "total_calories": 0,
             "message": "No tienes un plan activo asignado"
@@ -8129,14 +8232,14 @@ def get_today_meals(patient_id: int, db: Session = Depends(get_db)):
     
     if not weekly_menu:
         return {
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": now_co().strftime("%Y-%m-%d"),
             "meals": [],
             "total_calories": 0,
             "message": "No hay menú configurado para esta semana"
         }
     
     # Determinar el día de la semana
-    today = datetime.now()
+    today = now_co()
     day_name = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][today.weekday()]
     
     # Obtener las comidas del día
@@ -8266,7 +8369,7 @@ def complete_meal_legacy_1(patient_id: int, meal_id: str, db: Session = Depends(
         "success": True,
         "message": "Comida marcada como completada",
         "meal_id": meal_id,
-        "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "completed_at": now_co().strftime("%Y-%m-%d %H:%M:%S")
     }
 
 # ==================== ENDPOINTS DE PROGRESO DEL PACIENTE ====================
@@ -8423,7 +8526,7 @@ def add_progress_metric_patient(
         chest=metric_data.chest,
         arm=metric_data.arm,
         notes=metric_data.notes,
-        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
     )
     
     db.add(new_metric)
@@ -8478,7 +8581,7 @@ def get_patient_complete_profile(patient_id: int, db: Session = Depends(get_db))
     
     completed_appointments = db.query(AppointmentDB).filter(
         AppointmentDB.patient_id == patient_id,
-        AppointmentDB.date < datetime.now().date(),
+        AppointmentDB.date < today_co(),
         AppointmentDB.status != "cancelada"
     ).count()
     
@@ -8596,7 +8699,7 @@ def update_patient_own_profile(
         except:
             pass
     
-    patient.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    patient.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     
@@ -8616,7 +8719,7 @@ def get_patient_notifications(patient_id: int, db: Session = Depends(get_db)):
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     notifications = []
     
     # Notificación de próxima cita
@@ -8690,7 +8793,7 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     
     # 1. Obtener comidas del día desde el plan activo
     today_meals = get_patient_today_meals(patient_id, today, db)
@@ -8845,7 +8948,7 @@ def get_patient_dashboard_complete(patient_id: int, db: Session = Depends(get_db
         "Muévete más. Incluso pequeñas caminatas durante el día suman para tu salud general.",
         "Come con atención plena. Evita distracciones y disfruta cada bocado conscientemente."
     ]
-    day_of_year = datetime.now().timetuple().tm_yday
+    day_of_year = now_co().timetuple().tm_yday
     tip_of_day = tips[day_of_year % len(tips)]
     
     return {
@@ -9293,7 +9396,7 @@ def calculate_previous_week_adherence(patient_id: int, db: Session) -> int:
     """
     Calcular la adherencia de la semana anterior
     """
-    today = datetime.now().date()
+    today = today_co()
     prev_week_start = today - timedelta(days=today.weekday() + 7)
     prev_week_end = prev_week_start + timedelta(days=6)
     
@@ -9327,7 +9430,7 @@ def add_water_glass(
     """
     Agregar un vaso de agua (250ml por defecto)
     """
-    today = datetime.now().date()
+    today = today_co()
     
     water_tracking = db.query(WaterTrackingDB).filter(
         WaterTrackingDB.patient_id == patient_id,
@@ -9339,12 +9442,12 @@ def add_water_glass(
             patient_id=patient_id,
             date=today,
             amount_ml=glass_ml,
-            updated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            updated_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
         )
         db.add(water_tracking)
     else:
         water_tracking.amount_ml += glass_ml
-        water_tracking.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        water_tracking.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
     db.refresh(water_tracking)
@@ -9364,7 +9467,7 @@ def complete_meal_legacy_2(
     db: Session = Depends(get_db)
 ):
     """Marcar una comida como completada"""
-    today = datetime.now().date()
+    today = today_co()
     
     # Buscar si ya existe registro
     tracking = db.query(MealTrackingDB).filter(
@@ -9375,14 +9478,14 @@ def complete_meal_legacy_2(
     
     if tracking:
         tracking.completed = True
-        tracking.updated_at = datetime.now()
+        tracking.updated_at = now_co()
     else:
         tracking = MealTrackingDB(
             patient_id=patient_id,
             date=today,
             meal_type=meal_data.meal_type,
             completed=True,
-            updated_at=datetime.now()
+            updated_at=now_co()
         )
         db.add(tracking)
         
@@ -9396,7 +9499,7 @@ def uncomplete_meal_legacy(
     db: Session = Depends(get_db)
 ):
     """Desmarcar una comida"""
-    today = datetime.now().date()
+    today = today_co()
     
     tracking = db.query(MealTrackingDB).filter(
         MealTrackingDB.patient_id == patient_id,
@@ -9406,7 +9509,7 @@ def uncomplete_meal_legacy(
     
     if tracking:
         tracking.completed = False
-        tracking.updated_at = datetime.now()
+        tracking.updated_at = now_co()
         db.commit()
         
     return {"success": True}
@@ -9786,7 +9889,7 @@ def get_patient_meals_detailed(patient_id: int, db: Session = Depends(get_db)):
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    today = datetime.now().date()
+    today = today_co()
     
     # Obtener plan activo
     active_plan = db.query(PatientMealPlanDB).filter(
@@ -10147,7 +10250,7 @@ def initialize_single_meal_from_plan(patient_id: int, date: datetime.date, meal_
             meal_name=f"Comida {meal_type}",
             calories=0,
             completed=0,
-            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
         )
         db.add(tracking)
         db.flush()
@@ -10286,7 +10389,7 @@ def _internal_initialize_meals(patient_id: int, meal_date: date, db: Session, ac
             meal_name=meal_info["name"],
             calories=meal_data.get("calorias") or 0,
             completed=0,
-            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
         )
         db.add(meal_tracking)
         db.flush()
@@ -10412,7 +10515,7 @@ def toggle_food_item(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    meal_date = datetime.strptime(toggle_data.date, "%Y-%m-%d").date() if toggle_data.date else datetime.now().date()
+    meal_date = datetime.strptime(toggle_data.date, "%Y-%m-%d").date() if toggle_data.date else today_co()
     
     # Buscar el tracking de la comida
     meal_tracking = db.query(MealTrackingDB).filter(
@@ -10450,7 +10553,7 @@ def toggle_food_item(
     # Actualizar estado de la comida
     if all_checked:
         meal_tracking.completed = 1
-        meal_tracking.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        meal_tracking.completed_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     else:
         meal_tracking.completed = 0
         meal_tracking.completed_at = None
@@ -10488,7 +10591,7 @@ def toggle_meal_status(
             raise HTTPException(status_code=404, detail="Comida no encontrada")
         
         meal_tracking.completed = 1
-        meal_tracking.completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        meal_tracking.completed_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
         
         db.query(MealFoodItemDB).filter(
             MealFoodItemDB.meal_tracking_id == meal_tracking.id
@@ -10527,7 +10630,7 @@ def add_food_to_meal(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    meal_date = datetime.strptime(food_data.date, "%Y-%m-%d").date() if food_data.date else datetime.now().date()
+    meal_date = datetime.strptime(food_data.date, "%Y-%m-%d").date() if food_data.date else today_co()
     
     # Buscar o crear el tracking de la comida
     meal_tracking = db.query(MealTrackingDB).filter(
@@ -10544,7 +10647,7 @@ def add_food_to_meal(
             meal_name=f"Comida {food_data.meal_type}",
             calories=0,
             completed=0,
-            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            created_at=now_co().strftime("%Y-%m-%d %H:%M:%S")
         )
         db.add(meal_tracking)
         db.flush()
@@ -10595,7 +10698,7 @@ def remove_food_from_meal(
     """
     Eliminar un alimento de una comida
     """
-    meal_date = datetime.strptime(date, "%Y-%m-%d").date() if date else datetime.now().date()
+    meal_date = datetime.strptime(date, "%Y-%m-%d").date() if date else today_co()
     
     # Buscar el tracking de la comida
     meal_tracking = db.query(MealTrackingDB).filter(
@@ -10637,7 +10740,7 @@ def initialize_meals_for_day(
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     
-    meal_date = datetime.strptime(date, "%Y-%m-%d").date() if date else datetime.now().date()
+    meal_date = datetime.strptime(date, "%Y-%m-%d").date() if date else today_co()
     
     # Verificar si ya existen comidas para este día
     existing = db.query(MealTrackingDB).filter(
@@ -11099,7 +11202,7 @@ def create_weekly_menu(
     """
     Crear un nuevo menú semanal
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     # Mapear días en español a inglés
     days_map = {
@@ -11248,7 +11351,7 @@ def update_weekly_menu(
         menu.avg_carbs = totals["avg_carbs"]
         menu.avg_fat = totals["avg_fat"]
     
-    menu.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    menu.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     try:
         db.commit()
@@ -11316,7 +11419,7 @@ def duplicate_weekly_menu(
         raise HTTPException(status_code=404, detail="Menú no encontrado")
     _authorize_menu_access(original, current_user)
     
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     creator_id = current_user.id if getattr(current_user, "role", None) in ("admin", "superadmin") else None
     duplicate = WeeklyMenuCompleteDB(
@@ -11413,7 +11516,7 @@ def assign_weekly_menu(
                 fat_target=menu.avg_fat,
                 meals_per_day=5,
                 is_active=1,
-                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                created_at=now_co().strftime("%Y-%m-%d %H:%M:%S"),
             )
             db.add(temp_plan)
             db.flush()
@@ -11423,7 +11526,7 @@ def assign_weekly_menu(
             assignment = PatientMealPlanDB(
                 patient_id=patient.id,
                 meal_plan_id=temp_plan.id,
-                assigned_date=datetime.now().strftime("%Y-%m-%d"),
+                assigned_date=now_co().strftime("%Y-%m-%d"),
                 start_date=assignment_data.start_date,
                 current_week=1,
                 status="active",
@@ -11470,7 +11573,7 @@ def export_weekly_menu(menu_id: int, db: Session = Depends(get_db)):
     export_data = serialize_weekly_menu(menu)
     
     # Agregar información adicional para exportación
-    export_data["export_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    export_data["export_date"] = now_co().strftime("%Y-%m-%d %H:%M:%S")
     export_data["export_format"] = "pdf"
     
     return export_data
@@ -11543,7 +11646,7 @@ def change_patient_weekly_menu(
         except ValueError:
             raise HTTPException(status_code=400, detail="Formato de fecha inválido")
     else:
-        start_date = datetime.now().date() + timedelta(days=1)
+        start_date = today_co() + timedelta(days=1)
 
     db.query(DailyMealAssignmentDB).filter(
         DailyMealAssignmentDB.patient_meal_plan_id == active_plan.id,
@@ -11606,7 +11709,7 @@ def get_patient_menu_history(patient_id: int, db: Session = Depends(get_db)):
                 "menu_name": menu.name,
                 "start_date": start.strftime("%Y-%m-%d"),
                 "end_date": end.strftime("%Y-%m-%d"),
-                "is_current": end >= datetime.now().date()
+                "is_current": end >= today_co()
             })
     
     return {"history": history}
@@ -11812,7 +11915,7 @@ def superadmin_create_user(
         password=hashed_pwd,
         role=user_data.role,
         status="activo",
-        created_at=datetime.now()
+        created_at=now_co()
     )
     
     try:
@@ -11885,7 +11988,7 @@ def superadmin_update_user(
     user.telefono = user_data.phone
     user.role = user_data.role
     user.status = user_data.status
-    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     try:
         db.commit()
@@ -11944,7 +12047,7 @@ def superadmin_toggle_user_status(user_id: int, db: Session = Depends(get_db)):
     else:
         user.status = "activo"
     
-    user.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     try:
         db.commit()
@@ -11974,7 +12077,7 @@ def superadmin_get_stats(db: Session = Depends(get_db)):
     inactive_users = db.query(UserDB).filter(UserDB.status == "inactivo").count()
     
     # Nuevos usuarios este mes
-    first_day_of_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    first_day_of_month = now_co().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     new_users_this_month = db.query(UserDB).filter(
         UserDB.created_at >= first_day_of_month
     ).count()
@@ -12171,7 +12274,7 @@ def superadmin_invite_nutritionist(
         password=hashed_pwd,
         role="admin",
         status="pendiente",
-        created_at=datetime.now()
+        created_at=now_co()
     )
     
     db.add(new_admin)
@@ -12267,7 +12370,7 @@ def superadmin_get_dashboard_overview(db: Session = Depends(get_db)):
     total_nutritionists = db.query(UserDB).filter(UserDB.role == "admin").count()
     new_nutritionists = db.query(UserDB).filter(
         UserDB.role == "admin",
-        UserDB.created_at >= datetime.now().replace(day=1)
+        UserDB.created_at >= now_co().replace(day=1)
     ).count()
     
     # Organizaciones (mock)
@@ -12282,7 +12385,7 @@ def superadmin_get_dashboard_overview(db: Session = Depends(get_db)):
     # Crecimiento de usuarios por mes (últimos 6 meses)
     user_growth = []
     for i in range(5, -1, -1):
-        month_start = datetime.now().replace(day=1) - timedelta(days=30*i)
+        month_start = now_co().replace(day=1) - timedelta(days=30*i)
         month_users = db.query(UserDB).filter(
             UserDB.created_at >= month_start,
             UserDB.created_at < month_start + timedelta(days=30)
@@ -12787,14 +12890,14 @@ def update_support_ticket(ticket_id: int, status: str = None, admin_response: st
     if status:
         ticket.status = status
         if status in ["resolved", "closed"]:
-            ticket.resolved_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ticket.resolved_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     if admin_response:
         ticket.admin_response = admin_response
     if admin_id:
         ticket.admin_id = admin_id
     if priority:
         ticket.priority = priority
-    ticket.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ticket.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     db.commit()
     return {"success": True, "message": "Ticket actualizado exitosamente"}
 
@@ -12824,7 +12927,7 @@ def update_faq(faq_id: int, category: str = None, question: str = None, answer: 
     if answer is not None: faq.answer = answer
     if order is not None: faq.order = order
     if is_active is not None: faq.is_active = is_active
-    faq.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    faq.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     db.commit()
     return {"success": True, "message": "FAQ actualizada exitosamente"}
 
@@ -12834,9 +12937,247 @@ def delete_faq(faq_id: int, db: Session = Depends(get_db)):
     if not faq:
         raise HTTPException(status_code=404, detail="FAQ no encontrada")
     faq.is_active = False
-    faq.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    faq.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     db.commit()
     return {"success": True, "message": "FAQ eliminada exitosamente"}
+
+
+# ==================== ARTICLES (HOME PÚBLICO / SUPERADMIN) ====================
+
+DEFAULT_ARTICLE_IMAGE = "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1200&q=80"
+
+
+class ArticleCreateSchema(BaseModel):
+    title: str
+    excerpt: Optional[str] = None
+    content: str
+    category: Optional[str] = "Nutrición"
+    author: Optional[str] = None
+    image: Optional[str] = None
+    is_published: bool = False
+
+
+class ArticleUpdateSchema(BaseModel):
+    title: Optional[str] = None
+    excerpt: Optional[str] = None
+    content: Optional[str] = None
+    category: Optional[str] = None
+    author: Optional[str] = None
+    image: Optional[str] = None
+    is_published: Optional[bool] = None
+
+
+def _resolve_article_image(image: Optional[str]) -> str:
+    if not image:
+        return DEFAULT_ARTICLE_IMAGE
+    if image.startswith("http://") or image.startswith("https://"):
+        return image
+    if image.startswith("/uploads/"):
+        return f"{BASE_URL.rstrip('/')}{image}"
+    return image
+
+
+def _article_to_dict(article: ArticleDB, include_content: bool = True) -> dict:
+    date_source = article.published_at or article.created_at or ""
+    data = {
+        "id": article.id,
+        "title": article.title,
+        "excerpt": article.excerpt or "",
+        "category": article.category or "Nutrición",
+        "author": article.author or "NutriData",
+        "image": _resolve_article_image(article.image),
+        "is_published": bool(article.is_published),
+        "published_at": article.published_at,
+        "created_at": article.created_at,
+        "updated_at": article.updated_at,
+        "date": date_source[:10] if date_source else None,
+        "created_by_id": article.created_by_id,
+    }
+    if include_content:
+        data["content"] = article.content or ""
+    return data
+
+
+@app.get("/api/articles")
+def list_published_articles(
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+    limit: int = 24,
+    db: Session = Depends(get_db),
+):
+    """Artículos publicados visibles en el home público (sin auth)."""
+    query = db.query(ArticleDB).filter(ArticleDB.is_published == True)
+    if category and category.lower() not in ("todas", "all", ""):
+        query = query.filter(ArticleDB.category == category)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            or_(
+                ArticleDB.title.like(like),
+                ArticleDB.excerpt.like(like),
+                ArticleDB.content.like(like),
+                ArticleDB.category.like(like),
+            )
+        )
+    articles = (
+        query.order_by(ArticleDB.published_at.desc(), ArticleDB.id.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return [_article_to_dict(a, include_content=False) for a in articles]
+
+
+@app.get("/api/articles/{article_id}")
+def get_published_article(article_id: int, db: Session = Depends(get_db)):
+    article = (
+        db.query(ArticleDB)
+        .filter(ArticleDB.id == article_id, ArticleDB.is_published == True)
+        .first()
+    )
+    if not article:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    related = (
+        db.query(ArticleDB)
+        .filter(
+            ArticleDB.is_published == True,
+            ArticleDB.id != article_id,
+        )
+        .order_by(ArticleDB.published_at.desc(), ArticleDB.id.desc())
+        .limit(2)
+        .all()
+    )
+    payload = _article_to_dict(article, include_content=True)
+    payload["related"] = [_article_to_dict(r, include_content=False) for r in related]
+    return payload
+
+
+@app.get("/api/superadmin/articles")
+def superadmin_list_articles(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    articles = db.query(ArticleDB).order_by(ArticleDB.id.desc()).all()
+    return [_article_to_dict(a, include_content=True) for a in articles]
+
+
+@app.post("/api/superadmin/articles")
+async def superadmin_create_article(
+    title: str = Form(...),
+    content: str = Form(...),
+    excerpt: Optional[str] = Form(None),
+    category: Optional[str] = Form("Nutrición"),
+    author: Optional[str] = Form(None),
+    image_url: Optional[str] = Form(None),
+    is_published: bool = Form(False),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    saved_image = await _save_recipe_image(image)
+    image_value = saved_image or (image_url.strip() if image_url else None)
+
+    article = ArticleDB(
+        title=title.strip(),
+        excerpt=(excerpt or "").strip() or None,
+        content=content.strip(),
+        category=(category or "Nutrición").strip(),
+        author=(author or f"{current_user.nombres} {current_user.apellidos}".strip() or "NutriData"),
+        image=image_value,
+        is_published=bool(is_published),
+        published_at=now if is_published else None,
+        created_by_id=current_user.id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(article)
+    db.commit()
+    db.refresh(article)
+    return {"success": True, "article": _article_to_dict(article)}
+
+
+@app.put("/api/superadmin/articles/{article_id}")
+async def superadmin_update_article(
+    article_id: int,
+    title: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
+    excerpt: Optional[str] = Form(None),
+    category: Optional[str] = Form(None),
+    author: Optional[str] = Form(None),
+    image_url: Optional[str] = Form(None),
+    is_published: Optional[bool] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    article = db.query(ArticleDB).filter(ArticleDB.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+
+    if title is not None:
+        article.title = title.strip()
+    if content is not None:
+        article.content = content.strip()
+    if excerpt is not None:
+        article.excerpt = excerpt.strip() or None
+    if category is not None:
+        article.category = category.strip() or "Nutrición"
+    if author is not None:
+        article.author = author.strip() or article.author
+    if image_url is not None and image_url.strip():
+        article.image = image_url.strip()
+
+    saved_image = await _save_recipe_image(image)
+    if saved_image:
+        article.image = saved_image
+
+    if is_published is not None:
+        was_published = bool(article.is_published)
+        article.is_published = bool(is_published)
+        if article.is_published and not was_published:
+            article.published_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+        if not article.is_published:
+            # keep published_at history if unpublished
+            pass
+
+    article.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    db.refresh(article)
+    return {"success": True, "article": _article_to_dict(article)}
+
+
+@app.patch("/api/superadmin/articles/{article_id}/publish")
+def superadmin_toggle_publish_article(
+    article_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    article = db.query(ArticleDB).filter(ArticleDB.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    publish = bool(payload.get("is_published", not article.is_published))
+    article.is_published = publish
+    if publish and not article.published_at:
+        article.published_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    article.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    db.refresh(article)
+    return {"success": True, "article": _article_to_dict(article)}
+
+
+@app.delete("/api/superadmin/articles/{article_id}")
+def superadmin_delete_article(
+    article_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    article = db.query(ArticleDB).filter(ArticleDB.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    db.delete(article)
+    db.commit()
+    return {"success": True, "message": "Artículo eliminado"}
 
 
 if __name__ == "__main__":

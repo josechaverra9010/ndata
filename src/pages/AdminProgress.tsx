@@ -52,6 +52,7 @@ import {
   Users,
 } from "lucide-react";
 import { API_URL } from "@/config/api";
+import { todayInColombiaISO, formatInColombia } from "@/lib/timezone";
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -141,7 +142,7 @@ const AdminProgress = () => {
   const [addMetricOpen, setAddMetricOpen] = useState(false);
   const [editingMetricId, setEditingMetricId] = useState<number | null>(null);
   const [metricForm, setMetricForm] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: todayInColombiaISO(),
     weight: "",
     body_fat: "",
     muscle: "",
@@ -158,7 +159,7 @@ const AdminProgress = () => {
   const [achievementForm, setAchievementForm] = useState({
     title: "",
     description: "",
-    achieved_date: new Date().toISOString().split('T')[0]
+    achieved_date: todayInColombiaISO()
   });
 
   // Estados para agregar nota
@@ -313,7 +314,7 @@ const AdminProgress = () => {
       setAddMetricOpen(false);
       setEditingMetricId(null);
       setMetricForm({
-        date: new Date().toISOString().split('T')[0],
+        date: todayInColombiaISO(),
         weight: "",
         body_fat: "",
         muscle: "",
@@ -403,7 +404,7 @@ const AdminProgress = () => {
       setAchievementForm({
         title: "",
         description: "",
-        achieved_date: new Date().toISOString().split('T')[0]
+        achieved_date: todayInColombiaISO()
       });
 
       fetchPatientDetails(selectedPatient.id);
@@ -520,15 +521,8 @@ const AdminProgress = () => {
   // Preparar datos para las gráficas (fechas reales)
   const prepareChartData = (metrics: Metric[]) => {
     return metrics.map((m) => {
-      let label = m.date;
-      try {
-        const d = new Date(m.date.includes("T") ? m.date : `${m.date}T00:00:00`);
-        if (!Number.isNaN(d.getTime())) {
-          label = d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
-        }
-      } catch {
-        /* keep raw */
-      }
+      const label =
+        formatInColombia(m.date, { day: "2-digit", month: "short" }) || m.date;
       return {
         date: label,
         weight: m.weight,
@@ -1070,7 +1064,7 @@ const AdminProgress = () => {
                       <Button onClick={() => {
                         setEditingMetricId(null);
                         setMetricForm({
-                          date: new Date().toISOString().split('T')[0],
+                          date: todayInColombiaISO(),
                           weight: "",
                           body_fat: "",
                           muscle: "",
@@ -1233,13 +1227,13 @@ const AdminProgress = () => {
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Inicio</span>
                               <span className="font-medium">
-                                {new Date(selectedPatient.start_date).toLocaleDateString('es-ES')}
+                                {formatInColombia(selectedPatient.start_date)}
                               </span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Última actualización</span>
                               <span className="font-medium">
-                                {new Date(selectedPatient.last_update).toLocaleDateString('es-ES')}
+                                {formatInColombia(selectedPatient.last_update)}
                               </span>
                             </div>
                             <div className="flex justify-between">
@@ -1277,7 +1271,7 @@ const AdminProgress = () => {
                               <tbody className="[&_tr:last-child]:border-0">
                                 {selectedPatient.metricsHistory.map((metric) => (
                                   <tr key={metric.id} className="border-b transition-colors hover:bg-muted/50">
-                                    <td className="p-2 align-middle">{new Date(metric.date).toLocaleDateString()}</td>
+                                    <td className="p-2 align-middle">{formatInColombia(metric.date)}</td>
                                     <td className="p-2 align-middle font-medium">{metric.weight} kg</td>
                                     <td className="p-2 align-middle">{metric.body_fat ? `${metric.body_fat}%` : '-'}</td>
                                     <td className="p-2 align-middle">{metric.muscle ? `${metric.muscle}%` : '-'}</td>
@@ -1298,7 +1292,7 @@ const AdminProgress = () => {
                                           setDeleteTarget({
                                             type: "metric",
                                             id: metric.id,
-                                            label: `métrica del ${new Date(metric.date).toLocaleDateString()}`,
+                                            label: `métrica del ${formatInColombia(metric.date)}`,
                                           })
                                         }
                                       >
@@ -1331,7 +1325,7 @@ const AdminProgress = () => {
                           setAchievementForm({
                             title: "",
                             description: "",
-                            achieved_date: new Date().toISOString().split('T')[0]
+                            achieved_date: todayInColombiaISO()
                           });
                           setAddAchievementOpen(true);
                         }} size="sm">
@@ -1353,7 +1347,7 @@ const AdminProgress = () => {
                                   </div>
                                   <div>
                                     <p className="font-medium text-sm">{achievement.title}</p>
-                                    <p className="text-xs text-muted-foreground">{new Date(achievement.date).toLocaleDateString()}</p>
+                                    <p className="text-xs text-muted-foreground">{formatInColombia(achievement.date)}</p>
                                   </div>
                                 </div>
                                 <div className="flex gap-1">
@@ -1425,7 +1419,7 @@ const AdminProgress = () => {
                                 <div className="flex-1">
                                   <p className="text-sm">{note.content}</p>
                                   <p className="text-xs text-muted-foreground mt-1">
-                                    {new Date(note.date).toLocaleDateString()}
+                                    {formatInColombia(note.date)}
                                   </p>
                                 </div>
                                 <div className="flex gap-1">

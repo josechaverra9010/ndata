@@ -24,7 +24,7 @@ export function getRedirectPath(role: UserRole): string {
     case 'superadmin':
       return '/superadmin';
     case 'admin':
-      return '/'; // Dashboard principal del nutricionista
+      return '/admin'; // Dashboard principal del nutricionista
     case 'patient':
       return '/patient'; // Ruta base para pacientes en App.tsx
     default:

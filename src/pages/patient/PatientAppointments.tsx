@@ -28,6 +28,7 @@ import { useState, useEffect, useMemo } from "react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 interface Appointment {
   id: number;
@@ -455,7 +456,7 @@ export default function PatientAppointments() {
             setNewAppointment({ ...newAppointment, date: e.target.value });
             setSelectedDate(e.target.value);
           }}
-          min={new Date().toISOString().split("T")[0]}
+          min={todayInColombiaISO()}
           className="rounded-xl"
         />
       </div>
@@ -1019,7 +1020,7 @@ export default function PatientAppointments() {
                     setNewAppointment({ ...newAppointment, date: e.target.value });
                     setSelectedDate(e.target.value);
                   }}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={todayInColombiaISO()}
                   className="rounded-xl"
                 />
               </div>

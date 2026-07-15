@@ -35,6 +35,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 interface FoodItem {
   name: string;
@@ -122,7 +123,7 @@ export default function PatientMeals() {
           },
           body: JSON.stringify({
             meal_type: selectedMealId,
-            date: new Date().toISOString().split('T')[0],
+            date: todayInColombiaISO(),
             food: newFood
           })
         }
@@ -155,7 +156,7 @@ export default function PatientMeals() {
     try {
       const token = localStorage.getItem("userToken");
       const response = await fetch(
-        `${API_URL}/patient/${patientId}/meals/food/remove?meal_type=${mealId}&food_name=${encodeURIComponent(foodName)}&date=${new Date().toISOString().split('T')[0]}`,
+        `${API_URL}/patient/${patientId}/meals/food/remove?meal_type=${mealId}&food_name=${encodeURIComponent(foodName)}&date=${todayInColombiaISO()}`,
         {
           method: 'DELETE',
           headers: {
@@ -281,7 +282,7 @@ export default function PatientMeals() {
           body: JSON.stringify({
             meal_type: mealId,
             food_name: foodName,
-            date: new Date().toISOString().split('T')[0]
+            date: todayInColombiaISO()
           })
         }
       );

@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { todayInColombiaISO } from "@/lib/timezone";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -278,7 +279,12 @@ export function NewAppointmentDialog({
                       setFormData({ ...formData, date, time: "" })
                     }
                     locale={es}
-                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                    disabled={(date) => {
+                      const [y, m, d] = todayInColombiaISO().split("-").map(Number);
+                      const min = new Date(y, m - 1, d);
+                      min.setHours(0, 0, 0, 0);
+                      return date < min;
+                    }}
                     className="rounded-xl"
                   />
                 </PopoverContent>

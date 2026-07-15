@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { Recordatorio24hForm } from "./Recordatorio24hForm";
 import { useToast } from "@/hooks/use-toast";
+import { formatInColombia, formatDateTimeInColombia } from "@/lib/timezone";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -212,21 +213,14 @@ export function PatientDetailsDialog({
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return "No especificado";
     if (dateString === "Sin cita" || dateString === "Sin programar") return "Sin cita";
-
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString;
-
-      return date.toLocaleDateString('es-ES', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: dateString.includes(":") ? '2-digit' : undefined,
-        minute: dateString.includes(":") ? '2-digit' : undefined,
-      });
-    } catch {
-      return dateString;
+    if (dateString.includes(":")) {
+      return formatDateTimeInColombia(dateString) || dateString;
     }
+    return formatInColombia(dateString, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }) || dateString;
   };
 
   const fetchRecalls = async () => {

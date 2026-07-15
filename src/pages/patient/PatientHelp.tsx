@@ -12,6 +12,7 @@ import { HelpCircle, Send, Search, MessageCircle, CheckCircle, Clock, AlertCircl
 import { useAuth } from "@/hooks/useAuth";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
+import { formatInColombia } from "@/lib/timezone";
 
 interface FAQ {
     id: number;
@@ -353,7 +354,7 @@ const PatientHelp = () => {
                                         <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
                                             <span>Categoría: {categories.find(c => c.value === ticket.category)?.label || ticket.category}</span>
                                             <span>•</span>
-                                            <span>Creado: {new Date(ticket.created_at).toLocaleDateString()}</span>
+                                            <span>Creado: {formatInColombia(ticket.created_at)}</span>
                                         </div>
                                     </div>
                                 ))}

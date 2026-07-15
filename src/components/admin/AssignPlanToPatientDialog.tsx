@@ -21,6 +21,7 @@ import {
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Loader2 } from "lucide-react";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 interface MealPlan {
     id: number;
@@ -52,7 +53,7 @@ export function AssignPlanToPatientDialog({
     const [plans, setPlans] = useState<MealPlan[]>([]);
     const [selectedPlanId, setSelectedPlanId] = useState<string>("");
     const [startDate, setStartDate] = useState(
-        new Date().toISOString().split("T")[0]
+        todayInColombiaISO()
     );
     const [endDate, setEndDate] = useState("");
     const [notes, setNotes] = useState("");
@@ -143,7 +144,7 @@ export function AssignPlanToPatientDialog({
 
     const resetForm = () => {
         setSelectedPlanId("");
-        setStartDate(new Date().toISOString().split("T")[0]);
+        setStartDate(todayInColombiaISO());
         setEndDate("");
         setNotes("");
     };

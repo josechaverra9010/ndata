@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   ChefHat,
+  Newspaper,
 } from "lucide-react";
 
 const menuItems = [
@@ -19,6 +20,7 @@ const menuItems = [
   { icon: Users, label: "Usuarios", path: "/superadmin/users" },
   { icon: UserCog, label: "Nutricionistas", path: "/superadmin/nutritionists" },
   { icon: ChefHat, label: "Biblioteca de Recetas", path: "/superadmin/recipes" },
+  { icon: Newspaper, label: "Artículos Home", path: "/superadmin/articles" },
   { icon: Building2, label: "Organizaciones", path: "/superadmin/organizations" },
   { icon: CreditCard, label: "Facturación", path: "/superadmin/billing" },
 ];

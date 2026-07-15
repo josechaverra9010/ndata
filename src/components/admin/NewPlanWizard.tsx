@@ -32,6 +32,7 @@ import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEMENTOS_GRUPO, getCompositionRowForIngredient, getFoodNutrientsForGroup, getPediatriaRienTargets, getAtalahClass, getTrimestreFromSemana, getGestanteExtraKcal, getGestanteExpectedGainKg, getGestanteDebioGanar, getGestanteRienTargets, getGestAdolesZClass, getGestAdolesExpectedGainKg, getGestAdolesExtraKcal, getGestAdolesDailyGainG, getGestAdolesBaseReq } from "@/lib/foodNutrients";
+import { todayInColombiaISO, addDaysColombiaISO } from "@/lib/timezone";
 
 const isGestanteTipo = (tipo?: string) => tipo === "gestante" || tipo === "gestante_adolescente";
 const isGestAdoles = (tipo?: string) => tipo === "gestante_adolescente";
@@ -3075,16 +3076,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         const effectivePatientId = patientId ?? (formData.patient_id ? Number(formData.patient_id) : null);
         if (effectivePatientId) {
           try {
-            const startDate = new Date().toISOString().split('T')[0];
+            const startDate = todayInColombiaISO();
             let endDate = null;
 
             // Calcular fecha de fin basada en la duración (ej. "4 semanas")
             if (formData.duracion && formData.duracion.toLowerCase().includes("semana")) {
               const weeks = parseInt(formData.duracion);
               if (!isNaN(weeks)) {
-                const end = new Date();
-                end.setDate(end.getDate() + weeks * 7);
-                endDate = end.toISOString().split('T')[0];
+                endDate = addDaysColombiaISO(weeks * 7, startDate);
               }
             }
 

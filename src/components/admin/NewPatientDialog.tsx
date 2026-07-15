@@ -23,6 +23,7 @@ import { Loader2, User, Activity, HeartPulse, ClipboardList } from "lucide-react
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { FoodFrequencyForm, FOOD_GROUPS } from "@/components/shared/FoodFrequencyForm";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 interface NewPatientDialogProps {
   patient?: any;
@@ -411,7 +412,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     value={formData.fecha_nacimiento}
                     onChange={(e) => handleChange("fecha_nacimiento", e.target.value)}
                     disabled={loading}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={todayInColombiaISO()}
                   />
                 </div>
 

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Save } from "lucide-react";
 import { API_URL } from "@/config/api";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 interface Recordatorio24hFormProps {
     patientId: number;
@@ -34,7 +35,7 @@ export function Recordatorio24hForm({ patientId, onSuccess, onCancel }: Recordat
         media_tarde: createEmptySection(3),
         cena: createEmptySection(6),
         observaciones: "",
-        date: new Date().toISOString().split("T")[0],
+        date: todayInColombiaISO(),
     });
 
     const handleSubmit = async (e: React.FormEvent) => {

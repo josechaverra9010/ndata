@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, User, Calendar, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { todayInColombiaISO, addDaysColombiaISO } from "@/lib/timezone";
 
 interface MealPlan {
   id: number;
@@ -59,7 +60,7 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [startDate, setStartDate] = useState(
-    new Date().toISOString().split('T')[0]
+    todayInColombiaISO()
   );
   const [endDate, setEndDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -72,9 +73,9 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
       // Auto-calcular fecha de fin si el plan tiene duración específica
       if (plan?.duration && plan.duration.includes("semanas")) {
         const weeks = parseInt(plan.duration.split(" ")[0]);
-        const start = new Date();
-        const end = new Date(start.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
-        setEndDate(end.toISOString().split('T')[0]);
+        if (!Number.isNaN(weeks)) {
+          setEndDate(addDaysColombiaISO(weeks * 7));
+        }
       }
     }
   }, [open, plan]);
@@ -157,7 +158,7 @@ export function AssignPlanDialog({ plan, open, onOpenChange, onAssignSuccess }: 
   const resetForm = () => {
     setSelectedPatientId("");
     setSearchQuery("");
-    setStartDate(new Date().toISOString().split('T')[0]);
+    setStartDate(todayInColombiaISO());
     setEndDate("");
     setNotes("");
   };

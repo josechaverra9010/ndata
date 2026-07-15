@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Calendar, Clock } from "lucide-react";
+import { todayInColombiaISO, formatInColombia } from "@/lib/timezone";
 
 interface Patient {
     id: number;
@@ -157,7 +158,7 @@ export function ScheduleAppointmentDialog({
         }
     };
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayInColombiaISO();
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -282,7 +283,7 @@ export function ScheduleAppointmentDialog({
                         <ul className="space-y-1">
                             <li>• Paciente: {patient.nombres} {patient.apellidos}</li>
                             {formData.date && (
-                                <li>• Fecha: {new Date(formData.date + "T00:00:00").toLocaleDateString("es-ES", {
+                                <li>• Fecha: {formatInColombia(formData.date, {
                                     weekday: "long",
                                     year: "numeric",
                                     month: "long",

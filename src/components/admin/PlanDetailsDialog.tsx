@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/config/api";
+import { formatInColombia } from "@/lib/timezone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -880,7 +881,7 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                     <div className="flex items-center justify-between py-2">
                       <span className="text-sm font-medium text-muted-foreground">Fecha de creación</span>
                       <span className="text-sm font-semibold text-foreground">
-                        {new Date(plan.created_at).toLocaleDateString('es-ES')}
+                        {formatInColombia(plan.created_at)}
                       </span>
                     </div>
                   )}

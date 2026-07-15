@@ -46,6 +46,7 @@ interface User {
 }
 
 import { API_URL } from "@/config/api";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 export default function SuperadminUsers() {
   const [users, setUsers] = useState<User[]>([]);
@@ -212,7 +213,7 @@ export default function SuperadminUsers() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `usuarios_${new Date().toISOString().split('T')[0]}.csv`;
+      a.download = `usuarios_${todayInColombiaISO()}.csv`;
       a.click();
 
       toast.success("Usuarios exportados correctamente");

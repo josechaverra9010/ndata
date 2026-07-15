@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/use-theme";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
   { icon: Users, label: "Pacientes", path: "/patients" },
   { icon: Stethoscope, label: "Consulta", path: "/consultation" },
   { icon: ChefHat, label: "Recetas", path: "/recipes" },

@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
+import { todayInColombiaISO } from "@/lib/timezone";
 
 interface BulkAssignMenuDialogProps {
   open: boolean;
@@ -52,7 +53,7 @@ export function BulkAssignMenuDialog({
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [selectedPatients, setSelectedPatients] = useState<number[]>(patientIds);
   const [menuId, setMenuId] = useState<string>("");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(todayInColombiaISO());
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {

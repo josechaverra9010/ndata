@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { PlanPhasesSummaryDialog } from "./PlanPhasesSummaryDialog";
+import { formatInColombia } from "@/lib/timezone";
 
 interface Patient {
   id: number;
@@ -225,11 +226,11 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
+    return formatInColombia(dateString, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }) || dateString;
   };
 
   return (
