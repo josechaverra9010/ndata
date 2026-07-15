@@ -171,14 +171,20 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
     setLoading(true);
     try {
       const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/weekly-menus-complete`, {
+      const response = await fetch(`${API_URL}/weekly-menus`, {
         headers: {
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        }
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los menús");
+      }
+      const data = await response.json();
+      setMenus(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching menus:", error);
       toast.error("Error al cargar menús disponibles");
+      setMenus([]);
     } finally {
       setLoading(false);
     }
@@ -200,10 +206,11 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
       });
 
       if (response.ok) {
-        toast.success("Menú asignado correctamente");
+        toast.success("Menú asignado correctamente (4 semanas vinculadas)");
         onAssignSuccess();
       } else {
-        toast.error("Error al asignar el menú");
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.detail || "Error al asignar el menú");
       }
     } catch (error) {
       console.error("Error assigning menu:", error);
@@ -897,6 +904,8 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                             ? "Fase 1: Evaluación gestante adolescente"
                           : plan.fase_1.tipo_fase === "gestante"
                             ? "Fase 1: Evaluación y requerimiento gestante"
+                          : plan.fase_1.tipo_fase === "hospitalizado"
+                            ? "Fase 1: Requerimiento energético hospitalizado"
                           : "Fase 1: Requerimiento Energético y Peso Saludable"}
                       </CardTitle>
                     </CardHeader>
@@ -917,6 +926,25 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                               {" "}· base {plan.fase_1.requerimiento_antes_ajuste} kcal → total {plan.fase_1.requerimiento_energetico} kcal
                             </span>
                           ) : null}
+                        </div>
+                      )}
+                      {plan.fase_1.formula_requerimiento && (
+                        <div className="text-sm rounded-md border bg-muted/40 px-3 py-2">
+                          Fórmula:{" "}
+                          <span className="font-medium">
+                            {plan.fase_1.metodo_energia
+                              || (plan.fase_1.formula_requerimiento === "harris_benedict"
+                              ? "Harris-Benedict"
+                              : plan.fase_1.formula_requerimiento === "mifflin"
+                                ? "Mifflin-St Jeor"
+                                : plan.fase_1.formula_requerimiento === "ireton_jones"
+                                  ? "Ireton-Jones"
+                                : plan.fase_1.formula_requerimiento === "rango_calorico"
+                                  ? `Rango calórico (${plan.fase_1.rango_kcal_kg || "—"} kcal/kg)`
+                                  : plan.fase_1.tipo_fase === "gestante_adolescente"
+                                    ? "GET FAO + crecimiento"
+                                    : "FAO / Schofield")}
+                          </span>
                         </div>
                       )}
                       {plan.fase_1.tipo_fase === "deportista" ? (
@@ -1103,10 +1131,16 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                               <p className="font-medium">{plan.fase_1.gestante_actividad_adoles}</p>
                             </div>
                           )}
-                          {plan.fase_1.get_fao != null && (
+                          {plan.fase_1.get_fao != null && Number(plan.fase_1.get_fao) > 0 && (
                             <div>
                               <Label className="text-xs text-muted-foreground">GET FAO</Label>
                               <p className="font-medium">{Math.round(Number(plan.fase_1.get_fao))} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.tmr != null && Number(plan.fase_1.tmr) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">TMB</Label>
+                              <p className="font-medium">{Math.round(Number(plan.fase_1.tmr))} kcal</p>
                             </div>
                           )}
                           {plan.fase_1.requerimiento_base != null && (
@@ -1160,16 +1194,129 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                               <p className="font-medium">{plan.fase_1.trimestre}°</p>
                             </div>
                           )}
-                          {plan.fase_1.tmr != null && (
+                          {plan.fase_1.tmr != null && Number(plan.fase_1.tmr) > 0 && (
                             <div>
-                              <Label className="text-xs text-muted-foreground">TMR</Label>
+                              <Label className="text-xs text-muted-foreground">TMR / TMB</Label>
                               <p className="font-medium">{Math.round(Number(plan.fase_1.tmr))} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.requerimiento_base != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Base (× PAL o kcal/kg)</Label>
+                              <p className="font-medium">{Math.round(Number(plan.fase_1.requerimiento_base))} kcal</p>
                             </div>
                           )}
                           {plan.fase_1.calorias_adicionales != null && (
                             <div>
                               <Label className="text-xs text-muted-foreground">Extras gestación</Label>
                               <p className="font-medium">{plan.fase_1.calorias_adicionales} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.requerimiento_energetico && (
+                            <div className="col-span-2">
+                              <Label className="text-xs text-muted-foreground">Requerimiento total</Label>
+                              <p className="font-bold text-lg text-primary">{plan.fase_1.requerimiento_energetico} kcal</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : plan.fase_1.tipo_fase === "hospitalizado" ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          {plan.fase_1.peso_actual && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Peso actual</Label>
+                              <p className="font-medium">{plan.fase_1.peso_actual} kg</p>
+                            </div>
+                          )}
+                          {plan.fase_1.altura && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Altura</Label>
+                              <p className="font-medium">{plan.fase_1.altura} cm</p>
+                            </div>
+                          )}
+                          {plan.fase_1.imc && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">IMC</Label>
+                              <p className="font-medium">{plan.fase_1.imc}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.peso_referencia && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Peso referencia</Label>
+                              <p className="font-medium">{plan.fase_1.peso_referencia} kg</p>
+                            </div>
+                          )}
+                          {plan.fase_1.peso_estimado_chumlea != null && Number(plan.fase_1.peso_estimado_chumlea) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Peso Chumlea</Label>
+                              <p className="font-medium">{Number(plan.fase_1.peso_estimado_chumlea).toFixed(1)} kg</p>
+                            </div>
+                          )}
+                          {plan.fase_1.talla_estimada_chumlea != null && Number(plan.fase_1.talla_estimada_chumlea) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Talla Chumlea</Label>
+                              <p className="font-medium">{Number(plan.fase_1.talla_estimada_chumlea).toFixed(1)} cm</p>
+                            </div>
+                          )}
+                          {plan.fase_1.regla_peso && (
+                            <div className="col-span-2">
+                              <Label className="text-xs text-muted-foreground">Regla de peso</Label>
+                              <p className="font-medium">{plan.fase_1.regla_peso}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.tmb != null && Number(plan.fase_1.tmb) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">TMB / EEE</Label>
+                              <p className="font-medium">{Math.round(Number(plan.fase_1.tmb))} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.hosp_factor_actividad != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Factor actividad</Label>
+                              <p className="font-medium">{plan.fase_1.hosp_factor_actividad}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.hosp_factor_estres != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Factor estrés</Label>
+                              <p className="font-medium">{plan.fase_1.hosp_factor_estres}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.requerimiento_base != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Requerimiento base</Label>
+                              <p className="font-medium">{Math.round(Number(plan.fase_1.requerimiento_base))} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.liquidos_ml != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Líquidos</Label>
+                              <p className="font-medium">{plan.fase_1.liquidos_ml} ml/día ({plan.fase_1.hosp_liquidos_cc_kg || "—"} cc/kg)</p>
+                            </div>
+                          )}
+                          {plan.fase_1.hosp_ventilatorio === "si" && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Ireton flags</Label>
+                              <p className="font-medium">
+                                Ventilatorio
+                                {plan.fase_1.hosp_trauma === "si" ? " · Trauma" : ""}
+                                {plan.fase_1.hosp_quemadura === "si" ? " · Quemadura" : ""}
+                                {plan.fase_1.hosp_obesidad === "si" ? " · Obesidad" : ""}
+                              </p>
+                            </div>
+                          )}
+                          {plan.fase_1.nutricion_parenteral && (
+                            <div className="col-span-2 rounded-md border bg-muted/30 p-3 space-y-2">
+                              <Label className="text-xs text-muted-foreground">Nutrición parenteral</Label>
+                              <div className="grid grid-cols-2 gap-2 text-sm">
+                                <p>Prot {Number(plan.fase_1.nutricion_parenteral.prot_g || 0).toFixed(1)} g ({plan.fase_1.nutricion_parenteral.prot_gkg} g/kg)</p>
+                                <p>CHO {Number(plan.fase_1.nutricion_parenteral.cho_g || 0).toFixed(1)} g ({plan.fase_1.nutricion_parenteral.cho_gkg} g/kg)</p>
+                                <p>Lípidos {Number(plan.fase_1.nutricion_parenteral.lip_g || 0).toFixed(1)} g ({Number(plan.fase_1.nutricion_parenteral.lip_gkg || 0).toFixed(2)} g/kg)</p>
+                                <p>Flujo {Number(plan.fase_1.nutricion_parenteral.flujo_mg_kg_min || 0).toFixed(2)} mg/kg/min</p>
+                                <p>Na {Number(plan.fase_1.nutricion_parenteral.na_total_meq || 0).toFixed(0)} mEq</p>
+                                <p>K {Number(plan.fase_1.nutricion_parenteral.k_total_meq || 0).toFixed(0)} mEq</p>
+                                <p>Ca {plan.fase_1.nutricion_parenteral.ca_meq_dia || "—"} mEq/día</p>
+                                <p>P {plan.fase_1.nutricion_parenteral.p_mmol_dia || "—"} mMol/día</p>
+                              </div>
                             </div>
                           )}
                           {plan.fase_1.requerimiento_energetico && (

@@ -35,6 +35,31 @@ import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEM
 
 const isGestanteTipo = (tipo?: string) => tipo === "gestante" || tipo === "gestante_adolescente";
 const isGestAdoles = (tipo?: string) => tipo === "gestante_adolescente";
+const isHospitalizado = (tipo?: string) => tipo === "hospitalizado";
+
+/** Factores de actividad hospitalaria (EVANUT Hospitalizado) */
+const HOSP_ACTIVIDAD_PRESETS: { value: string; label: string; factor: string }[] = [
+  { value: "coma", label: "Inconsciente / Coma (1.0)", factor: "1.0" },
+  { value: "cama", label: "En cama (1.15 mid 1.1–1.2)", factor: "1.15" },
+  { value: "ambulatorio", label: "Ambulatorio (1.3)", factor: "1.3" },
+];
+
+/** Factores de estrés (EVANUT Hospitalizado) */
+const HOSP_ESTRES_PRESETS: { value: string; label: string; factor: string }[] = [
+  { value: "ninguno", label: "Ninguno / basal (1.0)", factor: "1.0" },
+  { value: "cirugia_menor", label: "Cirugía menor (1.1)", factor: "1.1" },
+  { value: "cirugia_mayor", label: "Cirugía mayor (1.2)", factor: "1.2" },
+  { value: "infeccion_leve", label: "Infección leve (1.2)", factor: "1.2" },
+  { value: "infeccion_moderada", label: "Infección moderada (1.5)", factor: "1.5" },
+  { value: "infeccion_severa", label: "Infección severa (1.8)", factor: "1.8" },
+  { value: "trauma_esqueleto", label: "Trauma esqueleto (1.35)", factor: "1.35" },
+  { value: "trauma_contusion", label: "Trauma contusión (1.35)", factor: "1.35" },
+  { value: "lesion_cabeza", label: "Lesión de cabeza (1.6)", factor: "1.6" },
+  { value: "quemadura_40", label: "Quemadura 40% (1.5)", factor: "1.5" },
+  { value: "quemadura_100", label: "Quemadura 100% (1.96)", factor: "1.96" },
+  { value: "peritonitis", label: "Peritonitis (~1.15 mid)", factor: "1.15" },
+  { value: "cancer", label: "Cáncer (~1.25 mid)", factor: "1.25" },
+];
 
 interface NewPlanWizardProps {
   open: boolean;
@@ -53,12 +78,14 @@ const PHASES = [
     titlePediatria: "EVALUACIÓN Y REQUERIMIENTO PEDIÁTRICO",
     titleGestante: "EVALUACIÓN Y REQUERIMIENTO GESTANTE",
     titleGestAdoles: "EVALUACIÓN GESTANTE ADOLESCENTE",
+    titleHospitalizado: "REQUERIMIENTO ENERGÉTICO HOSPITALIZADO",
     icon: Calculator,
     description: "Calcula las necesidades energéticas, peso saludable y peso ajustado",
     descriptionDeportista: "Somatotipo Heath-Carter, % grasa Yuhasz, AKS y calorías del plan (EVANUT Deportista)",
     descriptionPediatria: "GER FAO/OMS 2005, crecimiento, actividad y catch-up (EVANUT Pediatría)",
     descriptionGestante: "IMC Atalah, ganancia gestacional, TMR × PAL + calorías por trimestre (EVANUT Gestante)",
     descriptionGestAdoles: "Puntaje Z, GET FAO + crecimiento adolescente + extras por trimestre (EVANUT Ges Adoles)",
+    descriptionHospitalizado: "TMB × actividad hospitalaria × factor de estrés, Ireton-Jones o kcal/kg + líquidos (EVANUT Hospitalizado)",
   },
   {
     id: 2,
@@ -69,6 +96,7 @@ const PHASES = [
     descriptionPediatria: "Distribución AMDR RIEN por edad (0–18 años)",
     descriptionGestante: "Distribución AMDR RIEN gestante (proteína 1.53–1.7 g/kg)",
     descriptionGestAdoles: "Distribución AMDR RIEN gestante adolescente (1.53–1.7 g/kg)",
+    descriptionHospitalizado: "Distribución AMDR hospitalario (proteína ~1.2–1.5 g/kg típico)",
   },
   {
     id: 3,
@@ -79,6 +107,7 @@ const PHASES = [
     descriptionPediatria: "Grupos EVANUT pediátricos (adultos, niños y menores de 2 años)",
     descriptionGestante: "Grupos EVANUT adultos para gestante",
     descriptionGestAdoles: "Grupos EVANUT adultos para gestante adolescente",
+    descriptionHospitalizado: "Grupos EVANUT adultos para paciente hospitalizado",
   },
   {
     id: 4,
@@ -89,6 +118,7 @@ const PHASES = [
     descriptionPediatria: "Minuta patrón con grupos pediátricos",
     descriptionGestante: "Minuta patrón gestante",
     descriptionGestAdoles: "Minuta patrón gestante adolescente",
+    descriptionHospitalizado: "Minuta patrón hospitalizado",
   }
 ];
 
@@ -152,6 +182,378 @@ function withAjusteCaloriasFields(baseKcal: number, fd: Record<string, any>) {
   };
 }
 
+/** FAO/Schofield (actual EVANUT adulto) */
+function calcTmbSchofield(peso: number, edad: number, genero: string): number {
+  if (!(peso > 0) || !(edad > 0) || !genero) return 0;
+  if (genero === "masculino") {
+    if (edad <= 30) return 15.057 * peso + 692.2;
+    if (edad <= 60) return 11.472 * peso + 873.1;
+    return 11.711 * peso + 587.7;
+  }
+  if (genero === "femenino") {
+    if (edad <= 30) return 14.818 * peso + 486.6;
+    if (edad <= 60) return 8.126 * peso + 845.6;
+    return 9.082 * peso + 658.5;
+  }
+  return 0;
+}
+
+/** Harris-Benedict original (1919) — P kg, T cm, E años */
+function calcTmbHarrisBenedict(peso: number, alturaCm: number, edad: number, genero: string): number {
+  if (!(peso > 0) || !(alturaCm > 0) || !(edad > 0) || !genero) return 0;
+  if (genero === "masculino") {
+    return 66.473 + 13.7516 * peso + 5.0033 * alturaCm - 6.755 * edad;
+  }
+  if (genero === "femenino") {
+    return 655.0955 + 9.5634 * peso + 1.8496 * alturaCm - 4.6756 * edad;
+  }
+  return 0;
+}
+
+/** Mifflin-St Jeor (1990) — P kg, T cm, E años */
+function calcTmbMifflin(peso: number, alturaCm: number, edad: number, genero: string): number {
+  if (!(peso > 0) || !(alturaCm > 0) || !(edad > 0) || !genero) return 0;
+  const base = 10 * peso + 6.25 * alturaCm - 5 * edad;
+  if (genero === "masculino") return base + 5;
+  if (genero === "femenino") return base - 161;
+  return 0;
+}
+
+/**
+ * Calcula TMB + requerimiento adulto según fórmula elegida.
+ * schofield | harris_benedict | mifflin → TMB × PAL
+ * rango_calorico → peso × kcal/kg (sin PAL)
+ */
+function calculateAdultEnergia(fd: Record<string, any>) {
+  const formula = fd.formula_requerimiento || "schofield";
+  const genero = String(fd.genero || "").toLowerCase();
+  const edad = parseFloat(fd.edad) || 0;
+  const alturaCm = parseFloat(fd.altura) || 0;
+  const pesoRef =
+    parseFloat(fd.peso_referencia_f2) ||
+    parseFloat(fd.peso_objetivo) ||
+    parseFloat(fd.peso_ajustado) ||
+    parseFloat(fd.peso_actual) ||
+    0;
+  const pal = parseFloat(fd.factor_actividad) || 0;
+  const kcalKg = parseFloat(fd.rango_kcal_kg) || 0;
+
+  let tmb = 0;
+  let reqBase = 0;
+  let metodoLabel = "FAO/Schofield";
+
+  if (formula === "rango_calorico") {
+    metodoLabel = "Rango calórico (kcal/kg)";
+    reqBase = pesoRef > 0 && kcalKg > 0 ? pesoRef * kcalKg : 0;
+    tmb = 0;
+  } else if (formula === "harris_benedict") {
+    metodoLabel = "Harris-Benedict";
+    tmb = calcTmbHarrisBenedict(pesoRef, alturaCm, edad, genero);
+    reqBase = tmb > 0 && pal > 0 ? tmb * pal : 0;
+  } else if (formula === "mifflin") {
+    metodoLabel = "Mifflin-St Jeor";
+    tmb = calcTmbMifflin(pesoRef, alturaCm, edad, genero);
+    reqBase = tmb > 0 && pal > 0 ? tmb * pal : 0;
+  } else {
+    metodoLabel = "FAO/Schofield";
+    tmb = calcTmbSchofield(pesoRef, edad, genero);
+    reqBase = tmb > 0 && pal > 0 ? tmb * pal : 0;
+  }
+
+  const requerimientoFinal = applyAjusteCalorias(reqBase, fd);
+  return {
+    formula,
+    metodoLabel,
+    pesoRef,
+    tmb,
+    reqBase,
+    requerimientoFinal,
+    usesPal: formula !== "rango_calorico",
+  };
+}
+
+/** Chumlea 1985 — talla estimada (cm) desde talón-rodilla */
+function calcChumleaTallaCm(talonRodillaCm: number, edad: number, genero: string): number {
+  if (!(talonRodillaCm > 0) || !(edad > 0) || !genero) return 0;
+  if (genero === "masculino") return 64.19 - 0.04 * edad + 2.02 * talonRodillaCm;
+  if (genero === "femenino") return 84.88 - 0.24 * edad + 1.83 * talonRodillaCm;
+  return 0;
+}
+
+/**
+ * Chumlea 1988 — peso estimado (kg) no ambulante:
+ * AC, CC, KH en cm; SST (pliegue subescapular) en mm.
+ */
+function calcChumleaPesoKg(
+  perimBrazoCm: number,
+  perimPantorrillaCm: number,
+  talonRodillaCm: number,
+  pliegueSubescapularMm: number,
+  genero: string
+): number {
+  if (
+    !(perimBrazoCm > 0) ||
+    !(perimPantorrillaCm > 0) ||
+    !(talonRodillaCm > 0) ||
+    !(pliegueSubescapularMm > 0) ||
+    !genero
+  ) {
+    return 0;
+  }
+  const AC = perimBrazoCm;
+  const CC = perimPantorrillaCm;
+  const KH = talonRodillaCm;
+  const SST = pliegueSubescapularMm;
+  if (genero === "masculino") {
+    // Excel muestra constante -81.69 con inputs vacíos
+    return 0.98 * CC + 1.16 * KH + 1.73 * AC + 0.37 * SST - 81.69;
+  }
+  if (genero === "femenino") {
+    return 1.27 * CC + 0.87 * KH + 0.98 * AC + 0.4 * SST - 62.35;
+  }
+  return 0;
+}
+
+/** Nutrición parenteral adulto (EVANUT Hospitalizado) */
+function calculateParenteralHospitalizado(fd: Record<string, any>, fallback: {
+  peso?: number;
+  calorias?: number;
+  liquidosMl?: number;
+}) {
+  const peso =
+    parseFloat(fd.pn_peso_kg) ||
+    fallback.peso ||
+    parseFloat(fd.peso_referencia_f2) ||
+    parseFloat(fd.peso_actual) ||
+    0;
+  const calorias =
+    parseFloat(fd.pn_calorias) ||
+    fallback.calorias ||
+    parseFloat(fd.requerimiento_energetico) ||
+    0;
+  const liquidos =
+    parseFloat(fd.pn_liquidos_ml) ||
+    fallback.liquidosMl ||
+    0;
+  const protGkg = parseFloat(fd.pn_prot_gkg) || 0;
+  const choGkg = parseFloat(fd.pn_cho_gkg) || 0;
+  const naMeqKg = parseFloat(fd.pn_na_meq_kg) || 0;
+  const kMeqKg = parseFloat(fd.pn_k_meq_kg) || 0;
+  const caMeqDia = parseFloat(fd.pn_ca_meq_dia) || 0;
+  const pMmolDia = parseFloat(fd.pn_p_mmol_dia) || 0;
+
+  const protG = peso > 0 && protGkg > 0 ? protGkg * peso : 0;
+  const protKcal = protG * 4;
+  const choG = peso > 0 && choGkg > 0 ? choGkg * peso : 0;
+  const choKcal = choG * 4;
+  // Excel: lípidos = resto de calorías tras CHO + proteína
+  const lipKcal = calorias > 0 ? Math.max(0, calorias - protKcal - choKcal) : 0;
+  const lipG = lipKcal / 9;
+  const lipGkg = peso > 0 ? lipG / peso : 0;
+  // Flujo metabólico CHO: mg/kg/min = (g CHO × 1000) / (peso × 1440)
+  const flujoMgKgMin =
+    peso > 0 && choG > 0 ? (choG * 1000) / (peso * 1440) : 0;
+  const naTotal = peso > 0 && naMeqKg > 0 ? naMeqKg * peso : 0;
+  const kTotal = peso > 0 && kMeqKg > 0 ? kMeqKg * peso : 0;
+
+  return {
+    peso,
+    calorias,
+    liquidos,
+    protGkg,
+    choGkg,
+    protG,
+    protKcal,
+    choG,
+    choKcal,
+    lipKcal,
+    lipG,
+    lipGkg,
+    flujoMgKgMin,
+    naMeqKg,
+    kMeqKg,
+    naTotal,
+    kTotal,
+    caMeqDia,
+    pMmolDia,
+  };
+}
+
+/** Ireton-Jones 1992 (EEE) — used by EVANUT Hospitalizado */
+function calcIretonJones(pesoKg: number, edad: number, genero: string, flags: {
+  ventilatorio?: boolean;
+  obesidad?: boolean;
+  trauma?: boolean;
+  quemadura?: boolean;
+}): number {
+  if (!(pesoKg > 0) || !(edad > 0)) return 0;
+  const A = edad;
+  const W = pesoKg;
+  if (flags.ventilatorio) {
+    const G = genero === "masculino" ? 1 : 0;
+    const T = flags.trauma ? 1 : 0;
+    const B = flags.quemadura ? 1 : 0;
+    // IJEE(v) 1992
+    return 1925 - 10 * A + 5 * W + 281 * G + 292 * T + 851 * B;
+  }
+  const O = flags.obesidad ? 1 : 0;
+  // IJEE(s) espontánea
+  return 629 - 11 * A + 25 * W - 609 * O;
+}
+
+/**
+ * Peso de referencia hospitalario (nota EVANUT):
+ * desnutrición → actual; sobrepeso → ideal; obesidad → ajustado.
+ */
+function suggestHospitalPesoRef(
+  imc: number,
+  pesoActual: number,
+  pesoSaludable: number,
+  pesoAjustado: number
+): { peso: number; regla: string } {
+  if (imc > 0 && imc < 18.5 && pesoActual > 0) {
+    return { peso: pesoActual, regla: "Desnutrición → peso actual" };
+  }
+  if (imc >= 30 && pesoAjustado > 0) {
+    return { peso: pesoAjustado, regla: "Obesidad → peso ajustado" };
+  }
+  if (imc >= 25 && pesoSaludable > 0) {
+    return { peso: pesoSaludable, regla: "Sobrepeso → peso ideal (IMC 25)" };
+  }
+  if (pesoActual > 0) return { peso: pesoActual, regla: "Peso actual" };
+  if (pesoSaludable > 0) return { peso: pesoSaludable, regla: "Peso saludable" };
+  return { peso: 0, regla: "" };
+}
+
+/**
+ * Energía hospitalizado EVANUT 4.1:
+ * Harris / Mifflin → TMB × FA × FE
+ * Ireton-Jones → EEE (incluye trauma/quemadura/obesidad; FA/FE opcionales)
+ * kcal/kg → peso × kcal/kg
+ */
+function calculateHospitalizadoEnergia(fd: Record<string, any>) {
+  const formula = fd.formula_requerimiento || "harris_benedict";
+  const genero = String(fd.genero || "").toLowerCase();
+  const edad = parseFloat(fd.edad) || 0;
+  let alturaCm = parseFloat(fd.altura) || 0;
+  const talonRodilla = parseFloat(fd.hosp_talon_rodilla_cm) || 0;
+  const perimBrazo = parseFloat(fd.hosp_perim_brazo_cm) || 0;
+  const perimPantorrilla = parseFloat(fd.hosp_perim_pantorrilla_cm) || 0;
+  const pliegueSub = parseFloat(fd.hosp_pliegue_subescapular_mm) || 0;
+  const tallaEstimada = calcChumleaTallaCm(talonRodilla, edad, genero);
+  const pesoEstimado = calcChumleaPesoKg(
+    perimBrazo,
+    perimPantorrilla,
+    talonRodilla,
+    pliegueSub,
+    genero
+  );
+  if (!(alturaCm > 0) && tallaEstimada > 0) alturaCm = tallaEstimada;
+
+  const pesoActual =
+    parseFloat(fd.peso_actual) ||
+    (pesoEstimado > 0 ? pesoEstimado : 0);
+  const alturaM = alturaCm > 0 ? alturaCm / 100 : 0;
+  const imc = pesoActual > 0 && alturaM > 0 ? pesoActual / (alturaM * alturaM) : 0;
+  const pesoSaludable =
+    parseFloat(fd.peso_saludable) || (alturaM > 0 ? 25 * alturaM * alturaM : 0);
+  const pesoAjustado =
+    parseFloat(fd.peso_ajustado) ||
+    (pesoActual > 0 && pesoSaludable > 0
+      ? (pesoActual - pesoSaludable) * 0.25 + pesoSaludable
+      : 0);
+
+  const sugerido = suggestHospitalPesoRef(imc, pesoActual, pesoSaludable, pesoAjustado);
+  const pesoRef =
+    parseFloat(fd.peso_referencia_f2) ||
+    parseFloat(fd.peso_objetivo) ||
+    sugerido.peso ||
+    pesoActual;
+
+  const fa = parseFloat(fd.hosp_factor_actividad) || parseFloat(fd.factor_actividad) || 1.2;
+  const fe = parseFloat(fd.hosp_factor_estres) || 1.0;
+  const kcalKg = parseFloat(fd.rango_kcal_kg) || 0;
+  const liquidosCcKg = parseFloat(fd.hosp_liquidos_cc_kg) || 35;
+  const liquidosMl = pesoRef > 0 && liquidosCcKg > 0 ? pesoRef * liquidosCcKg : 0;
+
+  const ventilatorio =
+    fd.hosp_ventilatorio === true || fd.hosp_ventilatorio === "si" || fd.hosp_ventilatorio === "Sí";
+  const obesidad =
+    fd.hosp_obesidad === true ||
+    fd.hosp_obesidad === "si" ||
+    fd.hosp_obesidad === "Sí" ||
+    imc >= 30;
+  const trauma = fd.hosp_trauma === true || fd.hosp_trauma === "si" || fd.hosp_trauma === "Sí";
+  const quemadura =
+    fd.hosp_quemadura === true || fd.hosp_quemadura === "si" || fd.hosp_quemadura === "Sí";
+
+  let tmb = 0;
+  let eee = 0;
+  let reqBase = 0;
+  let metodoLabel = "Harris-Benedict × FA × FE";
+  let usesFactors = true;
+
+  if (formula === "rango_calorico") {
+    metodoLabel = "Método del pulgar (kcal/kg)";
+    reqBase = pesoRef > 0 && kcalKg > 0 ? pesoRef * kcalKg : 0;
+    usesFactors = false;
+  } else if (formula === "ireton_jones") {
+    metodoLabel = ventilatorio
+      ? "Ireton-Jones ventilatorio (1992)"
+      : "Ireton-Jones espontánea";
+    eee = calcIretonJones(pesoRef, edad, genero, {
+      ventilatorio,
+      obesidad,
+      trauma,
+      quemadura,
+    });
+    reqBase = eee > 0 ? eee * fa * fe : 0;
+    tmb = eee;
+  } else if (formula === "mifflin") {
+    metodoLabel = "Mifflin-St Jeor × FA × FE";
+    tmb = calcTmbMifflin(pesoRef, alturaCm, edad, genero);
+    reqBase = tmb > 0 ? tmb * fa * fe : 0;
+  } else {
+    metodoLabel = "Harris-Benedict × FA × FE";
+    tmb = calcTmbHarrisBenedict(pesoRef, alturaCm, edad, genero);
+    reqBase = tmb > 0 ? tmb * fa * fe : 0;
+  }
+
+  const requerimientoFinal = applyAjusteCalorias(reqBase, fd);
+  const parenteral = calculateParenteralHospitalizado(fd, {
+    peso: pesoRef,
+    calorias: requerimientoFinal || reqBase,
+    liquidosMl,
+  });
+
+  return {
+    formula,
+    metodoLabel,
+    pesoRef,
+    pesoSaludable,
+    pesoAjustado,
+    imc,
+    alturaCm,
+    tallaEstimada,
+    pesoEstimado,
+    reglaPeso: sugerido.regla,
+    tmb,
+    eee,
+    fa,
+    fe,
+    reqBase,
+    requerimientoFinal,
+    liquidosCcKg,
+    liquidosMl,
+    usesFactors,
+    ventilatorio,
+    obesidad,
+    trauma,
+    quemadura,
+    parenteral,
+  };
+}
+
 function buildGruposAlimentos(tipoPlan: string) {
   return getEvanutGruposForTipo(tipoPlan).reduce((acc, grupo) => {
     acc[grupo] = {
@@ -191,6 +593,34 @@ function getDefaultFormData() {
     requerimiento_base_f1: "",
     ajuste_calorias_modo: "ninguno", // ninguno | restriccion | aumento
     ajuste_calorias_valor: "",
+    // Fórmula de requerimiento adulto
+    formula_requerimiento: "schofield", // schofield | harris_benedict | mifflin | rango_calorico | ireton_jones
+    rango_kcal_kg: "25", // usado si formula = rango_calorico
+    rango_objetivo: "mantenimiento", // perdida | mantenimiento | ganancia (preset UI)
+    // Fase 1 Hospitalizado (EVANUT)
+    hosp_factor_actividad: "1.15",
+    hosp_actividad_preset: "cama",
+    hosp_factor_estres: "1.0",
+    hosp_estres_preset: "ninguno",
+    hosp_liquidos_cc_kg: "35",
+    hosp_talon_rodilla_cm: "",
+    hosp_perim_brazo_cm: "",
+    hosp_perim_pantorrilla_cm: "",
+    hosp_pliegue_subescapular_mm: "",
+    hosp_ventilatorio: "no",
+    hosp_obesidad: "no",
+    hosp_trauma: "no",
+    hosp_quemadura: "no",
+    // Nutrición parenteral hospitalizado (EVANUT)
+    pn_peso_kg: "",
+    pn_calorias: "",
+    pn_liquidos_ml: "",
+    pn_prot_gkg: "1.2",
+    pn_cho_gkg: "4",
+    pn_na_meq_kg: "1.5",
+    pn_k_meq_kg: "1.5",
+    pn_ca_meq_dia: "12",
+    pn_p_mmol_dia: "20",
     proteinas_gramos_f2: "",
     proteinas_calorias_f2: "",
     proteinas_amdr_f2: "",
@@ -298,17 +728,20 @@ function getDefaultFormData() {
   };
 }
 
-/** Energía y ganancia gestante según EVANUT 4.1 */
+/** Energía y ganancia gestante según EVANUT 4.1 (+ fórmulas alternativas) */
 function calculateGestanteEnergia(fd: Record<string, any>) {
   const pesoPreg = parseFloat(fd.gestante_peso_preg) || 0;
   let estM = parseFloat(fd.gestante_estatura_m) || 0;
   // permitir cm si el valor es > 3
   if (estM > 3) estM = estM / 100;
+  const alturaCm = estM > 0 ? estM * 100 : 0;
   const semana = parseFloat(fd.gestante_semana) || 0;
   const pesoActual = parseFloat(fd.gestante_peso_actual) || 0;
   const edad = parseFloat(fd.gestante_edad) || 25;
   const pal = parseFloat(fd.gestante_pal) || 1.53;
   const imcDeseado = parseFloat(fd.gestante_imc_deseado) || 0;
+  const formula = fd.formula_requerimiento || "schofield";
+  const kcalKg = parseFloat(fd.rango_kcal_kg) || 0;
 
   const imcPreg = pesoPreg > 0 && estM > 0 ? pesoPreg / (estM * estM) : 0;
   const atalah = getAtalahClass(imcPreg);
@@ -325,13 +758,31 @@ function calculateGestanteEnergia(fd: Record<string, any>) {
     parseFloat(fd.gestante_peso_ref) ||
     (pesoSaludable > 0 ? pesoSaludable : pesoPreg);
 
-  // TMR Schofield mujeres (hoja Gestante)
   let tmr = 0;
-  if (pesoRef > 0) {
-    if (edad <= 30) tmr = 14.818 * pesoRef + 486.6;
-    else tmr = 8.126 * pesoRef + 845.6;
+  let reqBase = 0;
+  let metodoLabel = "FAO/Schofield";
+
+  if (formula === "rango_calorico") {
+    metodoLabel = "Rango calórico (kcal/kg)";
+    reqBase = pesoRef > 0 && kcalKg > 0 ? pesoRef * kcalKg : 0;
+  } else if (formula === "harris_benedict") {
+    metodoLabel = "Harris-Benedict";
+    tmr = calcTmbHarrisBenedict(pesoRef, alturaCm, edad, "femenino");
+    reqBase = tmr > 0 ? tmr * pal : 0;
+  } else if (formula === "mifflin") {
+    metodoLabel = "Mifflin-St Jeor";
+    tmr = calcTmbMifflin(pesoRef, alturaCm, edad, "femenino");
+    reqBase = tmr > 0 ? tmr * pal : 0;
+  } else {
+    metodoLabel = "FAO/Schofield";
+    // TMR Schofield mujeres (hoja Gestante)
+    if (pesoRef > 0) {
+      if (edad <= 30) tmr = 14.818 * pesoRef + 486.6;
+      else tmr = 8.126 * pesoRef + 845.6;
+    }
+    reqBase = tmr * pal;
   }
-  const reqBase = tmr * pal;
+
   const extra = getGestanteExtraKcal(
     atalah,
     trimestre,
@@ -370,14 +821,17 @@ function calculateGestanteEnergia(fd: Record<string, any>) {
     areaMuscularBrazo,
     areaGrasaBrazo,
     adiposidad: pliegueTri + pliegueSub,
+    formula,
+    metodoLabel,
   };
 }
 
-/** Energía gestante adolescente (EVANUT Ges Adoles) */
+/** Energía gestante adolescente (EVANUT Ges Adoles + fórmulas alternativas) */
 function calculateGestanteAdolescenteEnergia(fd: Record<string, any>) {
   const pesoPreg = parseFloat(fd.gestante_peso_preg) || 0;
   let estM = parseFloat(fd.gestante_estatura_m) || 0;
   if (estM > 3) estM = estM / 100;
+  const alturaCm = estM > 0 ? estM * 100 : 0;
   const semana = parseFloat(fd.gestante_semana) || 0;
   const pesoActual = parseFloat(fd.gestante_peso_actual) || 0;
   const edad = parseFloat(fd.gestante_edad) || 15;
@@ -396,15 +850,46 @@ function calculateGestanteAdolescenteEnergia(fd: Record<string, any>) {
   const gananciaDiaria =
     parseFloat(fd.gestante_ganancia_diaria_g) || gananciaSugerida;
   const actividad = fd.gestante_actividad_adoles || "Moderado";
-  const base = getGestAdolesBaseReq(pesoPreg, gananciaDiaria, actividad);
-  const extra = getGestAdolesExtraKcal(zClass, trimestre);
-  const requerimientoFinal = base.requerimiento + extra;
-  const bajo = zClass === "Delgadez" || zClass === "Riesgo delgadez";
-  const rien = getGestanteRienTargets(bajo ? "Bajo" : "Normal");
+  const formula = fd.formula_requerimiento || "schofield";
+  const kcalKg = parseFloat(fd.rango_kcal_kg) || 0;
+
+  let factorAct = 1;
+  if (actividad === "Sedentario") factorAct = 0.85;
+  else if (actividad === "Activo") factorAct = 1.15;
+
+  let get = 0;
+  let tmr = 0;
+  let reqBase = 0;
+  let metodoLabel = "GET FAO + crecimiento";
 
   const imcDeseado = parseFloat(fd.gestante_imc_deseado) || 24;
   const pesoSaludable = imcDeseado > 0 && estM > 0 ? imcDeseado * estM * estM : 0;
   const pesoRef = parseFloat(fd.gestante_peso_ref) || pesoPreg;
+
+  if (formula === "rango_calorico") {
+    metodoLabel = "Rango calórico (kcal/kg)";
+    reqBase = pesoRef > 0 && kcalKg > 0 ? pesoRef * kcalKg : 0;
+  } else if (formula === "harris_benedict") {
+    metodoLabel = "Harris-Benedict + crecimiento";
+    tmr = calcTmbHarrisBenedict(pesoRef, alturaCm, edad, "femenino");
+    // Misma lógica Ges Adoles: (TMB + g×2) × actividad
+    reqBase = tmr > 0 ? (tmr + gananciaDiaria * 2) * factorAct : 0;
+  } else if (formula === "mifflin") {
+    metodoLabel = "Mifflin-St Jeor + crecimiento";
+    tmr = calcTmbMifflin(pesoRef, alturaCm, edad, "femenino");
+    reqBase = tmr > 0 ? (tmr + gananciaDiaria * 2) * factorAct : 0;
+  } else {
+    metodoLabel = "GET FAO + crecimiento";
+    const base = getGestAdolesBaseReq(pesoPreg, gananciaDiaria, actividad);
+    get = base.get;
+    reqBase = base.requerimiento;
+    factorAct = base.factor;
+  }
+
+  const extra = getGestAdolesExtraKcal(zClass, trimestre);
+  const requerimientoFinal = reqBase + extra;
+  const bajo = zClass === "Delgadez" || zClass === "Riesgo delgadez";
+  const rien = getGestanteRienTargets(bajo ? "Bajo" : "Normal");
 
   return {
     estM,
@@ -419,15 +904,18 @@ function calculateGestanteAdolescenteEnergia(fd: Record<string, any>) {
     trimestre,
     gananciaSugerida,
     gananciaDiaria,
-    get: base.get,
-    reqBase: base.requerimiento,
-    factorAct: base.factor,
+    get,
+    tmr,
+    reqBase,
+    factorAct,
     extra,
     requerimientoFinal,
     rien,
     pesoSaludable,
     pesoRef,
     actividad,
+    formula,
+    metodoLabel,
   };
 }
 
@@ -652,6 +1140,10 @@ function mergeFormDataWithDefaults(saved: any): any {
   if (saved.tipo_plan === "gestante" || saved.tipo_plan === "gestante_adolescente") {
     defaultData.grupos_alimentos_f3 = buildGruposAlimentos("gestante");
   }
+  if (saved.tipo_plan === "hospitalizado") {
+    defaultData.grupos_alimentos_f3 = buildGruposAlimentos("hospitalizado");
+    defaultData.formula_requerimiento = "harris_benedict";
+  }
   const merged = { ...defaultData };
   for (const key of Object.keys(defaultData)) {
     if (saved[key] === undefined) continue;
@@ -703,6 +1195,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         ? (currentPhaseData as any).titleGestAdoles
       : formData.tipo_plan === "gestante" && (currentPhaseData as any).titleGestante
         ? (currentPhaseData as any).titleGestante
+      : isHospitalizado(formData.tipo_plan) && (currentPhaseData as any).titleHospitalizado
+        ? (currentPhaseData as any).titleHospitalizado
       : currentPhaseData.title;
   const phaseDescription = formData.tipo_plan === "deportista" && (currentPhaseData as any).descriptionDeportista
     ? (currentPhaseData as any).descriptionDeportista
@@ -712,38 +1206,79 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         ? (currentPhaseData as any).descriptionGestAdoles
       : formData.tipo_plan === "gestante" && (currentPhaseData as any).descriptionGestante
         ? (currentPhaseData as any).descriptionGestante
+      : isHospitalizado(formData.tipo_plan) && (currentPhaseData as any).descriptionHospitalizado
+        ? (currentPhaseData as any).descriptionHospitalizado
       : currentPhaseData.description;
   const gruposFase3 = getEvanutGruposForTipo(formData.tipo_plan);
 
-  const computeTmbValue = (pesoValue: string, edadValue: string, generoValue: string) => {
+  const computeTmbValue = (pesoValue: string, edadValue: string, generoValue: string, alturaValue?: string, formula?: string) => {
+    const formulaSel = formula || formData.formula_requerimiento || "schofield";
     const peso = parseFloat(pesoValue);
     const edad = parseFloat(edadValue);
     const genero = generoValue;
+    const altura = parseFloat(alturaValue || formData.altura) || 0;
 
     if (isNaN(peso) || isNaN(edad) || peso <= 0 || edad <= 0 || !genero) {
       return null;
     }
-
-    let tmb = 0;
-    if (genero === "masculino") {
-      if (edad >= 18 && edad <= 30) {
-        tmb = (15.057 * peso) + 692.2;
-      } else if (edad >= 31 && edad <= 60) {
-        tmb = (11.472 * peso) + 873.1;
-      } else if (edad > 60) {
-        tmb = (11.711 * peso) + 587.7;
-      }
-    } else if (genero === "femenino") {
-      if (edad >= 18 && edad <= 30) {
-        tmb = (14.818 * peso) + 486.6;
-      } else if (edad >= 31 && edad <= 60) {
-        tmb = (8.126 * peso) + 845.6;
-      } else if (edad > 60) {
-        tmb = (9.082 * peso) + 658.5;
-      }
+    if (formulaSel === "harris_benedict") {
+      const t = calcTmbHarrisBenedict(peso, altura, edad, genero);
+      return t > 0 ? t : null;
     }
+    if (formulaSel === "mifflin") {
+      const t = calcTmbMifflin(peso, altura, edad, genero);
+      return t > 0 ? t : null;
+    }
+    if (formulaSel === "rango_calorico") {
+      return null; // no TMB
+    }
+    const t = calcTmbSchofield(peso, edad, genero);
+    return t > 0 ? t : null;
+  };
 
-    return tmb;
+  /** Recalcula TMB + requerimiento adulto según fórmula seleccionada */
+  const recalculateAdultRequirement = (overrides: Record<string, any> = {}) => {
+    setFormData((prev: any) => {
+      const merged = { ...prev, ...overrides };
+      const calc = calculateAdultEnergia(merged);
+      const adj = withAjusteCaloriasFields(calc.reqBase, merged);
+      const isRango = (merged.formula_requerimiento || "schofield") === "rango_calorico";
+      return {
+        ...merged,
+        ...adj,
+        tmb: calc.tmb > 0 ? calc.tmb.toFixed(2) : isRango ? "" : (adj.requerimiento_base_f1 ? prev.tmb : ""),
+      };
+    });
+  };
+
+  const formulaIsRango = (fd: Record<string, any> = formData) =>
+    (fd.formula_requerimiento || "schofield") === "rango_calorico";
+
+  const recalculateHospitalizadoRequirement = (overrides: Record<string, any> = {}) => {
+    setFormData((prev: any) => {
+      const merged = { ...prev, ...overrides };
+      // Asegurar defaults hospitalarios
+      if (!merged.formula_requerimiento || merged.formula_requerimiento === "schofield") {
+        if (overrides.formula_requerimiento == null) merged.formula_requerimiento = "harris_benedict";
+      }
+      const calc = calculateHospitalizadoEnergia(merged);
+      const adj = withAjusteCaloriasFields(calc.reqBase, merged);
+      const isRango = (merged.formula_requerimiento || "harris_benedict") === "rango_calorico";
+      return {
+        ...merged,
+        ...adj,
+        imc: calc.imc > 0 ? calc.imc.toFixed(2) : merged.imc,
+        peso_saludable: calc.pesoSaludable > 0 ? calc.pesoSaludable.toFixed(2) : merged.peso_saludable,
+        peso_ajustado: calc.pesoAjustado > 0 ? calc.pesoAjustado.toFixed(2) : merged.peso_ajustado,
+        peso_referencia_f2: String(
+          overrides.peso_referencia_f2 ??
+            merged.peso_referencia_f2 ??
+            (calc.pesoRef > 0 ? calc.pesoRef.toFixed(2) : "")
+        ),
+        factor_actividad: String(calc.fa),
+        tmb: calc.tmb > 0 ? calc.tmb.toFixed(2) : isRango ? "" : (adj.requerimiento_base_f1 ? prev.tmb : ""),
+      };
+    });
   };
 
   const computeAgeYears = (fechaNacimiento?: string | null) => {
@@ -812,8 +1347,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       let imc = "";
       let pesoSaludable = "";
       let pesoAjustado = "";
-      let tmb = "";
-      let requerimientoEnergetico = "";
 
       const pesoNum = parseFloat(pesoActual);
       const alturaNum = parseFloat(altura);
@@ -825,29 +1358,32 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         pesoAjustado = ((pesoNum - 25 * alturaMetros * alturaMetros) * 0.25 + 25 * alturaMetros * alturaMetros).toFixed(2);
       }
 
-      const tmbComputed = computeTmbValue(pesoObjetivo || pesoActual, edad, genero);
-      if (tmbComputed != null) {
-        tmb = tmbComputed.toFixed(2);
-        const factorNum = parseFloat(factorActividad) || 1.55;
-        requerimientoEnergetico = String(Math.round(tmbComputed * factorNum));
-      }
-
-      setFormData((prev: any) => ({
-        ...prev,
-        patient_id: pid,
-        peso_actual: pesoActual,
-        altura,
-        genero,
-        edad,
-        peso_objetivo: pesoObjetivo,
-        peso_referencia_f2: pesoObjetivo,
-        factor_actividad: factorActividad,
-        imc: imc || prev.imc,
-        peso_saludable: pesoSaludable || prev.peso_saludable,
-        peso_ajustado: pesoAjustado || prev.peso_ajustado,
-        tmb: tmb || prev.tmb,
-        requerimiento_energetico: requerimientoEnergetico || prev.requerimiento_energetico,
-      }));
+      setFormData((prev: any) => {
+        const draft = {
+          ...prev,
+          patient_id: pid,
+          peso_actual: pesoActual,
+          altura,
+          genero,
+          edad,
+          peso_objetivo: pesoObjetivo,
+          peso_referencia_f2: pesoObjetivo || pesoActual,
+          factor_actividad: factorActividad,
+          imc: imc || prev.imc,
+          peso_saludable: pesoSaludable || prev.peso_saludable,
+          peso_ajustado: pesoAjustado || prev.peso_ajustado,
+          formula_requerimiento: prev.formula_requerimiento || "schofield",
+          rango_kcal_kg: prev.rango_kcal_kg || "25",
+          rango_objetivo: prev.rango_objetivo || "mantenimiento",
+        };
+        const adultCalc = calculateAdultEnergia(draft);
+        const adj = withAjusteCaloriasFields(adultCalc.reqBase, draft);
+        return {
+          ...draft,
+          ...adj,
+          tmb: adultCalc.tmb > 0 ? adultCalc.tmb.toFixed(2) : "",
+        };
+      });
 
       toast({
         title: "Datos cargados",
@@ -855,6 +1391,108 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       });
     } catch (error: any) {
       console.error("Error prefill patient:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo cargar los datos del paciente",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPatient(false);
+    }
+  };
+
+  /** Prefill Fase 1 hospitalizado (misma antropometría + FA/FE EVANUT) */
+  const fetchPatientAndPrefillHospitalizado = async (pid: number) => {
+    setLoadingPatient(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${pid}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.detail || "No se pudo cargar el paciente");
+      }
+      const patient = await response.json();
+
+      const pesoActual = patient?.peso_actual != null ? String(patient.peso_actual) : "";
+      const altura = patient?.altura != null ? String(patient.altura) : "";
+      const genero = patient?.genero ? String(patient.genero).toLowerCase() : "";
+      const edad = computeAgeYears(patient?.fecha_nacimiento);
+      const pesoObjetivo = patient?.peso_objetivo != null ? String(patient.peso_objetivo) : "";
+
+      let imc = "";
+      let pesoSaludable = "";
+      let pesoAjustado = "";
+      const pesoNum = parseFloat(pesoActual);
+      const alturaNum = parseFloat(altura);
+      if (!isNaN(pesoNum) && !isNaN(alturaNum) && alturaNum > 0) {
+        const alturaMetros = alturaNum / 100;
+        const imcVal = pesoNum / (alturaMetros * alturaMetros);
+        imc = imcVal.toFixed(2);
+        pesoSaludable = (25 * alturaMetros * alturaMetros).toFixed(2);
+        pesoAjustado = (
+          (pesoNum - 25 * alturaMetros * alturaMetros) * 0.25 +
+          25 * alturaMetros * alturaMetros
+        ).toFixed(2);
+      }
+
+      const sugerido = suggestHospitalPesoRef(
+        parseFloat(imc) || 0,
+        pesoNum || 0,
+        parseFloat(pesoSaludable) || 0,
+        parseFloat(pesoAjustado) || 0
+      );
+
+      setFormData((prev: any) => {
+        const draft = {
+          ...prev,
+          patient_id: pid,
+          tipo_plan: "hospitalizado",
+          peso_actual: pesoActual,
+          altura,
+          genero,
+          edad,
+          peso_objetivo: pesoObjetivo,
+          peso_referencia_f2: pesoObjetivo || (sugerido.peso > 0 ? sugerido.peso.toFixed(2) : pesoActual),
+          imc: imc || prev.imc,
+          peso_saludable: pesoSaludable || prev.peso_saludable,
+          peso_ajustado: pesoAjustado || prev.peso_ajustado,
+          formula_requerimiento:
+            prev.formula_requerimiento && prev.formula_requerimiento !== "schofield"
+              ? prev.formula_requerimiento
+              : "harris_benedict",
+          rango_kcal_kg: prev.rango_kcal_kg || "25",
+          rango_objetivo: prev.rango_objetivo || "mantenimiento",
+          hosp_factor_actividad: prev.hosp_factor_actividad || "1.15",
+          hosp_actividad_preset: prev.hosp_actividad_preset || "cama",
+          hosp_factor_estres: prev.hosp_factor_estres || "1.0",
+          hosp_estres_preset: prev.hosp_estres_preset || "ninguno",
+          hosp_liquidos_cc_kg: prev.hosp_liquidos_cc_kg || "35",
+          hosp_ventilatorio: prev.hosp_ventilatorio || "no",
+          hosp_obesidad: prev.hosp_obesidad || (parseFloat(imc) >= 30 ? "si" : "no"),
+          hosp_trauma: prev.hosp_trauma || "no",
+          hosp_quemadura: prev.hosp_quemadura || "no",
+          grupos_alimentos_f3: buildGruposAlimentos("hospitalizado"),
+        };
+        const calc = calculateHospitalizadoEnergia(draft);
+        const adj = withAjusteCaloriasFields(calc.reqBase, draft);
+        return {
+          ...draft,
+          ...adj,
+          factor_actividad: String(calc.fa),
+          tmb: calc.tmb > 0 ? calc.tmb.toFixed(2) : "",
+        };
+      });
+
+      toast({
+        title: "Datos cargados",
+        description: `Se cargaron los datos de ${patient?.nombres || "el paciente"} (hospitalizado)`,
+      });
+    } catch (error: any) {
+      console.error("Error prefill hospitalizado:", error);
       toast({
         title: "Error",
         description: error?.message || "No se pudo cargar los datos del paciente",
@@ -1151,9 +1789,19 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       console.warn("Error loading plan wizard draft:", e);
     }
     const defaultData = getDefaultFormData();
+    const tipoInit = initialTipoPlan || defaultData.tipo_plan;
     setFormData({
       ...defaultData,
       ...(initialTipoPlan && { tipo_plan: initialTipoPlan }),
+      ...(tipoInit === "hospitalizado"
+        ? {
+            formula_requerimiento: "harris_benedict",
+            hosp_factor_actividad: "1.15",
+            hosp_factor_estres: "1.0",
+            hosp_liquidos_cc_kg: "35",
+            grupos_alimentos_f3: buildGruposAlimentos("hospitalizado"),
+          }
+        : {}),
     });
     setCurrentPhase(initialTipoPlan ? 1 : 0);
     setCompletedPhases([]);
@@ -1165,6 +1813,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         fetchPatientAndPrefillPediatria(patientId);
       } else if (tipo === "gestante" || tipo === "gestante_adolescente") {
         fetchPatientAndPrefillGestante(patientId, tipo);
+      } else if (tipo === "hospitalizado") {
+        fetchPatientAndPrefillHospitalizado(patientId);
       } else {
         fetchPatientAndPrefill(patientId);
       }
@@ -1400,43 +2050,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     calculatePesoSaludable(alturaValue, imc.toString(), pesoValue);
   };
 
-  // Calcular TMB FAO/Schofield
+  // Calcular TMB según fórmula seleccionada
   const calculateTMB = (pesoValue: string, edadValue: string, generoValue: string) => {
-    const peso = parseFloat(pesoValue);
-    const edad = parseFloat(edadValue);
-    const genero = generoValue;
-
-    if (isNaN(peso) || isNaN(edad) || peso <= 0 || edad <= 0 || !genero) {
-      handleChange("tmb", "");
-      return;
-    }
-
-    // El peso de referencia para TMB según Excel es el peso de referencia (WeightActual o PA)
-    // Pero aquí usamos el peso que se nos pase
-    let tmb = 0;
-
-    if (genero === "masculino") {
-      if (edad >= 18 && edad <= 30) {
-        tmb = (15.057 * peso) + 692.2;
-      } else if (edad >= 31 && edad <= 60) {
-        tmb = (11.472 * peso) + 873.1;
-      } else if (edad > 60) {
-        tmb = (11.711 * peso) + 587.7;
-      }
-    } else if (genero === "femenino") {
-      if (edad >= 18 && edad <= 30) {
-        tmb = (14.818 * peso) + 486.6;
-      } else if (edad >= 31 && edad <= 60) {
-        tmb = (8.126 * peso) + 845.6;
-      } else if (edad > 60) {
-        tmb = (9.082 * peso) + 658.5;
-      }
-    }
-
-    handleChange("tmb", tmb.toFixed(2));
-
-    // Calcular requerimiento energético después de calcular TMB
-    calculateRequerimientoEnergetico(tmb.toString(), formData.factor_actividad);
+    recalculateAdultRequirement({
+      peso_referencia_f2: pesoValue || formData.peso_referencia_f2,
+      peso_objetivo: formData.peso_objetivo || pesoValue,
+      edad: edadValue,
+      genero: generoValue,
+    });
   };
 
   // Calcular Peso Saludable y Peso Ajustado
@@ -1464,23 +2085,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     handleChange("peso_referencia_f2", formData.peso_objetivo);
   };
 
-  // Calcular Requerimiento Energético
-  const calculateRequerimientoEnergetico = (tmbValue: string, factorValue: string) => {
-    const tmb = parseFloat(tmbValue);
-    const factor = parseFloat(factorValue);
-
-    if (isNaN(tmb) || isNaN(factor) || tmb <= 0 || factor <= 0) {
-      handleChange("requerimiento_energetico", "");
-      handleChange("requerimiento_base_f1", "");
-      return;
-    }
-
-    // Excel usa TMR * PAL; luego se aplica restricción/aumento opcional
-    const base = Math.round(tmb * factor);
-    const adjusted = applyAjusteCalorias(base, formData);
-    handleChange("requerimiento_base_f1", String(base));
-    handleChange("requerimiento_energetico", String(adjusted));
-    handleChange("total_calorias_f2", String(adjusted));
+  // Calcular Requerimiento Energético (adulto)
+  const calculateRequerimientoEnergetico = (_tmbValue: string, factorValue: string) => {
+    recalculateAdultRequirement({ factor_actividad: factorValue });
   };
 
   /** Actualiza modo/valor de ajuste y recalcula el total desde la base */
@@ -1942,6 +2549,40 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
           ...buildGruposAlimentos("gestante"),
           ...formData.grupos_alimentos_f3,
         });
+      } else if (isHospitalizado(formData.tipo_plan)) {
+        if (!(parseFloat(formData.peso_actual) > 0) || !(parseFloat(formData.altura) > 0 || parseFloat(formData.hosp_talon_rodilla_cm) > 0)) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa peso y altura (o talón-rodilla para estimar talla Chumlea)",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (!(parseFloat(formData.edad) > 0) || !formData.genero) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa edad y sexo del paciente hospitalizado",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const calc = calculateHospitalizadoEnergia(formData);
+        if (!(calc.requerimientoFinal > 0) && !(parseFloat(formData.requerimiento_energetico) > 0)) {
+          toast({
+            title: "Requerimiento energético",
+            description: "Completa fórmula, factor de actividad y estrés (EVANUT Hospitalizado)",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const updates: Record<string, any> = {};
+        if (!formData.proteinas_kg_peso) updates.proteinas_kg_peso = "1.2";
+        if (!formData.grasas_amdr_f2) updates.grasas_amdr_f2 = "30";
+        if (Object.keys(updates).length) setFormData((prev: any) => ({ ...prev, ...updates }));
+        handleChange("grupos_alimentos_f3", {
+          ...buildGruposAlimentos("hospitalizado"),
+          ...formData.grupos_alimentos_f3,
+        });
       } else {
         if (!(parseFloat(formData.requerimiento_energetico) > 0)) {
           toast({
@@ -2180,6 +2821,11 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               ganancia_esperada_total: g.totalEsperado,
               trimestre: g.trimestre,
               get_fao: g.get,
+              tmr: g.tmr,
+              formula_requerimiento: formData.formula_requerimiento || "schofield",
+              rango_kcal_kg: formData.rango_kcal_kg,
+              rango_objetivo: formData.rango_objetivo,
+              metodo_energia: g.metodoLabel,
               requerimiento_base: g.reqBase,
               calorias_adicionales: g.extra,
               requerimiento_energetico: formData.requerimiento_energetico || Math.round(g.requerimientoFinal),
@@ -2213,6 +2859,10 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             ganancia_esperada_total: g.totalEsperado,
             trimestre: g.trimestre,
             tmr: g.tmr,
+            formula_requerimiento: formData.formula_requerimiento || "schofield",
+            rango_kcal_kg: formData.rango_kcal_kg,
+            rango_objetivo: formData.rango_objetivo,
+            metodo_energia: g.metodoLabel,
             requerimiento_base: g.reqBase,
             calorias_adicionales: g.extra,
             requerimiento_energetico: formData.requerimiento_energetico || Math.round(g.requerimientoFinal),
@@ -2224,6 +2874,77 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             perimetro_muscular_brazo: g.perimMuscularBrazo,
             area_muscular_brazo: g.areaMuscularBrazo,
             area_grasa_brazo: g.areaGrasaBrazo,
+          };
+        })()
+        : isHospitalizado(formData.tipo_plan)
+        ? (() => {
+          const h = calculateHospitalizadoEnergia(formData);
+          return {
+            tipo_fase: "hospitalizado",
+            peso_actual: formData.peso_actual,
+            altura: formData.altura || (h.alturaCm > 0 ? h.alturaCm.toFixed(1) : ""),
+            edad: formData.edad,
+            genero: formData.genero,
+            peso_saludable: formData.peso_saludable || (h.pesoSaludable > 0 ? h.pesoSaludable.toFixed(2) : ""),
+            peso_ajustado: formData.peso_ajustado || (h.pesoAjustado > 0 ? h.pesoAjustado.toFixed(2) : ""),
+            peso_objetivo: formData.peso_objetivo,
+            imc: formData.imc || (h.imc > 0 ? h.imc.toFixed(2) : ""),
+            tmb: formData.tmb || (h.tmb > 0 ? h.tmb.toFixed(2) : ""),
+            formula_requerimiento: formData.formula_requerimiento || "harris_benedict",
+            rango_kcal_kg: formData.rango_kcal_kg,
+            rango_objetivo: formData.rango_objetivo,
+            metodo_energia: h.metodoLabel,
+            hosp_factor_actividad: formData.hosp_factor_actividad || h.fa,
+            hosp_actividad_preset: formData.hosp_actividad_preset,
+            hosp_factor_estres: formData.hosp_factor_estres || h.fe,
+            hosp_estres_preset: formData.hosp_estres_preset,
+            hosp_liquidos_cc_kg: formData.hosp_liquidos_cc_kg || h.liquidosCcKg,
+            liquidos_ml: Math.round(h.liquidosMl),
+            hosp_talon_rodilla_cm: formData.hosp_talon_rodilla_cm,
+            hosp_perim_brazo_cm: formData.hosp_perim_brazo_cm,
+            hosp_perim_pantorrilla_cm: formData.hosp_perim_pantorrilla_cm,
+            hosp_pliegue_subescapular_mm: formData.hosp_pliegue_subescapular_mm,
+            talla_estimada_chumlea: h.tallaEstimada > 0 ? Number(h.tallaEstimada.toFixed(1)) : null,
+            peso_estimado_chumlea: h.pesoEstimado > 0 ? Number(h.pesoEstimado.toFixed(1)) : null,
+            regla_peso: h.reglaPeso,
+            hosp_ventilatorio: formData.hosp_ventilatorio,
+            hosp_obesidad: formData.hosp_obesidad,
+            hosp_trauma: formData.hosp_trauma,
+            hosp_quemadura: formData.hosp_quemadura,
+            nutricion_parenteral: {
+              peso_kg: h.parenteral.peso,
+              calorias: h.parenteral.calorias,
+              liquidos_ml: h.parenteral.liquidos,
+              prot_gkg: h.parenteral.protGkg,
+              cho_gkg: h.parenteral.choGkg,
+              prot_g: Number(h.parenteral.protG.toFixed(2)),
+              cho_g: Number(h.parenteral.choG.toFixed(2)),
+              lip_g: Number(h.parenteral.lipG.toFixed(2)),
+              lip_gkg: Number(h.parenteral.lipGkg.toFixed(3)),
+              flujo_mg_kg_min: Number(h.parenteral.flujoMgKgMin.toFixed(3)),
+              na_meq_kg: h.parenteral.naMeqKg,
+              k_meq_kg: h.parenteral.kMeqKg,
+              na_total_meq: Number(h.parenteral.naTotal.toFixed(1)),
+              k_total_meq: Number(h.parenteral.kTotal.toFixed(1)),
+              ca_meq_dia: h.parenteral.caMeqDia,
+              p_mmol_dia: h.parenteral.pMmolDia,
+            },
+            pn_peso_kg: formData.pn_peso_kg,
+            pn_calorias: formData.pn_calorias,
+            pn_liquidos_ml: formData.pn_liquidos_ml,
+            pn_prot_gkg: formData.pn_prot_gkg,
+            pn_cho_gkg: formData.pn_cho_gkg,
+            pn_na_meq_kg: formData.pn_na_meq_kg,
+            pn_k_meq_kg: formData.pn_k_meq_kg,
+            pn_ca_meq_dia: formData.pn_ca_meq_dia,
+            pn_p_mmol_dia: formData.pn_p_mmol_dia,
+            requerimiento_base: h.reqBase,
+            requerimiento_energetico: formData.requerimiento_energetico || Math.round(h.requerimientoFinal),
+            requerimiento_antes_ajuste: formData.requerimiento_base_f1 || Math.round(h.requerimientoFinal),
+            ajuste_calorias_modo: formData.ajuste_calorias_modo,
+            ajuste_calorias_valor: formData.ajuste_calorias_valor,
+            peso_referencia: formData.peso_referencia_f2 || h.pesoRef,
+            factor_actividad: formData.hosp_factor_actividad || h.fa,
           };
         })()
         : {
@@ -2238,6 +2959,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
           requerimiento_antes_ajuste: formData.requerimiento_base_f1,
           ajuste_calorias_modo: formData.ajuste_calorias_modo,
           ajuste_calorias_valor: formData.ajuste_calorias_valor,
+          formula_requerimiento: formData.formula_requerimiento || "schofield",
+          rango_kcal_kg: formData.rango_kcal_kg,
+          rango_objetivo: formData.rango_objetivo,
           imc: formData.imc,
           tmb: formData.tmb,
           factor_actividad: formData.factor_actividad,
@@ -2461,6 +3185,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       const id = await getPatientIdToLoad();
                       if (id != null) await fetchPatientAndPrefillGestante(id, value);
                       else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
+                    } else if (value === "hospitalizado") {
+                      handleChange("formula_requerimiento", "harris_benedict");
+                      handleChange("hosp_factor_actividad", "1.15");
+                      handleChange("hosp_factor_estres", "1.0");
+                      handleChange("hosp_liquidos_cc_kg", "35");
+                      const id = await getPatientIdToLoad();
+                      if (id != null) await fetchPatientAndPrefillHospitalizado(id);
+                      else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
                     }
                   }}
                 >
@@ -2490,6 +3222,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                   });
                   if (value === "deportista" && !formData.factor_actividad) {
                     handleChange("factor_actividad", "2.25");
+                  }
+                  if (value === "hospitalizado") {
+                    if (!formData.formula_requerimiento || formData.formula_requerimiento === "schofield") {
+                      handleChange("formula_requerimiento", "harris_benedict");
+                    }
+                    if (!formData.hosp_factor_actividad) handleChange("hosp_factor_actividad", "1.15");
+                    if (!formData.hosp_factor_estres) handleChange("hosp_factor_estres", "1.0");
+                    if (!formData.hosp_liquidos_cc_kg) handleChange("hosp_liquidos_cc_kg", "35");
                   }
                 }}
               >
@@ -2944,6 +3684,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                   ...next,
                   ...adj,
                   imc: calc.imcPreg > 0 ? calc.imcPreg.toFixed(2) : prev.imc,
+                  tmb: calc.tmr > 0 ? calc.tmr.toFixed(1) : prev.tmb,
                   peso_referencia_f2: String(next.gestante_peso_ref ?? prev.peso_referencia_f2 ?? calc.pesoRef),
                 }));
               } else {
@@ -2971,8 +3712,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
                     {adoles
-                      ? "Puntaje Z, GET FAO + crecimiento por edad + extras (EVANUT Ges Adoles)"
-                      : "IMC Atalah, ganancia gestacional y TMR × PAL + extras por trimestre (EVANUT Gestante)"}
+                      ? "Puntaje Z, fórmula energética + extras de gestación (EVANUT Ges Adoles)"
+                      : "IMC Atalah, ganancia gestacional, fórmula energética + extras por trimestre (EVANUT Gestante)"}
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -3020,31 +3761,126 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       <>
                         <div className="space-y-1"><Label>Puntaje Z (IMC/edad) *</Label><Input type="number" step="0.01" value={formData.gestante_puntaje_z} onChange={(e) => syncReq({ gestante_puntaje_z: e.target.value })} placeholder="Ej. -0.5" /></div>
                         <div className="space-y-1"><Label>Ganancia diaria crecimiento (g)</Label><Input type="number" step="0.1" value={formData.gestante_ganancia_diaria_g} onChange={(e) => syncReq({ gestante_ganancia_diaria_g: e.target.value })} /></div>
-                        <div className="space-y-1">
-                          <Label>Actividad física</Label>
-                          <Select value={formData.gestante_actividad_adoles || "Moderado"} onValueChange={(v) => syncReq({ gestante_actividad_adoles: v })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Sedentario">Sedentario (×0.85)</SelectItem>
-                              <SelectItem value="Moderado">Moderado (×1.0)</SelectItem>
-                              <SelectItem value="Activo">Activo (×1.15)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        {(formData.formula_requerimiento || "schofield") !== "rango_calorico" && (
+                          <div className="space-y-1">
+                            <Label>Actividad física</Label>
+                            <Select value={formData.gestante_actividad_adoles || "Moderado"} onValueChange={(v) => syncReq({ gestante_actividad_adoles: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Sedentario">Sedentario (×0.85)</SelectItem>
+                                <SelectItem value="Moderado">Moderado (×1.0)</SelectItem>
+                                <SelectItem value="Activo">Activo (×1.15)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>
                         <div className="space-y-1"><Label>IMC deseado (opc.)</Label><Input type="number" step="0.1" value={formData.gestante_imc_deseado} onChange={(e) => syncReq({ gestante_imc_deseado: e.target.value })} /></div>
+                        {(formData.formula_requerimiento || "schofield") !== "rango_calorico" && (
+                          <div className="space-y-1">
+                            <Label>Actividad (PAL)</Label>
+                            <Select value={formData.gestante_pal || "1.53"} onValueChange={(v) => syncReq({ gestante_pal: v })}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1.53">Sedentario (1.53)</SelectItem>
+                                <SelectItem value="1.76">Moderado (1.76)</SelectItem>
+                                <SelectItem value="2.25">Vigoroso (2.25)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Fórmula de requerimiento energético</Label>
+                      <Select
+                        value={formData.formula_requerimiento || "schofield"}
+                        onValueChange={(value) => {
+                          const presets: Record<string, string> = {
+                            perdida: "22",
+                            mantenimiento: "25",
+                            ganancia: "32",
+                          };
+                          const nextRango =
+                            value === "rango_calorico"
+                              ? (formData.rango_kcal_kg || presets[formData.rango_objetivo || "mantenimiento"] || "25")
+                              : formData.rango_kcal_kg;
+                          syncReq({
+                            formula_requerimiento: value,
+                            rango_kcal_kg: nextRango,
+                          });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Selecciona fórmula" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="schofield">
+                            {adoles ? "GET FAO + crecimiento (EVANUT)" : "FAO / Schofield (EVANUT)"}
+                          </SelectItem>
+                          <SelectItem value="harris_benedict">Harris-Benedict</SelectItem>
+                          <SelectItem value="mifflin">Mifflin-St Jeor</SelectItem>
+                          <SelectItem value="rango_calorico">Rango calórico (kcal/kg)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {formData.formula_requerimiento === "rango_calorico"
+                          ? "Peso de referencia × kcal/kg + extras de gestación"
+                          : formData.formula_requerimiento === "harris_benedict"
+                            ? adoles
+                              ? "TMB Harris-Benedict + crecimiento × actividad + extras"
+                              : "TMB Harris-Benedict × PAL + extras de gestación"
+                            : formData.formula_requerimiento === "mifflin"
+                              ? adoles
+                                ? "TMB Mifflin-St Jeor + crecimiento × actividad + extras"
+                                : "TMB Mifflin-St Jeor × PAL + extras de gestación"
+                              : adoles
+                                ? "GET FAO + g crecimiento × actividad + extras (método EVANUT)"
+                                : "TMR FAO/Schofield × PAL + extras (método EVANUT)"}
+                      </p>
+                    </div>
+                    {(formData.formula_requerimiento || "schofield") === "rango_calorico" && (
+                      <>
                         <div className="space-y-1">
-                          <Label>Actividad (PAL)</Label>
-                          <Select value={formData.gestante_pal || "1.53"} onValueChange={(v) => syncReq({ gestante_pal: v })}>
+                          <Label>Objetivo (preset kcal/kg)</Label>
+                          <Select
+                            value={formData.rango_objetivo || "mantenimiento"}
+                            onValueChange={(value) => {
+                              const map: Record<string, string> = {
+                                perdida: "22",
+                                mantenimiento: "25",
+                                ganancia: "32",
+                              };
+                              syncReq({
+                                rango_objetivo: value,
+                                rango_kcal_kg: map[value] || "25",
+                              });
+                            }}
+                          >
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="1.53">Sedentario (1.53)</SelectItem>
-                              <SelectItem value="1.76">Moderado (1.76)</SelectItem>
-                              <SelectItem value="2.25">Vigoroso (2.25)</SelectItem>
+                              <SelectItem value="perdida">Pérdida (~20–25 kcal/kg)</SelectItem>
+                              <SelectItem value="mantenimiento">Mantenimiento (~25–30 kcal/kg)</SelectItem>
+                              <SelectItem value="ganancia">Ganancia (~30–35 kcal/kg)</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>kcal / kg</Label>
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min="10"
+                            max="50"
+                            value={formData.rango_kcal_kg}
+                            onChange={(e) => syncReq({ rango_kcal_kg: e.target.value })}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Peso ref: {formData.gestante_peso_ref || gAdult?.pesoRef || gAd?.pesoRef || "—"} kg
+                          </p>
                         </div>
                       </>
                     )}
@@ -3063,11 +3899,24 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         <div><span className="text-muted-foreground">Ganancia diaria sugerida</span><p className="font-medium">{gAd.gananciaSugerida} g</p></div>
                       </div>
                       <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                        <div><span className="text-muted-foreground">GET FAO</span><p className="font-medium">{gAd.get > 0 ? Math.round(gAd.get) : "—"} kcal</p></div>
-                        <div><span className="text-muted-foreground">Base (+ crec. × act.)</span><p className="font-medium">{gAd.reqBase > 0 ? Math.round(gAd.reqBase) : "—"} kcal</p></div>
+                        {(formData.formula_requerimiento || "schofield") === "rango_calorico" ? (
+                          <div><span className="text-muted-foreground">Peso × kcal/kg</span><p className="font-medium">{gAd.reqBase > 0 ? Math.round(gAd.reqBase) : "—"} kcal</p></div>
+                        ) : (formData.formula_requerimiento === "harris_benedict" || formData.formula_requerimiento === "mifflin") ? (
+                          <>
+                            <div><span className="text-muted-foreground">
+                              {formData.formula_requerimiento === "mifflin" ? "TMB Mifflin-St Jeor" : "TMB Harris-Benedict"}
+                            </span><p className="font-medium">{gAd.tmr > 0 ? Math.round(gAd.tmr) : "—"} kcal</p></div>
+                            <div><span className="text-muted-foreground">Base (+ crec. × act.)</span><p className="font-medium">{gAd.reqBase > 0 ? Math.round(gAd.reqBase) : "—"} kcal</p></div>
+                          </>
+                        ) : (
+                          <>
+                            <div><span className="text-muted-foreground">GET FAO</span><p className="font-medium">{gAd.get > 0 ? Math.round(gAd.get) : "—"} kcal</p></div>
+                            <div><span className="text-muted-foreground">Base (+ crec. × act.)</span><p className="font-medium">{gAd.reqBase > 0 ? Math.round(gAd.reqBase) : "—"} kcal</p></div>
+                          </>
+                        )}
                         <div><span className="text-muted-foreground">+ Gestación ({gAd.trimestre}°)</span><p className="font-medium">{gAd.extra} kcal</p></div>
                         <div><span className="text-muted-foreground">Total</span><p className="font-bold text-lg text-primary">{Math.round(gAd.requerimientoFinal)} kcal</p></div>
-                        <div className="sm:col-span-2"><span className="text-muted-foreground">RIEN</span><p className="font-medium">{gAd.rien.proteinas_kg} g prot/kg · grasa {gAd.rien.grasas_amdr}%</p></div>
+                        <div className="sm:col-span-2"><span className="text-muted-foreground">Método · RIEN</span><p className="font-medium">{gAd.metodoLabel} · {gAd.rien.proteinas_kg} g prot/kg · grasa {gAd.rien.grasas_amdr}%</p></div>
                       </div>
                     </>
                   ) : gAdult ? (
@@ -3095,11 +3944,26 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         </div>
                       </div>
                       <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                        <div><span className="text-muted-foreground">TMR (Schofield)</span><p className="font-medium">{gAdult.tmr > 0 ? Math.round(gAdult.tmr) : "—"} kcal</p></div>
-                        <div><span className="text-muted-foreground">TMR × PAL</span><p className="font-medium">{gAdult.reqBase > 0 ? Math.round(gAdult.reqBase) : "—"} kcal</p></div>
+                        {(formData.formula_requerimiento || "schofield") === "rango_calorico" ? (
+                          <div><span className="text-muted-foreground">Peso × kcal/kg</span><p className="font-medium">{gAdult.reqBase > 0 ? Math.round(gAdult.reqBase) : "—"} kcal</p></div>
+                        ) : (
+                          <>
+                            <div>
+                              <span className="text-muted-foreground">
+                                {formData.formula_requerimiento === "harris_benedict"
+                                  ? "TMB Harris-Benedict"
+                                  : formData.formula_requerimiento === "mifflin"
+                                    ? "TMB Mifflin-St Jeor"
+                                    : "TMR (Schofield)"}
+                              </span>
+                              <p className="font-medium">{gAdult.tmr > 0 ? Math.round(gAdult.tmr) : "—"} kcal</p>
+                            </div>
+                            <div><span className="text-muted-foreground">× PAL</span><p className="font-medium">{gAdult.reqBase > 0 ? Math.round(gAdult.reqBase) : "—"} kcal</p></div>
+                          </>
+                        )}
                         <div><span className="text-muted-foreground">+ Gestación ({gAdult.trimestre}° trim)</span><p className="font-medium">{gAdult.extra} kcal</p></div>
                         <div><span className="text-muted-foreground">Total</span><p className="font-bold text-lg text-primary">{Math.round(gAdult.requerimientoFinal)} kcal</p></div>
-                        <div className="sm:col-span-2"><span className="text-muted-foreground">RIEN</span><p className="font-medium">{gAdult.rien.proteinas_kg} g prot/kg · grasa {gAdult.rien.grasas_amdr}% · fibra {gAdult.rien.fibra_g}g</p></div>
+                        <div className="sm:col-span-2"><span className="text-muted-foreground">Método · RIEN</span><p className="font-medium">{gAdult.metodoLabel} · {gAdult.rien.proteinas_kg} g prot/kg · grasa {gAdult.rien.grasas_amdr}% · fibra {gAdult.rien.fibra_g}g</p></div>
                       </div>
                       <div>
                         <h4 className="font-semibold mb-2">Antropometría braquial (opcional)</h4>
@@ -3130,7 +3994,479 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       }}
                     />
                     <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => syncReq({})}>
-                      {adoles ? "Recalcular GET + crecimiento + extras" : "Recalcular TMR × PAL + extras gestación"}
+                      Recalcular según fórmula seleccionada + extras gestación
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+          {/* Phase 1 Hospitalizado */}
+          {currentPhase === 1 && isHospitalizado(formData.tipo_plan) && (() => {
+            const h = calculateHospitalizadoEnergia(formData);
+            const formula = formData.formula_requerimiento || "harris_benedict";
+            const isRango = formula === "rango_calorico";
+            const isIreton = formula === "ireton_jones";
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5 text-primary" />
+                    Evaluación y requerimiento hospitalizado
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    TMB × factor de actividad × factor de estrés, Ireton-Jones o kcal/kg + líquidos (EVANUT Hospitalizado)
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                    <div className="space-y-1 min-w-[200px]">
+                      <Label>Paciente (cargar desde BD)</Label>
+                      <Select
+                        value={formData.patient_id ? String(formData.patient_id) : undefined}
+                        onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
+                        disabled={loadingPatientsList}
+                      >
+                        <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" disabled>Selecciona un paciente</SelectItem>
+                          {patientsList.map((pat) => (
+                            <SelectItem key={pat.id} value={String(pat.id)}>{pat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={loadingPatient || !formData.patient_id}
+                      onClick={() => formData.patient_id && fetchPatientAndPrefillHospitalizado(Number(formData.patient_id))}
+                    >
+                      {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label>Peso actual (kg)</Label>
+                      <Input type="number" step="0.1" value={formData.peso_actual}
+                        onChange={(e) => recalculateHospitalizadoRequirement({ peso_actual: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Altura (cm)</Label>
+                      <Input type="number" step="0.1" value={formData.altura}
+                        onChange={(e) => recalculateHospitalizadoRequirement({ altura: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Edad (años)</Label>
+                      <Input type="number" value={formData.edad}
+                        onChange={(e) => recalculateHospitalizadoRequirement({ edad: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Sexo</Label>
+                      <Select value={formData.genero || undefined}
+                        onValueChange={(v) => recalculateHospitalizadoRequirement({ genero: v })}>
+                        <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="masculino">Masculino</SelectItem>
+                          <SelectItem value="femenino">Femenino</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Peso ref (kg)</Label>
+                      <Input type="number" step="0.1" value={formData.peso_referencia_f2}
+                        onChange={(e) => recalculateHospitalizadoRequirement({ peso_referencia_f2: e.target.value })} />
+                      {h.reglaPeso && (
+                        <p className="text-xs text-muted-foreground">{h.reglaPeso}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Líquidos (cc/kg/día)</Label>
+                      <Input type="number" step="1" min="20" max="60" value={formData.hosp_liquidos_cc_kg}
+                        onChange={(e) => recalculateHospitalizadoRequirement({ hosp_liquidos_cc_kg: e.target.value })} />
+                      <p className="text-xs text-muted-foreground">Ideal 30–40 cc/kg</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 p-3 rounded-lg border border-dashed">
+                    <div>
+                      <h4 className="font-semibold text-sm">Estimación antropométrica Chumlea (opcional)</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Talla (1985) y peso no ambulante (1988). Usa talón-rodilla, brazo, pantorrilla y pliegue subescapular.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <Label>Talón-rodilla (cm)</Label>
+                        <Input type="number" step="0.1" value={formData.hosp_talon_rodilla_cm}
+                          onChange={(e) => recalculateHospitalizadoRequirement({ hosp_talon_rodilla_cm: e.target.value })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Perímetro brazo (cm)</Label>
+                        <Input type="number" step="0.1" value={formData.hosp_perim_brazo_cm}
+                          onChange={(e) => recalculateHospitalizadoRequirement({ hosp_perim_brazo_cm: e.target.value })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Perímetro pantorrilla (cm)</Label>
+                        <Input type="number" step="0.1" value={formData.hosp_perim_pantorrilla_cm}
+                          onChange={(e) => recalculateHospitalizadoRequirement({ hosp_perim_pantorrilla_cm: e.target.value })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Pliegue subescapular (mm)</Label>
+                        <Input type="number" step="0.1" value={formData.hosp_pliegue_subescapular_mm}
+                          onChange={(e) => recalculateHospitalizadoRequirement({ hosp_pliegue_subescapular_mm: e.target.value })} />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <span>Talla est.: <strong>{h.tallaEstimada > 0 ? `${h.tallaEstimada.toFixed(1)} cm` : "—"}</strong></span>
+                      <span>Peso est.: <strong>{h.pesoEstimado > 0 ? `${h.pesoEstimado.toFixed(1)} kg` : "—"}</strong></span>
+                      {h.pesoEstimado > 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() =>
+                            recalculateHospitalizadoRequirement({
+                              peso_actual: h.pesoEstimado.toFixed(1),
+                              peso_referencia_f2: h.pesoEstimado.toFixed(1),
+                              ...(h.tallaEstimada > 0 && !(parseFloat(formData.altura) > 0)
+                                ? { altura: h.tallaEstimada.toFixed(1) }
+                                : {}),
+                            })
+                          }
+                        >
+                          Usar peso/talla estimados
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    <div><span className="text-muted-foreground">IMC</span><p className="font-medium">{h.imc > 0 ? h.imc.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Peso saludable</span><p className="font-medium">{h.pesoSaludable > 0 ? h.pesoSaludable.toFixed(1) : "—"} kg</p></div>
+                    <div><span className="text-muted-foreground">Peso ajustado</span><p className="font-medium">{h.pesoAjustado > 0 ? h.pesoAjustado.toFixed(1) : "—"} kg</p></div>
+                    <div><span className="text-muted-foreground">Peso Chumlea</span><p className="font-medium">{h.pesoEstimado > 0 ? h.pesoEstimado.toFixed(1) : "—"} kg</p></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Fórmula de requerimiento energético</Label>
+                      <Select
+                        value={formula}
+                        onValueChange={(value) => {
+                          const presets: Record<string, string> = {
+                            perdida: "22",
+                            mantenimiento: "25",
+                            ganancia: "32",
+                          };
+                          const nextRango =
+                            value === "rango_calorico"
+                              ? (formData.rango_kcal_kg || presets[formData.rango_objetivo || "mantenimiento"] || "25")
+                              : formData.rango_kcal_kg;
+                          recalculateHospitalizadoRequirement({
+                            formula_requerimiento: value,
+                            rango_kcal_kg: nextRango,
+                          });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="harris_benedict">Harris-Benedict (EVANUT)</SelectItem>
+                          <SelectItem value="mifflin">Mifflin-St Jeor</SelectItem>
+                          <SelectItem value="ireton_jones">Ireton-Jones</SelectItem>
+                          <SelectItem value="rango_calorico">Método del pulgar (kcal/kg)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {isRango
+                          ? "Método del pulgar EVANUT: peso de referencia × kcal/kg/día"
+                          : isIreton
+                            ? "EEE Ireton-Jones × FA × FE (coloca FA/FE; suele usarse 1.0 si el EEE ya incluye estrés)"
+                            : "TMB × factor de actividad × factor de estrés (obligatorio EVANUT)"}
+                      </p>
+                    </div>
+
+                    {isRango ? (
+                      <>
+                        <div className="space-y-1">
+                          <Label>Objetivo (preset kcal/kg)</Label>
+                          <Select
+                            value={formData.rango_objetivo || "mantenimiento"}
+                            onValueChange={(value) => {
+                              const map: Record<string, string> = {
+                                perdida: "22",
+                                mantenimiento: "25",
+                                ganancia: "32",
+                              };
+                              recalculateHospitalizadoRequirement({
+                                rango_objetivo: value,
+                                rango_kcal_kg: map[value] || "25",
+                              });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="perdida">Pérdida (~20–25)</SelectItem>
+                              <SelectItem value="mantenimiento">Mantenimiento (~25–30)</SelectItem>
+                              <SelectItem value="ganancia">Ganancia (~30–35)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>kcal / kg</Label>
+                          <Input type="number" step="0.5" value={formData.rango_kcal_kg}
+                            onChange={(e) => recalculateHospitalizadoRequirement({ rango_kcal_kg: e.target.value })} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1">
+                          <Label>Factor de actividad</Label>
+                          <Select
+                            value={formData.hosp_actividad_preset || "cama"}
+                            onValueChange={(value) => {
+                              const preset = HOSP_ACTIVIDAD_PRESETS.find((p) => p.value === value);
+                              recalculateHospitalizadoRequirement({
+                                hosp_actividad_preset: value,
+                                hosp_factor_actividad: preset?.factor || "1.15",
+                              });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {HOSP_ACTIVIDAD_PRESETS.map((p) => (
+                                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input type="number" step="0.01" className="mt-1" value={formData.hosp_factor_actividad}
+                            onChange={(e) => recalculateHospitalizadoRequirement({ hosp_factor_actividad: e.target.value })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Factor de estrés</Label>
+                          <Select
+                            value={formData.hosp_estres_preset || "ninguno"}
+                            onValueChange={(value) => {
+                              const preset = HOSP_ESTRES_PRESETS.find((p) => p.value === value);
+                              recalculateHospitalizadoRequirement({
+                                hosp_estres_preset: value,
+                                hosp_factor_estres: preset?.factor || "1.0",
+                              });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {HOSP_ESTRES_PRESETS.map((p) => (
+                                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input type="number" step="0.01" className="mt-1" value={formData.hosp_factor_estres}
+                            onChange={(e) => recalculateHospitalizadoRequirement({ hosp_factor_estres: e.target.value })} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {isIreton && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">
+                      <div className="space-y-1">
+                        <Label>Soporte ventilatorio</Label>
+                        <Select value={formData.hosp_ventilatorio || "no"}
+                          onValueChange={(v) => recalculateHospitalizadoRequirement({ hosp_ventilatorio: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no">No</SelectItem>
+                            <SelectItem value="si">Sí</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Obesidad</Label>
+                        <Select value={formData.hosp_obesidad || "no"}
+                          onValueChange={(v) => recalculateHospitalizadoRequirement({ hosp_obesidad: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no">No</SelectItem>
+                            <SelectItem value="si">Sí</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Trauma</Label>
+                        <Select value={formData.hosp_trauma || "no"}
+                          onValueChange={(v) => recalculateHospitalizadoRequirement({ hosp_trauma: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no">No</SelectItem>
+                            <SelectItem value="si">Sí</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Quemadura</Label>
+                        <Select value={formData.hosp_quemadura || "no"}
+                          onValueChange={(v) => recalculateHospitalizadoRequirement({ hosp_quemadura: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no">No</SelectItem>
+                            <SelectItem value="si">Sí</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    {!isRango && (
+                      <div>
+                        <span className="text-muted-foreground">{isIreton ? "EEE Ireton" : "TMB"}</span>
+                        <p className="font-medium">{h.tmb > 0 ? Math.round(h.tmb) : "—"} kcal</p>
+                      </div>
+                    )}
+                    {!isRango && (
+                      <div>
+                        <span className="text-muted-foreground">× FA × FE</span>
+                        <p className="font-medium">{h.fa} × {h.fe}</p>
+                      </div>
+                    )}
+                    {isRango && (
+                      <div>
+                        <span className="text-muted-foreground">Peso × kcal/kg</span>
+                        <p className="font-medium">{h.reqBase > 0 ? Math.round(h.reqBase) : "—"} kcal</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-muted-foreground">Base</span>
+                      <p className="font-medium">{h.reqBase > 0 ? Math.round(h.reqBase) : "—"} kcal</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total</span>
+                      <p className="font-bold text-lg text-primary">{Math.round(h.requerimientoFinal)} kcal</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-muted-foreground">Método · Líquidos</span>
+                      <p className="font-medium">{h.metodoLabel} · {Math.round(h.liquidosMl)} ml/día</p>
+                    </div>
+                  </div>
+
+                  {/* Nutrición parenteral adulto — hoja EVANUT Hospitalizado */}
+                  {(() => {
+                    const pn = h.parenteral;
+                    return (
+                      <div className="space-y-3 p-3 rounded-lg border border-sky-200 bg-sky-50/40 dark:bg-sky-950/20">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <h4 className="font-semibold">Nutrición parenteral adulto</h4>
+                            <p className="text-xs text-muted-foreground">
+                              1) Calorías y líquidos · 2) Macros/micros (guía EVANUT). Lípidos = resto de kcal − (CHO + proteína).
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              setFormData((prev: any) => ({
+                                ...prev,
+                                pn_peso_kg: String(h.pesoRef > 0 ? h.pesoRef.toFixed(1) : prev.pn_peso_kg || ""),
+                                pn_calorias: String(Math.round(h.requerimientoFinal) || prev.pn_calorias || ""),
+                                pn_liquidos_ml: String(Math.round(h.liquidosMl) || prev.pn_liquidos_ml || ""),
+                              }))
+                            }
+                          >
+                            Usar kcal/líquidos del plan
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <Label>Peso del paciente (kg)</Label>
+                            <Input type="number" step="0.1" value={formData.pn_peso_kg}
+                              onChange={(e) => handleChange("pn_peso_kg", e.target.value)}
+                              placeholder={h.pesoRef > 0 ? String(h.pesoRef.toFixed(1)) : ""} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Calorías totales</Label>
+                            <Input type="number" value={formData.pn_calorias}
+                              onChange={(e) => handleChange("pn_calorias", e.target.value)}
+                              placeholder={h.requerimientoFinal > 0 ? String(Math.round(h.requerimientoFinal)) : ""} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Líquidos totales (ml)</Label>
+                            <Input type="number" value={formData.pn_liquidos_ml}
+                              onChange={(e) => handleChange("pn_liquidos_ml", e.target.value)}
+                              placeholder={h.liquidosMl > 0 ? String(Math.round(h.liquidosMl)) : ""} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Proteína (g/kg/día)</Label>
+                            <Input type="number" step="0.1" value={formData.pn_prot_gkg}
+                              onChange={(e) => handleChange("pn_prot_gkg", e.target.value)} />
+                            <p className="text-xs text-muted-foreground">Usual 0.8–1.8</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>CHOs (g/kg/día)</Label>
+                            <Input type="number" step="0.1" value={formData.pn_cho_gkg}
+                              onChange={(e) => handleChange("pn_cho_gkg", e.target.value)} />
+                            <p className="text-xs text-muted-foreground">Usual 3.0–7.0</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Sodio (mEq/kg)</Label>
+                            <Input type="number" step="0.1" value={formData.pn_na_meq_kg}
+                              onChange={(e) => handleChange("pn_na_meq_kg", e.target.value)} />
+                            <p className="text-xs text-muted-foreground">Usual 1–2</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Potasio (mEq/kg)</Label>
+                            <Input type="number" step="0.1" value={formData.pn_k_meq_kg}
+                              onChange={(e) => handleChange("pn_k_meq_kg", e.target.value)} />
+                            <p className="text-xs text-muted-foreground">Usual 1–2</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Calcio (mEq/día)</Label>
+                            <Input type="number" step="1" value={formData.pn_ca_meq_dia}
+                              onChange={(e) => handleChange("pn_ca_meq_dia", e.target.value)} />
+                            <p className="text-xs text-muted-foreground">Usual 10–15</p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Fósforo (mMol/día)</Label>
+                            <Input type="number" step="1" value={formData.pn_p_mmol_dia}
+                              onChange={(e) => handleChange("pn_p_mmol_dia", e.target.value)} />
+                          </div>
+                        </div>
+                        <div className="rounded-md border bg-background/80 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                          <div><span className="text-muted-foreground">Proteína</span><p className="font-medium">{pn.protG > 0 ? `${pn.protG.toFixed(1)} g (${Math.round(pn.protKcal)} kcal)` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">CHOs</span><p className="font-medium">{pn.choG > 0 ? `${pn.choG.toFixed(1)} g (${Math.round(pn.choKcal)} kcal)` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">Lípidos (resto)</span><p className="font-medium">{pn.lipG > 0 ? `${pn.lipG.toFixed(1)} g · ${pn.lipGkg.toFixed(2)} g/kg` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">Flujo metabólico</span><p className="font-medium">{pn.flujoMgKgMin > 0 ? `${pn.flujoMgKgMin.toFixed(2)} mg/kg/min` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">Na total</span><p className="font-medium">{pn.naTotal > 0 ? `${pn.naTotal.toFixed(0)} mEq` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">K total</span><p className="font-medium">{pn.kTotal > 0 ? `${pn.kTotal.toFixed(0)} mEq` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">Ca</span><p className="font-medium">{pn.caMeqDia > 0 ? `${pn.caMeqDia} mEq/día` : "—"}</p></div>
+                          <div><span className="text-muted-foreground">P</span><p className="font-medium">{pn.pMmolDia > 0 ? `${pn.pMmolDia} mMol/día` : "—"}</p></div>
+                          <div className="sm:col-span-2 text-xs text-muted-foreground">
+                            Guía lípidos EVANUT: estable 0.7–1.3 g/kg · alta demanda 1.5–2.5 g/kg
+                            {pn.lipGkg > 0 ? ` · actual ${pn.lipGkg.toFixed(2)} g/kg` : ""}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {renderAjusteCaloriasUI()}
+                  <div className="space-y-1 max-w-xs">
+                    <Label>Calorías del plan (editables)</Label>
+                    <Input
+                      type="number"
+                      value={formData.requerimiento_energetico}
+                      onChange={(e) => {
+                        handleChange("requerimiento_energetico", e.target.value);
+                        handleChange("total_calorias_f2", e.target.value);
+                      }}
+                    />
+                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => recalculateHospitalizadoRequirement({})}>
+                      Recalcular según fórmula hospitalaria + FA × FE
                     </Button>
                   </div>
                 </CardContent>
@@ -3139,7 +4475,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
           })()}
 
           {/* Phase 1: Requerimiento Energético y Peso Saludable (adulto y otros) */}
-          {currentPhase === 1 && formData.tipo_plan !== "deportista" && formData.tipo_plan !== "pediatria" && !isGestanteTipo(formData.tipo_plan) && (
+          {currentPhase === 1 && formData.tipo_plan !== "deportista" && formData.tipo_plan !== "pediatria" && !isGestanteTipo(formData.tipo_plan) && !isHospitalizado(formData.tipo_plan) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -3214,6 +4550,93 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     </Select>
                   </div>
                   <div className="space-y-2 col-span-2">
+                    <Label>Fórmula de requerimiento energético</Label>
+                    <Select
+                      value={formData.formula_requerimiento || "schofield"}
+                      onValueChange={(value) => {
+                        const presets: Record<string, string> = {
+                          perdida: "22",
+                          mantenimiento: "25",
+                          ganancia: "32",
+                        };
+                        const nextRango =
+                          value === "rango_calorico"
+                            ? (formData.rango_kcal_kg || presets[formData.rango_objetivo || "mantenimiento"] || "25")
+                            : formData.rango_kcal_kg;
+                        recalculateAdultRequirement({
+                          formula_requerimiento: value,
+                          rango_kcal_kg: nextRango,
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona fórmula" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="schofield">FAO / Schofield (EVANUT)</SelectItem>
+                        <SelectItem value="harris_benedict">Harris-Benedict</SelectItem>
+                        <SelectItem value="mifflin">Mifflin-St Jeor</SelectItem>
+                        <SelectItem value="rango_calorico">Rango calórico (kcal/kg)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {formData.formula_requerimiento === "rango_calorico"
+                        ? "Peso de referencia × kcal/kg según objetivo clínico"
+                        : formData.formula_requerimiento === "harris_benedict"
+                          ? "TMB Harris-Benedict × factor PAL"
+                          : formData.formula_requerimiento === "mifflin"
+                            ? "TMB Mifflin-St Jeor × factor PAL"
+                            : "TMR FAO/Schofield × factor PAL (método EVANUT)"}
+                    </p>
+                  </div>
+
+                  {formulaIsRango() ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Objetivo (preset kcal/kg)</Label>
+                        <Select
+                          value={formData.rango_objetivo || "mantenimiento"}
+                          onValueChange={(value) => {
+                            const map: Record<string, string> = {
+                              perdida: "22",
+                              mantenimiento: "25",
+                              ganancia: "32",
+                            };
+                            recalculateAdultRequirement({
+                              rango_objetivo: value,
+                              rango_kcal_kg: map[value] || "25",
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="perdida">Pérdida (~20–25 kcal/kg)</SelectItem>
+                            <SelectItem value="mantenimiento">Mantenimiento (~25–30 kcal/kg)</SelectItem>
+                            <SelectItem value="ganancia">Ganancia (~30–35 kcal/kg)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="rango_kcal_kg">kcal / kg</Label>
+                        <Input
+                          id="rango_kcal_kg"
+                          type="number"
+                          step="0.5"
+                          min="10"
+                          max="50"
+                          value={formData.rango_kcal_kg}
+                          onChange={(e) => recalculateAdultRequirement({ rango_kcal_kg: e.target.value })}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Usa peso ref/objetivo:{" "}
+                          {formData.peso_referencia_f2 || formData.peso_objetivo || formData.peso_actual || "—"} kg
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                  <div className="space-y-2 col-span-2">
                     <Label htmlFor="factor_actividad">Factor de Actividad Física PAL</Label>
                     <div className="flex gap-2">
                       <Input
@@ -3221,18 +4644,15 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         type="number"
                         step="0.01"
                         value={formData.factor_actividad}
-                        readOnly
-                        className="w-24 bg-muted"
+                        className="w-24"
                         onChange={(e) => {
-                          handleChange("factor_actividad", e.target.value);
-                          calculateRequerimientoEnergetico(formData.tmb, e.target.value);
+                          recalculateAdultRequirement({ factor_actividad: e.target.value });
                         }}
                       />
                       <Select
-                        disabled
+                        value={["1.53", "1.76", "2.25"].includes(String(formData.factor_actividad)) ? String(formData.factor_actividad) : undefined}
                         onValueChange={(value) => {
-                          handleChange("factor_actividad", value);
-                          calculateRequerimientoEnergetico(formData.tmb, value);
+                          recalculateAdultRequirement({ factor_actividad: value });
                         }}
                       >
                         <SelectTrigger className="flex-1">
@@ -3247,6 +4667,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     </div>
                     <p className="text-xs text-muted-foreground">Escribe un valor manual o selecciona un nivel predefinido.</p>
                   </div>
+                  )}
                 </div>
 
                 {/* Campos calculados */}
@@ -3284,18 +4705,15 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       className="bg-muted"
                     />
                   </div>
-                  {/*<div className="space-y-2">
-                    <Label htmlFor="peso_referencia">Peso de Referencia (Peso Objetivo)</Label>
-                    <Input
-                      id="peso_referencia"
-                      type="number"
-                      value={formData.peso_referencia_f2}
-                      readOnly
-                      className="bg-muted font-bold"
-                    />
-                  </div>*/}
+                  {!formulaIsRango() && (
                   <div className="space-y-2">
-                    <Label htmlFor="tmb">TMR FAO/Schofield (kcal)</Label>
+                    <Label htmlFor="tmb">
+                      {formData.formula_requerimiento === "harris_benedict"
+                        ? "TMB Harris-Benedict (kcal)"
+                        : formData.formula_requerimiento === "mifflin"
+                          ? "TMB Mifflin-St Jeor (kcal)"
+                          : "TMR FAO/Schofield (kcal)"}
+                    </Label>
                     <Input
                       id="tmb"
                       type="number"
@@ -3305,6 +4723,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       className="bg-muted"
                     />
                   </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="requerimiento_energetico">Requerimiento Total (kcal)</Label>
                     <Input
@@ -3314,6 +4733,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       readOnly
                       className="bg-primary/10 border-primary font-bold text-lg"
                     />
+                    {formData.requerimiento_base_f1 && (
+                      <p className="text-xs text-muted-foreground">
+                        Base calculada: {formData.requerimiento_base_f1} kcal
+                        {formulaIsRango()
+                          ? ` (${formData.peso_referencia_f2 || formData.peso_objetivo || formData.peso_actual || "—"} kg × ${formData.rango_kcal_kg || "—"} kcal/kg)`
+                          : formData.factor_actividad
+                            ? ` (TMB × PAL ${formData.factor_actividad})`
+                            : ""}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="mt-4">{renderAjusteCaloriasUI()}</div>

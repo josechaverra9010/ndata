@@ -3,11 +3,13 @@ import {
   Users,
   Calendar,
   MessageSquare,
+  LifeBuoy,
   Settings,
   LogOut,
   ChefHat,
   TrendingUp,
-  ChevronFirst
+  CalendarDays,
+  Stethoscope,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -18,12 +20,13 @@ import { useTheme } from "@/hooks/use-theme";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Pacientes", path: "/patients" },
+  { icon: Stethoscope, label: "Consulta", path: "/consultation" },
   { icon: ChefHat, label: "Recetas", path: "/recipes" },
-  { icon: ChevronFirst, label: "Menú semanal", path: "/weekly-menus" },
+  { icon: CalendarDays, label: "Menú semanal", path: "/weekly-menus" },
   { icon: Calendar, label: "Citas", path: "/appointments" },
   { icon: TrendingUp, label: "Progreso", path: "/progress" },
   { icon: MessageSquare, label: "Mensajes", path: "/messages" },
-  { icon: MessageSquare, label: "Soporte", path: "/support" },
+  { icon: LifeBuoy, label: "Soporte", path: "/support" },
 ];
 
 const bottomMenuItems = [

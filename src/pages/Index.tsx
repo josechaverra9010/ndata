@@ -5,8 +5,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { RecentPatients } from "@/components/admin/RecentPatients";
 import { UpcomingAppointments } from "@/components/admin/UpcomingAppointments";
 import { NutritionChart } from "@/components/admin/NutritionChart";
-import { Users, Apple, Calendar, TrendingUp } from "lucide-react";
+import { Users, Calendar, TrendingUp, CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 // API Configuration
 import { API_URL } from "@/config/api";
@@ -62,6 +63,7 @@ interface UpcomingAppointment {
 
 const Index = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
@@ -134,6 +136,41 @@ const Index = () => {
     fetchDashboardData();
   }, []);
 
+  const refreshDashboard = () => {
+    setLoading(true);
+    setError(null);
+    const token = localStorage.getItem("userToken");
+    const headers = {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    Promise.all([
+      fetch(`${API_URL}/dashboard/stats`, { headers }),
+      fetch(`${API_URL}/dashboard/recent-patients?limit=5`, { headers }),
+      fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`, { headers }),
+      fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`, { headers }),
+    ])
+      .then(async ([statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse]) => {
+        if (!statsResponse.ok || !patientsResponse.ok || !appointmentsResponse.ok || !topPatientsResponse.ok) {
+          throw new Error("Error al refrescar el dashboard");
+        }
+        const [statsData, patientsData, appointmentsData, topPatientsData] = await Promise.all([
+          statsResponse.json(),
+          patientsResponse.json(),
+          appointmentsResponse.json(),
+          topPatientsResponse.json(),
+        ]);
+        setStats(statsData);
+        setRecentPatients(patientsData);
+        setUpcomingAppointments(appointmentsData);
+        setTopPatients(topPatientsData);
+      })
+      .catch((err) => {
+        const errorMessage = err instanceof Error ? err.message : "Error desconocido";
+        setError(errorMessage);
+      })
+      .finally(() => setLoading(false));
+  };
   // Log cuando cambia el estado
   useEffect(() => {
     console.log('🔄 Estado actualizado:');
@@ -149,10 +186,8 @@ const Index = () => {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <LoadingScreen message="Cargando" />
-          </div>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <LoadingScreen message="Cargando dashboard" />
         </div>
       </AdminLayout>
     );
@@ -162,13 +197,13 @@ const Index = () => {
   if (error) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <p className="text-red-500 mb-2">Error al cargar el dashboard</p>
-            <p className="text-muted-foreground">{error}</p>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="max-w-md w-full rounded-2xl border border-destructive/20 bg-card p-8 text-center shadow-card">
+            <p className="text-destructive font-semibold mb-2">Error al cargar el dashboard</p>
+            <p className="text-sm text-muted-foreground mb-5">{error}</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
+              className="rounded-full px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
             >
               Reintentar
             </button>
@@ -178,116 +213,216 @@ const Index = () => {
     );
   }
 
+  const firstName =
+    (user?.name || user?.email || "Nutricionista").split(" ")[0] || "Nutricionista";
+  const todayLabel = new Date().toLocaleDateString("es-ES", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        {/* Page header */}
-        <div className="animate-fade-in">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Bienvenida, {user?.name || "Dra. García"}. Aquí está el resumen de tu día.
-          </p>
+      <div className="space-y-7">
+        {/* Hero header */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.07] p-6 shadow-card animate-fade-in">
+          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-12 left-1/3 h-32 w-32 rounded-full bg-accent/20 blur-2xl" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary/80 mb-2">
+                Panel del nutricionista
+              </p>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground capitalize">
+                Buen día, {firstName}
+              </h1>
+              <p className="mt-1.5 text-muted-foreground">
+                Aquí tienes el resumen de tu práctica.{" "}
+                <span className="capitalize text-foreground/80">{todayLabel}</span>
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-center backdrop-blur-sm">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Citas hoy</p>
+                <p className="text-lg font-bold tabular-nums text-foreground">
+                  {stats?.appointments.pending_today ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-center backdrop-blur-sm">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Promedio</p>
+                <p className="text-lg font-bold tabular-nums text-foreground">
+                  {stats?.progress.average ?? 0}%
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatsCard
             title="Pacientes Activos"
             value={stats?.patients.total.toString() || "0"}
-            change={stats?.patients.change || "+0% este mes"}
+            change={stats?.patients.change || "Sin cambios"}
             changeType={stats?.patients.change_type as "positive" | "negative" | "neutral"}
             icon={Users}
             iconColor="primary"
+            style={{ animationDelay: "40ms" }}
+            onClick={() => navigate("/patients")}
           />
           <StatsCard
-            title="Planes Activos"
-            value={stats?.plans.total.toString() || "0"}
-            change={stats?.plans.change || "+0% este mes"}
-            changeType={stats?.plans.change_type as "positive" | "negative" | "neutral"}
-            icon={Apple}
-            iconColor="accent"
+            title="Citas Hoy"
+            value={String(stats?.appointments.pending_today ?? 0)}
+            change={stats?.appointments.change || "0 esta semana"}
+            changeType={stats?.appointments.change_type as "positive" | "negative" | "neutral"}
+            icon={Calendar}
+            iconColor="info"
+            style={{ animationDelay: "80ms" }}
+            onClick={() => {
+              const today = new Date().toISOString().slice(0, 10);
+              navigate(`/appointments?date=${today}&view=day`);
+            }}
           />
           <StatsCard
             title="Citas Esta Semana"
             value={stats?.appointments.total.toString() || "0"}
-            change={stats?.appointments.change || "0 pendientes hoy"}
-            changeType={stats?.appointments.change_type as "positive" | "negative" | "neutral"}
-            icon={Calendar}
-            iconColor="info"
+            change="Ver calendario"
+            changeType="neutral"
+            icon={CalendarDays}
+            iconColor="accent"
+            style={{ animationDelay: "120ms" }}
+            onClick={() => navigate("/appointments")}
           />
           <StatsCard
             title="Progreso Promedio"
             value={`${stats?.progress.average || 0}%`}
-            change={stats?.progress.change || "+0% vs mes anterior"}
+            change={stats?.progress.change || "Sin datos de peso"}
             changeType={stats?.progress.change_type as "positive" | "negative" | "neutral"}
             icon={TrendingUp}
             iconColor="warning"
+            style={{ animationDelay: "160ms" }}
+            onClick={() => navigate("/progress")}
           />
         </div>
 
-        {/* Main content grid - Two Charts 50/50 */}
+        {/* Main content grid */}
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Nutrition Chart */}
-          <NutritionChart />
+          <div className="animate-fade-in" style={{ animationDelay: "180ms" }}>
+            <NutritionChart />
+          </div>
 
-          {/* Patient Progress Chart */}
-          <div className="rounded-lg border border-border bg-card shadow-card">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-primary" />
-                  Progreso de Pacientes
-                </h3>
+          <div
+            className="rounded-2xl border border-border/80 bg-card/90 shadow-card backdrop-blur-sm overflow-hidden animate-fade-in h-full"
+            style={{ animationDelay: "220ms" }}
+          >
+            <div className="border-b border-border/70 bg-gradient-to-br from-card via-card to-emerald-500/[0.04] p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/10">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold tracking-tight text-foreground">
+                    Top progreso
+                  </h3>
+                  <p className="text-sm text-muted-foreground">Pacientes con mejor avance</p>
+                </div>
               </div>
-              <div className="space-y-4">
-                {/* Dynamic Top Performers */}
-                {topPatients.length > 0 ? (
+            </div>
+
+            <div className="p-5 space-y-4">
+              {topPatients.length > 0 ? (
                   topPatients.map((patient, index) => {
                     const colors = [
-                      { bg: 'from-green-500 to-emerald-600', text: 'text-green-600', bar: 'from-green-500 to-emerald-500' },
-                      { bg: 'from-blue-500 to-cyan-600', text: 'text-blue-600', bar: 'from-blue-500 to-cyan-500' },
-                      { bg: 'from-amber-500 to-orange-600', text: 'text-amber-600', bar: 'from-amber-500 to-orange-500' }
+                      { bg: "from-emerald-500 to-teal-600", text: "text-emerald-600 dark:text-emerald-400", bar: "from-emerald-500 to-teal-400", ring: "ring-emerald-500/20" },
+                      { bg: "from-sky-500 to-cyan-600", text: "text-sky-600 dark:text-sky-400", bar: "from-sky-500 to-cyan-400", ring: "ring-sky-500/20" },
+                      { bg: "from-amber-500 to-orange-500", text: "text-amber-600 dark:text-amber-400", bar: "from-amber-500 to-orange-400", ring: "ring-amber-500/20" },
                     ];
                     const color = colors[index] || colors[2];
+                    const progressPct = Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        Number(
+                          patient.progress_percentage ??
+                            patient.progress_pct ??
+                            patient.progreso ??
+                            0
+                        ) || 0
+                      )
+                    );
 
                     return (
-                      <div key={patient.id} className="space-y-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-3">
-                            <div className={`h-10 w-10 rounded-full bg-gradient-to-br ${color.bg} flex items-center justify-center text-white font-bold text-xs`}>
-                              {index + 1}
-                            </div>
-                            <div>
-                              <p className="font-medium text-foreground">{patient.name}</p>
-                              <p className="text-xs text-muted-foreground">{patient.plan_name}</p>
-                            </div>
+                      <div
+                        key={patient.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigate(`/progress?patientId=${patient.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            navigate(`/progress?patientId=${patient.id}`);
+                          }
+                        }}
+                        className="rounded-xl border border-border/60 bg-muted/20 p-3.5 transition-colors hover:bg-muted/35 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      >
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br ${color.bg} flex items-center justify-center text-white font-bold text-sm shadow-sm ring-2 ${color.ring}`}
+                          >
+                            {index + 1}
                           </div>
-                          <div className="text-right">
-                            <p className={`font-semibold ${color.text}`}>
-                              {patient.weight_change > 0 ? '+' : ''}{patient.weight_change} kg
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground truncate">{patient.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {patient.plan_name || "Sin plan"}
                             </p>
                           </div>
                         </div>
+                        <div className="text-right shrink-0">
+                          <p className={`font-bold tabular-nums ${color.text}`}>
+                            {progressPct}%
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {patient.weight_change > 0 ? "+" : ""}
+                            {patient.weight_change} kg
+                          </p>
+                        </div>
                       </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full rounded-full bg-gradient-to-r ${color.bar} transition-all duration-700`}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    </div>
                     );
                   })
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p className="text-sm">No hay datos de progreso disponibles</p>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-14 h-14 rounded-2xl bg-muted/70 flex items-center justify-center mb-3 ring-1 ring-border/50">
+                    <TrendingUp className="w-6 h-6 text-muted-foreground" />
                   </div>
-                )}
+                  <p className="font-medium text-foreground text-sm">Sin datos de progreso</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Aparecerán cuando haya métricas registradas
+                  </p>
+                </div>
+              )}
 
-                {/* Summary */}
-                <div className="pt-4 mt-4 border-t border-border">
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold text-foreground">{stats?.progress.average || 0}%</p>
-                      <p className="text-xs text-muted-foreground">Progreso Promedio</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-foreground">{stats?.patients.total || 0}</p>
-                      <p className="text-xs text-muted-foreground">Pacientes Activos</p>
-                    </div>
+              <div className="pt-4 mt-2 border-t border-border/70">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-primary/5 border border-primary/10 px-3 py-3 text-center">
+                    <p className="text-2xl font-bold tabular-nums text-foreground">
+                      {stats?.progress.average || 0}%
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Progreso promedio</p>
+                  </div>
+                  <div className="rounded-xl bg-accent/15 border border-accent/20 px-3 py-3 text-center">
+                    <p className="text-2xl font-bold tabular-nums text-foreground">
+                      {stats?.patients.total || 0}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Pacientes activos</p>
                   </div>
                 </div>
               </div>
@@ -296,9 +431,13 @@ const Index = () => {
         </div>
 
         {/* Bottom grid */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <UpcomingAppointments appointments={upcomingAppointments} loading={loading} />
-          <RecentPatients patients={recentPatients} loading={loading} />
+        <div className="grid gap-6 lg:grid-cols-2 animate-fade-in" style={{ animationDelay: "260ms" }}>
+          <UpcomingAppointments
+            appointments={upcomingAppointments}
+            loading={false}
+            onUpdated={refreshDashboard}
+          />
+          <RecentPatients patients={recentPatients} loading={false} onRefresh={refreshDashboard} />
         </div>
       </div>
     </AdminLayout>

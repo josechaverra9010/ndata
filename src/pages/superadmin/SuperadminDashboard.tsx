@@ -149,6 +149,8 @@ export default function SuperadminDashboard() {
       try {
         setLoading(true);
         setError(null);
+        const token = localStorage.getItem("userToken");
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
         const [
           overviewRes,
           dashboardStatsRes,
@@ -159,14 +161,14 @@ export default function SuperadminDashboard() {
           appointmentsByTypeRes,
           progressStatsRes,
         ] = await Promise.all([
-          fetch(`${API_URL}/superadmin/dashboard/overview`),
-          fetch(`${API_URL}/dashboard/stats`),
-          fetch(`${API_URL}/dashboard/weekly-overview`),
-          fetch(`${API_URL}/dashboard/top-plans`),
-          fetch(`${API_URL}/dashboard/nutrition-chart`),
-          fetch(`${API_URL}/dashboard/patient-status-distribution`),
-          fetch(`${API_URL}/dashboard/appointments-by-type`),
-          fetch(`${API_URL}/progress/stats`),
+          fetch(`${API_URL}/superadmin/dashboard/overview`, { headers }),
+          fetch(`${API_URL}/dashboard/stats`, { headers }),
+          fetch(`${API_URL}/dashboard/weekly-overview`, { headers }),
+          fetch(`${API_URL}/dashboard/top-plans`, { headers }),
+          fetch(`${API_URL}/dashboard/nutrition-chart`, { headers }),
+          fetch(`${API_URL}/dashboard/patient-status-distribution`, { headers }),
+          fetch(`${API_URL}/dashboard/appointments-by-type`, { headers }),
+          fetch(`${API_URL}/progress/stats`, { headers }),
         ]);
 
         if (!overviewRes.ok) throw new Error("No se pudo cargar el resumen de superadmin");

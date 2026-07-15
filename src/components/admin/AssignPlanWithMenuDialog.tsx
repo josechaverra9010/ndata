@@ -89,14 +89,14 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
     const fetchWeeklyMenus = async () => {
         try {
             const token = localStorage.getItem("userToken");
-            const response = await fetch(`${API_URL}/weekly-menus-complete`, {
+            const response = await fetch(`${API_URL}/weekly-menus`, {
                 headers: {
                     ...(token ? { "Authorization": `Bearer ${token}` } : {}),
                 }
             });
             if (response.ok) {
                 const data = await response.json();
-                setWeeklyMenus(data);
+                setWeeklyMenus(Array.isArray(data) ? data : []);
             }
         } catch (error) {
             console.error("Error fetching weekly menus:", error);

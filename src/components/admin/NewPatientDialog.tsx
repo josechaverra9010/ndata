@@ -56,6 +56,7 @@ interface PatientFormData {
   antecedentes_familiares: string;
   evaluacion_nutricional: string;
   frecuencia_consumo: any[];
+  status: string;
 }
 
 const initialFormData: PatientFormData = {
@@ -82,6 +83,7 @@ const initialFormData: PatientFormData = {
   antecedentes_familiares: "",
   evaluacion_nutricional: "",
   frecuencia_consumo: [],
+  status: "activo",
 };
 
 
@@ -125,6 +127,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
             : null;
           return existingItem || { grupo, frecuencia: "never" };
         }),
+        status: patient.status || "activo",
       });
     } else if (!open) {
       setFormData({
@@ -250,7 +253,8 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
           alimentos_disgusto: formData.alimentos_disgusto.trim() || null,
           antecedentes_familiares: formData.antecedentes_familiares.trim() || null,
           evaluacion_nutricional: formData.evaluacion_nutricional.trim() || null,
-          frecuencia_consumo: formData.frecuencia_consumo
+          frecuencia_consumo: formData.frecuencia_consumo,
+          status: formData.status || "activo",
         }),
       });
 
@@ -483,6 +487,24 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <p className="text-xs text-muted-foreground">
                   Si se deja en blanco, la contraseña por defecto será "password123"
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Estado del paciente</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(v) => handleChange("status", v)}
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="activo">Activo</SelectItem>
+                    <SelectItem value="pendiente">Pendiente</SelectItem>
+                    <SelectItem value="inactivo">Inactivo</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </TabsContent>
 

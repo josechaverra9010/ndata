@@ -47,9 +47,11 @@ export default function PatientRecipes() {
     const [loading, setLoading] = useState(true);
 
     const filteredRecipes = recipes.filter(recipe => {
-        const matchesSearch = recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            recipe.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            recipe.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+        const q = searchTerm.toLowerCase();
+        const matchesSearch =
+            (recipe.name || "").toLowerCase().includes(q) ||
+            (recipe.description || "").toLowerCase().includes(q) ||
+            (recipe.tags || []).some(tag => (tag || "").toLowerCase().includes(q));
         const matchesCategory = selectedCategory === "Todas" || recipe.category === selectedCategory;
         return matchesSearch && matchesCategory;
     });
@@ -230,7 +232,7 @@ export default function PatientRecipes() {
                 {/* Header */}
                 <div className="flex flex-col gap-2">
                     <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Explorar Recetas</h1>
-                    <p className="text-muted-foreground">Encuentra inspiración para tus próximas comidas saludables</p>
+                    <p className="text-muted-foreground">Recetas públicas y las de tu plan nutricional activo</p>
                 </div>
 
                 {/* Search and Filters */}
@@ -238,6 +240,7 @@ export default function PatientRecipes() {
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
+                            placeholder="Buscar por nombre, descripción o etiquetas..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-10"

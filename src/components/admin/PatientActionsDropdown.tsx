@@ -23,18 +23,18 @@ import { useToast } from "@/hooks/use-toast";
 import {
   MoreVertical,
   Eye,
-  Edit,
   Trash2,
   Calendar,
-  FileText,
-  UserCheck,
-  UserX,
+  TrendingUp,
+  Users,
+  MessageSquare,
 } from "lucide-react";
 
 interface Patient {
   id: number;
-  nombres: string;
-  apellidos: string;
+  nombres?: string;
+  apellidos?: string;
+  name?: string;
   email: string;
   status: string;
 }
@@ -51,11 +51,14 @@ export function PatientActionsDropdown({
   onUpdate,
 }: PatientActionsDropdownProps) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [newStatus, setNewStatus] = useState<string>("");
+
+  const displayName =
+    patient.name ||
+    [patient.nombres, patient.apellidos].filter(Boolean).join(" ") ||
+    patient.email;
 
   const handleDelete = async () => {
     try {
@@ -64,116 +67,33 @@ export function PatientActionsDropdown({
       const response = await fetch(`${API_URL}/patients/${patient.id}`, {
         method: "DELETE",
         headers: {
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        }
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
 
       if (!response.ok) {
-        throw new Error("Error al eliminar paciente");
+        const err = await response.json().catch(() => ({}));
+        const detail = typeof err.detail === "string" ? err.detail : "Error al eliminar paciente";
+        throw new Error(detail);
       }
 
       toast({
-        title: "¡Éxito!",
-        description: `${patient.nombres} ${patient.apellidos} ha sido eliminado`,
+        title: "Paciente eliminado",
+        description: `${displayName} ha sido eliminado`,
       });
 
       setDeleteDialogOpen(false);
       onUpdate?.();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting patient:", error);
       toast({
         title: "Error",
-        description: "No se pudo eliminar el paciente. Intenta nuevamente.",
+        description: error?.message || "No se pudo eliminar el paciente. Intenta nuevamente.",
         variant: "destructive",
       });
     } finally {
       setDeleting(false);
     }
-  };
-
-  const handleStatusChange = async (status: string) => {
-    setNewStatus(status);
-    setStatusDialogOpen(true);
-  };
-
-  const confirmStatusChange = async () => {
-    try {
-      setUpdatingStatus(true);
-
-      // Nota: Este endpoint necesitaría ser implementado en el backend
-      // Por ahora solo mostramos el toast
-      toast({
-        title: "Funcionalidad en desarrollo",
-        description: `La actualización de estado a "${newStatus}" estará disponible próximamente`,
-      });
-
-      setStatusDialogOpen(false);
-
-      // Si el backend implementa el endpoint, descomenta esto:
-      /*
-      const response = await fetch(`${API_URL}/patients/${patient.id}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Error al actualizar estado");
-      }
-
-      toast({
-        title: "¡Éxito!",
-        description: `Estado actualizado a ${newStatus}`,
-      });
-
-      onUpdate?.();
-      */
-    } catch (error) {
-      console.error("Error updating status:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar el estado",
-        variant: "destructive",
-      });
-    } finally {
-      setUpdatingStatus(false);
-    }
-  };
-
-  const handleEdit = () => {
-    toast({
-      title: "Funcionalidad en desarrollo",
-      description: "La edición de pacientes estará disponible próximamente",
-    });
-  };
-
-  const handleScheduleAppointment = () => {
-    toast({
-      title: "Funcionalidad en desarrollo",
-      description: "La programación de citas estará disponible próximamente",
-    });
-  };
-
-  const handleViewPlans = () => {
-    toast({
-      title: "Funcionalidad en desarrollo",
-      description: "La visualización de planes estará disponible próximamente",
-    });
-  };
-
-  const getStatusIcon = (status: string) => {
-    if (status === "activo") return <UserCheck className="h-4 w-4" />;
-    if (status === "inactivo") return <UserX className="h-4 w-4" />;
-    return <UserCheck className="h-4 w-4" />;
-  };
-
-  const getStatusText = (status: string) => {
-    if (status === "activo") return "Marcar como activo";
-    if (status === "pendiente") return "Marcar como pendiente";
-    if (status === "inactivo") return "Marcar como inactivo";
-    return status;
   };
 
   return (
@@ -192,50 +112,25 @@ export function PatientActionsDropdown({
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onClick={onViewDetails}>
             <Eye className="mr-2 h-4 w-4" />
-            Ver Detalles
+            Ver detalles
           </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={handleEdit}>
-            <Edit className="mr-2 h-4 w-4" />
-            Editar
+          <DropdownMenuItem onClick={() => navigate(`/patients?patientId=${patient.id}`)}>
+            <Users className="mr-2 h-4 w-4" />
+            Ir a pacientes
           </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={handleScheduleAppointment}>
+          <DropdownMenuItem onClick={() => navigate(`/patients?patientId=${patient.id}&action=schedule`)}>
             <Calendar className="mr-2 h-4 w-4" />
-            Agendar Cita
+            Agendar cita
           </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={handleViewPlans}>
-            <FileText className="mr-2 h-4 w-4" />
-            Ver Planes
+          <DropdownMenuItem onClick={() => navigate(`/progress?patientId=${patient.id}`)}>
+            <TrendingUp className="mr-2 h-4 w-4" />
+            Ver progreso
           </DropdownMenuItem>
-
+          <DropdownMenuItem onClick={() => navigate(`/messages?patientId=${patient.id}`)}>
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Mensajes
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
-
-          {/* Cambiar estado */}
-          {patient.status !== "activo" && (
-            <DropdownMenuItem onClick={() => handleStatusChange("activo")}>
-              {getStatusIcon("activo")}
-              <span className="ml-2">{getStatusText("activo")}</span>
-            </DropdownMenuItem>
-          )}
-
-          {patient.status !== "pendiente" && (
-            <DropdownMenuItem onClick={() => handleStatusChange("pendiente")}>
-              {getStatusIcon("pendiente")}
-              <span className="ml-2">{getStatusText("pendiente")}</span>
-            </DropdownMenuItem>
-          )}
-
-          {patient.status !== "inactivo" && (
-            <DropdownMenuItem onClick={() => handleStatusChange("inactivo")}>
-              {getStatusIcon("inactivo")}
-              <span className="ml-2">{getStatusText("inactivo")}</span>
-            </DropdownMenuItem>
-          )}
-
-          <DropdownMenuSeparator />
-
           <DropdownMenuItem
             onClick={() => setDeleteDialogOpen(true)}
             className="text-destructive focus:text-destructive"
@@ -246,17 +141,13 @@ export function PatientActionsDropdown({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar paciente?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta acción eliminará permanentemente a{" "}
-              <strong>
-                {patient.nombres} {patient.apellidos}
-              </strong>{" "}
-              y todos sus datos asociados. Esta acción no se puede deshacer.
+              <strong>{displayName}</strong> y sus datos asociados. No se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -267,31 +158,6 @@ export function PatientActionsDropdown({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deleting ? "Eliminando..." : "Sí, eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Status Change Confirmation Dialog */}
-      <AlertDialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cambiar estado del paciente</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Deseas cambiar el estado de{" "}
-              <strong>
-                {patient.nombres} {patient.apellidos}
-              </strong>{" "}
-              a <strong className="capitalize">{newStatus}</strong>?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updatingStatus}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmStatusChange}
-              disabled={updatingStatus}
-            >
-              {updatingStatus ? "Actualizando..." : "Confirmar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

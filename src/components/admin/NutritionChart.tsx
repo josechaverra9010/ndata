@@ -1,22 +1,7 @@
-// import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useEffect, useState } from "react";
 import { API_URL } from "@/config/api";
-
-// Mock data fallback
-const mockData = [
-  { name: "Ene", consultas: 24, planes: 18 },
-  { name: "Feb", consultas: 32, planes: 25 },
-  { name: "Mar", consultas: 28, planes: 22 },
-  { name: "Abr", consultas: 45, planes: 38 },
-  { name: "May", consultas: 52, planes: 42 },
-  { name: "Jun", consultas: 48, planes: 40 },
-  { name: "Jul", consultas: 55, planes: 48 },
-  { name: "Ago", consultas: 62, planes: 52 },
-  { name: "Sep", consultas: 58, planes: 50 },
-  { name: "Oct", consultas: 70, planes: 58 },
-  { name: "Nov", consultas: 78, planes: 65 },
-];
+import { BarChart3, Activity } from "lucide-react";
 
 interface ChartData {
   name: string;
@@ -25,7 +10,7 @@ interface ChartData {
 }
 
 export function NutritionChart() {
-  const [data, setData] = useState<ChartData[]>(mockData);
+  const [data, setData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,28 +19,28 @@ export function NutritionChart() {
         const token = localStorage.getItem("userToken");
         const response = await fetch(`${API_URL}/dashboard/chart-data`, {
           headers: {
-            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-          }
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
         });
         if (response.ok) {
           const chartData = await response.json();
-          // El endpoint devuelve un array con { key, month, consultas, planes }
-          // Necesitamos mapearlo al formato esperado { name, consultas, planes }
-          if (Array.isArray(chartData)) {
-            const mappedData = chartData.map((item: any) => ({
-              name: item.month || item.name || item.key,
-              consultas: item.consultas || 0,
-              planes: item.planes || 0
-            }));
-            setData(mappedData);
+          if (Array.isArray(chartData) && chartData.length > 0) {
+            setData(
+              chartData.map((item: any) => ({
+                name: item.month || item.name || item.key,
+                consultas: item.consultas || 0,
+                planes: item.planes || 0,
+              }))
+            );
           } else {
-            setData(mockData);
+            setData([]);
           }
+        } else {
+          setData([]);
         }
       } catch (error) {
         console.error("Error fetching chart data:", error);
-        // Usar datos mock si falla
-        setData(mockData);
+        setData([]);
       } finally {
         setLoading(false);
       }
@@ -66,80 +51,104 @@ export function NutritionChart() {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-6 shadow-card h-[400px] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-card h-[400px] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-card">
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-foreground">Resumen de Actividad</h3>
-        <p className="text-sm text-muted-foreground">Consultas y planes creados este año</p>
-      </div>
-      <div className="flex items-center gap-6 mb-4">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-full bg-primary" />
-          <span className="text-sm text-muted-foreground">Consultas</span>
+    <div className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-card backdrop-blur-sm h-full">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/10">
+            <Activity className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight text-foreground">
+              Resumen de Actividad
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Consultas y planes creados este año
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 rounded-full bg-accent" />
-          <span className="text-sm text-muted-foreground">Planes Creados</span>
+      </div>
+
+      {data.length === 0 ? (
+        <div className="h-[280px] flex flex-col items-center justify-center text-center text-muted-foreground rounded-xl border border-dashed border-border/70 bg-muted/20">
+          <BarChart3 className="h-10 w-10 mb-3 opacity-40" />
+          <p className="font-medium text-foreground">Sin datos aún</p>
+          <p className="text-sm mt-1 max-w-xs">
+            Cuando registres citas y planes, verás aquí el resumen de actividad.
+          </p>
         </div>
-      </div>
-      <div className="h-[280px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-            <defs>
-              <linearGradient id="colorConsultas" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(145, 63%, 42%)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="hsl(145, 63%, 42%)" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="colorPlanes" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(25, 95%, 53%)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="hsl(25, 95%, 53%)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(145, 20%, 90%)" vertical={false} />
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: 'hsl(150, 10%, 45%)', fontSize: 12 }}
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: 'hsl(150, 10%, 45%)', fontSize: 12 }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'hsl(0, 0%, 100%)',
-                border: '1px solid hsl(145, 20%, 90%)',
-                borderRadius: '12px',
-                boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="consultas"
-              stroke="hsl(145, 63%, 42%)"
-              strokeWidth={2}
-              fillOpacity={1}
-              fill="url(#colorConsultas)"
-            />
-            <Area
-              type="monotone"
-              dataKey="planes"
-              stroke="hsl(25, 95%, 53%)"
-              strokeWidth={2}
-              fillOpacity={1}
-              fill="url(#colorPlanes)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              <span className="h-2 w-2 rounded-full bg-primary" />
+              Consultas
+            </div>
+            <div className="flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1 text-xs font-medium text-accent-foreground">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              Planes creados
+            </div>
+          </div>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorConsultas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(102, 12%, 55%)" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="hsl(102, 12%, 55%)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorPlanes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(37, 46%, 68%)" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="hsl(37, 46%, 68%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(30, 20%, 88%)" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "hsl(30, 15%, 45%)", fontSize: 12 }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "hsl(30, 15%, 45%)", fontSize: 12 }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(30, 62%, 98%)",
+                    border: "1px solid hsl(30, 30%, 85%)",
+                    borderRadius: "14px",
+                    boxShadow: "0 8px 24px -8px rgba(0,0,0,0.12)",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="consultas"
+                  stroke="hsl(102, 12%, 55%)"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#colorConsultas)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="planes"
+                  stroke="hsl(37, 46%, 58%)"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#colorPlanes)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
     </div>
   );
 }

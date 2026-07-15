@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,8 @@ export function ScheduleAppointmentDialog({
 }: ScheduleAppointmentDialogProps) {
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
+    const [loadingSlots, setLoadingSlots] = useState(false);
+    const [availableSlots, setAvailableSlots] = useState<string[]>([]);
     const [formData, setFormData] = useState({
         date: "",
         time: "",
@@ -39,15 +41,54 @@ export function ScheduleAppointmentDialog({
         notes: "",
     });
 
-    // Generar horarios disponibles (8:00 AM - 7:00 PM cada 30 min)
-    const generateTimeSlots = () => {
-        const slots = [];
-        for (let hour = 8; hour < 19; hour++) {
-            slots.push(`${hour.toString().padStart(2, '0')}:00`);
-            slots.push(`${hour.toString().padStart(2, '0')}:30`);
-        }
-        return slots;
+    const authHeaders = () => {
+        const token = localStorage.getItem("userToken");
+        return token ? { Authorization: `Bearer ${token}` } : {};
     };
+
+    const fetchAvailableSlots = async (date: string, duration: string) => {
+        if (!date) {
+            setAvailableSlots([]);
+            return;
+        }
+
+        setLoadingSlots(true);
+        try {
+            const params = new URLSearchParams({ duration });
+            const response = await fetch(
+                `${API_URL}/appointments/available-slots/${date}?${params.toString()}`,
+                { headers: authHeaders() }
+            );
+            if (!response.ok) {
+                throw new Error("No se pudieron cargar los horarios");
+            }
+            const data = await response.json();
+            const slots: string[] = data.available_slots || [];
+            setAvailableSlots(slots);
+            setFormData((prev) => ({
+                ...prev,
+                time: prev.time && slots.includes(prev.time) ? prev.time : "",
+            }));
+        } catch (error) {
+            console.error("Error loading slots:", error);
+            setAvailableSlots([]);
+            toast({
+                title: "Error",
+                description: "No se pudieron cargar los horarios disponibles",
+                variant: "destructive",
+            });
+        } finally {
+            setLoadingSlots(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        if (formData.date) {
+            fetchAvailableSlots(formData.date, formData.duration);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, formData.date, formData.duration]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -74,18 +115,17 @@ export function ScheduleAppointmentDialog({
                 notes: formData.notes || null,
             };
 
-            const token = localStorage.getItem("userToken");
             const response = await fetch(`${API_URL}/appointments`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                    ...authHeaders(),
                 },
                 body: JSON.stringify(appointmentData),
             });
 
             if (!response.ok) {
-                const error = await response.json();
+                const error = await response.json().catch(() => ({}));
                 throw new Error(error.detail || "Error al crear la cita");
             }
 
@@ -97,7 +137,6 @@ export function ScheduleAppointmentDialog({
             onSuccess();
             onOpenChange(false);
 
-            // Reset form
             setFormData({
                 date: "",
                 time: "",
@@ -105,6 +144,7 @@ export function ScheduleAppointmentDialog({
                 type: "presencial",
                 notes: "",
             });
+            setAvailableSlots([]);
         } catch (error) {
             console.error("Error scheduling appointment:", error);
             toast({
@@ -117,8 +157,7 @@ export function ScheduleAppointmentDialog({
         }
     };
 
-    // Obtener fecha mínima (hoy)
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split("T")[0];
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,7 +170,6 @@ export function ScheduleAppointmentDialog({
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Fecha y Hora */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="date">
@@ -144,7 +182,7 @@ export function ScheduleAppointmentDialog({
                                     type="date"
                                     min={today}
                                     value={formData.date}
-                                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, date: e.target.value, time: "" })}
                                     className="pl-10"
                                     required
                                     disabled={loading}
@@ -159,17 +197,27 @@ export function ScheduleAppointmentDialog({
                             <Select
                                 value={formData.time}
                                 onValueChange={(value) => setFormData({ ...formData, time: value })}
-                                disabled={loading}
+                                disabled={loading || loadingSlots || !formData.date}
                                 required
                             >
                                 <SelectTrigger>
                                     <div className="flex items-center gap-2">
                                         <Clock className="h-4 w-4 text-muted-foreground" />
-                                        <SelectValue placeholder="Selecciona hora" />
+                                        <SelectValue
+                                            placeholder={
+                                                !formData.date
+                                                    ? "Elige fecha"
+                                                    : loadingSlots
+                                                      ? "Cargando..."
+                                                      : availableSlots.length
+                                                        ? "Selecciona hora"
+                                                        : "Sin horarios"
+                                            }
+                                        />
                                     </div>
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {generateTimeSlots().map((slot) => (
+                                    {availableSlots.map((slot) => (
                                         <SelectItem key={slot} value={slot}>
                                             {slot}
                                         </SelectItem>
@@ -179,13 +227,12 @@ export function ScheduleAppointmentDialog({
                         </div>
                     </div>
 
-                    {/* Duración y Tipo */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="duration">Duración</Label>
                             <Select
                                 value={formData.duration}
-                                onValueChange={(value) => setFormData({ ...formData, duration: value })}
+                                onValueChange={(value) => setFormData({ ...formData, duration: value, time: "" })}
                                 disabled={loading}
                             >
                                 <SelectTrigger>
@@ -218,7 +265,6 @@ export function ScheduleAppointmentDialog({
                         </div>
                     </div>
 
-                    {/* Notas */}
                     <div className="space-y-2">
                         <Label htmlFor="notes">Notas (opcional)</Label>
                         <Textarea
@@ -231,26 +277,24 @@ export function ScheduleAppointmentDialog({
                         />
                     </div>
 
-                    {/* Información adicional */}
                     <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
                         <p className="font-medium mb-1">Resumen de la cita:</p>
                         <ul className="space-y-1">
                             <li>• Paciente: {patient.nombres} {patient.apellidos}</li>
                             {formData.date && (
-                                <li>• Fecha: {new Date(formData.date + 'T00:00:00').toLocaleDateString('es-ES', {
-                                    weekday: 'long',
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric'
+                                <li>• Fecha: {new Date(formData.date + "T00:00:00").toLocaleDateString("es-ES", {
+                                    weekday: "long",
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
                                 })}</li>
                             )}
                             {formData.time && <li>• Hora: {formData.time}</li>}
                             <li>• Duración: {formData.duration}</li>
-                            <li>• Modalidad: {formData.type === 'presencial' ? 'Presencial' : 'Videollamada'}</li>
+                            <li>• Modalidad: {formData.type === "presencial" ? "Presencial" : "Videollamada"}</li>
                         </ul>
                     </div>
 
-                    {/* Botones */}
                     <DialogFooter>
                         <Button
                             type="button"
@@ -260,7 +304,7 @@ export function ScheduleAppointmentDialog({
                         >
                             Cancelar
                         </Button>
-                        <Button type="submit" disabled={loading}>
+                        <Button type="submit" disabled={loading || loadingSlots || !formData.time}>
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Agendar Cita
                         </Button>

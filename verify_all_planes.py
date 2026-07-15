@@ -26,14 +26,22 @@ def check_wiring() -> None:
         "function calculatePediatriaEnergia",
         "function calculateGestanteEnergia",
         "function calculateGestanteAdolescenteEnergia",
+        "function calculateHospitalizadoEnergia",
+        "function calcChumleaPesoKg",
+        "function calculateParenteralHospitalizado",
+        "Método del pulgar",
+        "Nutrición parenteral adulto",
         'currentPhase === 1 && formData.tipo_plan === "deportista"',
         'currentPhase === 1 && formData.tipo_plan === "pediatria"',
         "currentPhase === 1 && isGestanteTipo(formData.tipo_plan)",
+        "currentPhase === 1 && isHospitalizado(formData.tipo_plan)",
+        "!isHospitalizado(formData.tipo_plan)",
         "!isGestanteTipo(formData.tipo_plan)",
         'tipo_fase: "deportista"',
         'tipo_fase: "pediatria"',
         'tipo_fase: "gestante"',
         'tipo_fase: "gestante_adolescente"',
+        'tipo_fase: "hospitalizado"',
     ]
     for item in required_wiz:
         assert item in wiz, f"NewPlanWizard missing: {item}"
@@ -41,7 +49,7 @@ def check_wiring() -> None:
     # Adult Phase 1 must not use the old gestante-only exclusion (would leak gestante_adolescente into adult UI)
     assert 'formData.tipo_plan !== "gestante" && (' not in wiz or "!isGestanteTipo(formData.tipo_plan)" in wiz
 
-    for tipo in ("deportista", "pediatria", "gestante", "gestante_adolescente"):
+    for tipo in ("deportista", "pediatria", "gestante", "gestante_adolescente", "hospitalizado"):
         assert f'tipo_fase === "{tipo}"' in dlg, f"PlanDetailsDialog missing branch: {tipo}"
         assert f"{tipo}:" in meals or f'"{tipo}"' in meals, f"MealPlans missing label for {tipo}"
 
@@ -111,6 +119,13 @@ def check_formulas_inline() -> None:
     assert abs(endo - 2.38) < 0.02
     print(f"Deportista OK: endo={endo:.2f} corr={corr:.4f}")
 
+    # --- Hospitalizado Harris × FA × FE ---
+    tmb_h = 655.0955 + 9.5634 * 70 + 1.8496 * 160 - 4.6756 * 45
+    total_h = tmb_h * 1.15 * 1.2
+    assert abs(tmb_h - 1410.0675) < 0.1
+    assert abs(total_h - tmb_h * 1.15 * 1.2) < 0.01
+    print(f"Hospitalizado OK: Harris TMB={tmb_h:.1f} total~{total_h:.0f} kcal")
+
     # --- Adulto IMC/PS ---
     altura_m = 1.73
     peso_a = 63.0
@@ -134,6 +149,7 @@ def main() -> int:
         "verify_gest_adoles.py",
         "verify_pediatria.py",
         "verify_deportista.py",
+        "verify_hospitalizado.py",
         "verify_formulas.py",
     ):
         run_script(script)

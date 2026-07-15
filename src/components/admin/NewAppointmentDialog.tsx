@@ -23,7 +23,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Loader2 } from "lucide-react";
+import { CalendarIcon, Loader2, CalendarPlus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -36,12 +37,30 @@ interface Patient {
 }
 
 interface NewAppointmentDialogProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   onAppointmentCreated?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  initialDate?: Date;
+  initialTime?: string;
 }
 
-export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppointmentDialogProps) {
-  const [open, setOpen] = useState(false);
+export function NewAppointmentDialog({
+  children,
+  onAppointmentCreated,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  initialDate,
+  initialTime,
+}: NewAppointmentDialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (value: boolean) => {
+    if (!isControlled) setUncontrolledOpen(value);
+    controlledOnOpenChange?.(value);
+  };
+
   const [loading, setLoading] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -61,14 +80,19 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
   useEffect(() => {
     if (open) {
       fetchPatients();
+      setFormData((prev) => ({
+        ...prev,
+        date: initialDate ?? prev.date,
+        time: initialTime ?? (initialDate ? "" : prev.time),
+      }));
     }
-  }, [open]);
+  }, [open, initialDate, initialTime]);
 
   useEffect(() => {
     if (formData.date) {
       fetchAvailableSlots();
     }
-  }, [formData.date]);
+  }, [formData.date, formData.duration]);
 
   const fetchPatients = async () => {
     try {
@@ -96,9 +120,18 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
       const dateStr = format(formData.date, "yyyy-MM-dd");
       const response = await axios.get(
         `${API_URL}/appointments/available-slots/${dateStr}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          params: { duration: formData.duration },
+        }
       );
-      setAvailableSlots(response.data.available_slots);
+      const slots: string[] = response.data.available_slots || [];
+      // Conservar hora prefijada aunque no venga todavía en la lista
+      if (formData.time && !slots.includes(formData.time)) {
+        slots.push(formData.time);
+        slots.sort();
+      }
+      setAvailableSlots(slots);
     } catch (error) {
       console.error("Error loading slots:", error);
       toast({
@@ -157,7 +190,6 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
         description: "La cita ha sido programada correctamente",
       });
 
-      // Reset form
       setFormData({
         patient_id: "",
         patient_name: "",
@@ -184,25 +216,29 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Nueva Cita</DialogTitle>
+      {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
+      <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex flex-col max-h-[90vh]">
+          <DialogHeader className="border-b bg-gradient-to-br from-primary/10 via-background to-sky-500/5 px-6 pt-6 pb-4 space-y-2">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/20">
+                <CalendarPlus className="h-4 w-4" />
+              </span>
+              Nueva cita
+            </DialogTitle>
             <DialogDescription>
-              Programa una nueva cita con un paciente
+              Programa una consulta presencial o por videollamada
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            {/* Selección de Paciente */}
+          <div className="grid gap-4 px-6 py-5 overflow-y-auto">
             <div className="grid gap-2">
               <Label htmlFor="patient">Paciente *</Label>
               <Select
                 value={formData.patient_id}
                 onValueChange={handlePatientChange}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11 rounded-xl">
                   <SelectValue placeholder="Selecciona un paciente" />
                 </SelectTrigger>
                 <SelectContent>
@@ -215,17 +251,18 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
               </Select>
             </div>
 
-            {/* Fecha */}
             <div className="grid gap-2">
               <Label>Fecha *</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
-                    className={`justify-start text-left font-normal ${!formData.date && "text-muted-foreground"
-                      }`}
+                    className={cn(
+                      "h-11 rounded-xl justify-start text-left font-normal",
+                      !formData.date && "text-muted-foreground"
+                    )}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    <CalendarIcon className="mr-2 h-4 w-4 text-primary" />
                     {formData.date ? (
                       format(formData.date, "PPP", { locale: es })
                     ) : (
@@ -233,7 +270,7 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
+                <PopoverContent className="w-auto p-0 rounded-xl" align="start">
                   <Calendar
                     mode="single"
                     selected={formData.date}
@@ -241,87 +278,100 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
                       setFormData({ ...formData, date, time: "" })
                     }
                     locale={es}
-                    disabled={(date) => date < new Date()}
+                    disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                    className="rounded-xl"
                   />
                 </PopoverContent>
               </Popover>
             </div>
 
-            {/* Hora */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="time">Hora *</Label>
+                <Select
+                  value={formData.time}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, time: value })
+                  }
+                  disabled={!formData.date || loadingSlots}
+                >
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue
+                      placeholder={
+                        loadingSlots
+                          ? "Cargando..."
+                          : "Selecciona hora"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSlots.map((slot) => (
+                      <SelectItem key={slot} value={slot}>
+                        {slot}
+                      </SelectItem>
+                    ))}
+                    {availableSlots.length === 0 && !loadingSlots && (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        No hay horarios disponibles
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="duration">Duración</Label>
+                <Select
+                  value={formData.duration}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, duration: value })
+                  }
+                >
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30 min">30 minutos</SelectItem>
+                    <SelectItem value="45 min">45 minutos</SelectItem>
+                    <SelectItem value="60 min">60 minutos</SelectItem>
+                    <SelectItem value="90 min">90 minutos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="grid gap-2">
-              <Label htmlFor="time">Hora *</Label>
-              <Select
-                value={formData.time}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, time: value })
-                }
-                disabled={!formData.date || loadingSlots}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      loadingSlots
-                        ? "Cargando horarios..."
-                        : "Selecciona una hora"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableSlots.map((slot) => (
-                    <SelectItem key={slot} value={slot}>
-                      {slot}
-                    </SelectItem>
-                  ))}
-                  {availableSlots.length === 0 && !loadingSlots && (
-                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                      No hay horarios disponibles
-                    </div>
+              <Label>Tipo de consulta</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: "presencial" })}
+                  className={cn(
+                    "rounded-xl border px-3 py-3 text-sm font-medium transition-all text-left",
+                    formData.type === "presencial"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20 text-foreground"
+                      : "hover:bg-muted/50 text-muted-foreground"
                   )}
-                </SelectContent>
-              </Select>
+                >
+                  <span className="block font-semibold text-foreground">Presencial</span>
+                  <span className="text-xs text-muted-foreground">En consultorio</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, type: "videollamada" })}
+                  className={cn(
+                    "rounded-xl border px-3 py-3 text-sm font-medium transition-all text-left",
+                    formData.type === "videollamada"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20 text-foreground"
+                      : "hover:bg-muted/50 text-muted-foreground"
+                  )}
+                >
+                  <span className="block font-semibold text-foreground">Videollamada</span>
+                  <span className="text-xs text-muted-foreground">Consulta online</span>
+                </button>
+              </div>
             </div>
 
-            {/* Duración */}
-            <div className="grid gap-2">
-              <Label htmlFor="duration">Duración</Label>
-              <Select
-                value={formData.duration}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, duration: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="30 min">30 minutos</SelectItem>
-                  <SelectItem value="45 min">45 minutos</SelectItem>
-                  <SelectItem value="60 min">60 minutos</SelectItem>
-                  <SelectItem value="90 min">90 minutos</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Tipo */}
-            <div className="grid gap-2">
-              <Label htmlFor="type">Tipo de consulta</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, type: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="presencial">Presencial</SelectItem>
-                  <SelectItem value="videollamada">Videollamada</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Notas */}
             <div className="grid gap-2">
               <Label htmlFor="notes">Notas (opcional)</Label>
               <Textarea
@@ -331,22 +381,25 @@ export function NewAppointmentDialog({ children, onAppointmentCreated }: NewAppo
                   setFormData({ ...formData, notes: e.target.value })
                 }
                 rows={3}
+                className="rounded-xl resize-none"
+                placeholder="Motivo, preparación, recordatorios..."
               />
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t bg-muted/30 px-6 py-4 gap-2">
             <Button
               type="button"
               variant="outline"
+              className="rounded-full"
               onClick={() => setOpen(false)}
               disabled={loading}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" className="rounded-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Crear Cita
+              Crear cita
             </Button>
           </DialogFooter>
         </form>

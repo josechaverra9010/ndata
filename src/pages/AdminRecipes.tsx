@@ -5,16 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { API_URL } from "@/config/api";
 import { toast } from "sonner";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import {
   Search, Plus, Clock, Flame, Users, ChefHat, Heart, Filter, MoreVertical,
-  Edit, Trash2, Copy, Eye
+  Edit, Trash2, Copy, Eye, X, Utensils, Beef
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -65,6 +66,8 @@ interface Recipe {
   image: string;
   tags: string[];
   isFavorite: boolean;
+  is_public?: boolean;
+  created_by_id?: number | null;
 }
 
 const categories = ["Todas", "Desayunos", "Ensaladas", "Platos principales", "Bebidas", "Snacks", "Postres"];
@@ -83,6 +86,36 @@ export default function AdminRecipes() {
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
   const [ingredientGroupFilter, setIngredientGroupFilter] = useState<string>("Todos");
   const [ingredientSearchTerm, setIngredientSearchTerm] = useState("");
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [formCategory, setFormCategory] = useState("Platos principales");
+  const [formPrepTime, setFormPrepTime] = useState(0);
+  const [formCookTime, setFormCookTime] = useState(0);
+
+  const currentUserId = (() => {
+    try {
+      const raw = localStorage.getItem("userData");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.id != null ? Number(parsed.id) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const currentUserRole = (() => {
+    try {
+      const raw = localStorage.getItem("userData");
+      if (!raw) return null;
+      return JSON.parse(raw)?.role ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const canModifyRecipe = (recipe: Recipe) => {
+    if (currentUserRole === "superadmin") return true;
+    if (currentUserId == null) return false;
+    return Number(recipe.created_by_id) === Number(currentUserId);
+  };
 
   /** Lista de ingredientes del grupo actual filtrada por búsqueda */
   const filteredIngredientsForRecipe = useMemo(() => {
@@ -118,12 +151,23 @@ export default function AdminRecipes() {
   }, [selectedIngredients]);
 
   const filteredRecipes = recipes.filter(recipe => {
-    const matchesSearch = recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      recipe.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      recipe.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      (recipe.name || "").toLowerCase().includes(q) ||
+      (recipe.description || "").toLowerCase().includes(q) ||
+      (recipe.tags || []).some(tag => (tag || "").toLowerCase().includes(q));
     const matchesCategory = selectedCategory === "Todas" || recipe.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesFavorite = !showFavoritesOnly || recipe.isFavorite;
+    return matchesSearch && matchesCategory && matchesFavorite;
   });
+
+  const favoritesCount = recipes.filter((r) => r.isFavorite).length;
+  const avgServings = recipes.length
+    ? Math.round(recipes.reduce((acc, r) => acc + (r.servings ?? 0), 0) / recipes.length)
+    : 0;
+  const avgCalories = recipes.length
+    ? Math.round(recipes.reduce((acc, r) => acc + (r.calories ?? 0), 0) / recipes.length)
+    : 0;
 
   const fetchRecipes = async () => {
     try {
@@ -153,6 +197,11 @@ export default function AdminRecipes() {
   }, []);
 
   const toggleFavorite = async (recipeId: number) => {
+    const target = recipes.find((r) => r.id === recipeId);
+    if (target && !canModifyRecipe(target)) {
+      toast.error("Solo puedes marcar favoritas tus propias recetas");
+      return;
+    }
     try {
       const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/recipes/${recipeId}/favorite`, {
@@ -167,7 +216,13 @@ export default function AdminRecipes() {
         setRecipes(recipes.map(r =>
           r.id === recipeId ? { ...r, isFavorite: data.isFavorite } : r
         ));
+        setSelectedRecipe((prev) =>
+          prev?.id === recipeId ? { ...prev, isFavorite: data.isFavorite } : prev
+        );
         toast.success("Favorito actualizado");
+      } else {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.detail || "Error al actualizar favorito");
       }
     } catch (error) {
       toast.error("Error al actualizar favorito");
@@ -193,9 +248,9 @@ export default function AdminRecipes() {
     const data = new FormData();
     data.append("name", formData.get("name") as string);
     data.append("description", formData.get("description") as string);
-    data.append("category", formData.get("category") as string);
-    data.append("prepTime", formData.get("prepTime") as string || "0");
-    data.append("cookTime", formData.get("cookTime") as string || "0");
+    data.append("category", formCategory || "Platos principales");
+    data.append("prepTime", String(formPrepTime || 0));
+    data.append("cookTime", String(formCookTime || 0));
     data.append("servings", formData.get("servings") as string);
     data.append("calories", String(Math.round(netNutrients.kcal)));
     data.append("protein", String(Math.round(netNutrients.prot)));
@@ -238,7 +293,8 @@ export default function AdminRecipes() {
         setEditingRecipe(null);
         toast.success(editingRecipe ? "Receta actualizada correctamente" : "Receta creada correctamente");
       } else {
-        toast.error("Error al guardar la receta");
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.detail || "Error al guardar la receta");
       }
     } catch (error) {
       console.error("Error saving recipe:", error);
@@ -296,9 +352,9 @@ export default function AdminRecipes() {
     data.append("instructions", JSON.stringify(recipe.instructions));
     data.append("tags", JSON.stringify(recipe.tags));
     data.append("isFavorite", "false");
-    // Note: We can't easily duplicate the file from a URL, so we leave it empty or send the current URL if the backend handles it as a string
-    // In this case, our backend expects a File object for 'image'. If none is provided, it stays as is (on PUT) or null (on POST).
-    // Let's assume we don't duplicate the image for now if it's a file, or we can add logic later.
+    if (recipe.image) {
+      data.append("existing_image", recipe.image);
+    }
 
     try {
       const token = localStorage.getItem("userToken");
@@ -314,7 +370,8 @@ export default function AdminRecipes() {
         await fetchRecipes();
         toast.success("Receta duplicada correctamente");
       } else {
-        toast.error("Error al duplicar la receta");
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.detail || "Error al duplicar la receta");
       }
     } catch (error) {
       console.error("Error duplicating recipe:", error);
@@ -326,13 +383,23 @@ export default function AdminRecipes() {
     setEditingRecipe(null);
     setSelectedIngredients([]);
     setIngredientGroupFilter("Todos");
+    setFormCategory("Platos principales");
+    setFormPrepTime(0);
+    setFormCookTime(0);
     setIsFormOpen(true);
   };
 
   const openEditForm = (recipe: Recipe) => {
+    if (!canModifyRecipe(recipe)) {
+      toast.error("Solo puedes editar tus propias recetas");
+      return;
+    }
     setEditingRecipe(recipe);
     setSelectedIngredients(recipe.ingredients || []);
     setIngredientGroupFilter("Todos");
+    setFormCategory(recipe.category || "Platos principales");
+    setFormPrepTime(recipe.prepTime || 0);
+    setFormCookTime(recipe.cookTime || 0);
     setIsFormOpen(true);
   };
 
@@ -345,12 +412,7 @@ export default function AdminRecipes() {
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Cargando recetas...</p>
-          </div>
-        </div>
+        <LoadingScreen message="Cargando recetas" />
       </AdminLayout>
     );
   }
@@ -359,16 +421,187 @@ export default function AdminRecipes() {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Recetas</h1>
-            <p className="text-muted-foreground">Gestiona tu biblioteca de recetas saludables</p>
+        <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-amber-500/5 p-5 sm:p-6">
+          <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/10 blur-2xl" />
+          <div className="absolute -left-6 bottom-0 h-24 w-24 rounded-full bg-amber-500/10 blur-2xl" />
+          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-sm ring-1 ring-primary/20">
+                <ChefHat className="h-6 w-6" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Recetas</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Biblioteca de recetas para planes y menús semanales
+                  {recipes.length > 0 && (
+                    <span className="font-medium text-foreground/80"> · {filteredRecipes.length} mostradas</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button className="rounded-full shadow-md hover:shadow-lg transition-shadow shrink-0 gap-2" onClick={openNewRecipeForm}>
+              <Plus className="h-4 w-4" />
+              Nueva receta
+            </Button>
           </div>
-          <Button className="gap-2" onClick={openNewRecipeForm}>
-            <Plus className="h-4 w-4" />
-            Nueva Receta
-          </Button>
         </div>
+
+        {/* Stats */}
+        {recipes.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShowFavoritesOnly(false);
+                setSelectedCategory("Todas");
+              }}
+              className={`rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:shadow-md ${!showFavoritesOnly && selectedCategory === "Todas" ? "ring-2 ring-primary/30 border-primary/30" : ""}`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-primary/10 p-2.5">
+                  <ChefHat className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Total</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">{recipes.length}</p>
+                </div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+              className={`rounded-2xl border bg-card p-4 text-left shadow-sm transition-all hover:shadow-md ${showFavoritesOnly ? "ring-2 ring-rose-500/30 border-rose-500/30" : ""}`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-rose-500/10 p-2.5">
+                  <Heart className="h-5 w-5 text-rose-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Favoritas</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">{favoritesCount}</p>
+                </div>
+              </div>
+            </button>
+            <div className="rounded-2xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-sky-500/10 p-2.5">
+                  <Users className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Porciones prom.</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">{avgServings}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-amber-500/10 p-2.5">
+                  <Flame className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Kcal promedio</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">{avgCalories}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search and Filters */}
+        <Card className="rounded-2xl border-border/80 shadow-sm">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar por nombre, descripción o etiqueta..."
+                  className="pl-10 h-11 rounded-xl bg-muted/30 border-border focus-visible:ring-2 focus-visible:ring-primary/20"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-full sm:w-[200px] h-11 rounded-xl">
+                  <Filter className="h-4 w-4 mr-2 shrink-0" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map(cat => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-all border ${
+                    selectedCategory === cat
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {(searchTerm || selectedCategory !== "Todas" || showFavoritesOnly) && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Filtros activos:</span>
+                {searchTerm && (
+                  <Badge variant="secondary" className="rounded-full gap-1 pl-2.5 pr-1 py-1">
+                    “{searchTerm}”
+                    <button type="button" className="rounded-full p-0.5 hover:bg-muted" onClick={() => setSearchTerm("")}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {selectedCategory !== "Todas" && (
+                  <Badge variant="secondary" className="rounded-full gap-1 pl-2.5 pr-1 py-1">
+                    {selectedCategory}
+                    <button type="button" className="rounded-full p-0.5 hover:bg-muted" onClick={() => setSelectedCategory("Todas")}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {showFavoritesOnly && (
+                  <Badge variant="secondary" className="rounded-full gap-1 pl-2.5 pr-1 py-1">
+                    Favoritas
+                    <button type="button" className="rounded-full p-0.5 hover:bg-muted" onClick={() => setShowFavoritesOnly(false)}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs rounded-full"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setSelectedCategory("Todas");
+                    setShowFavoritesOnly(false);
+                  }}
+                >
+                  Limpiar todo
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Recipe Form Dialog */}
         <Dialog
@@ -382,12 +615,17 @@ export default function AdminRecipes() {
             }
           }}
         >
-          <DialogContent className="max-w-[min(92vw,56rem)] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col gap-4 p-6">
-            <DialogHeader className="flex-shrink-0">
-              <DialogTitle>{editingRecipe ? "Editar Receta" : "Crear Nueva Receta"}</DialogTitle>
+          <DialogContent className="max-w-[min(92vw,56rem)] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
+            <DialogHeader className="flex-shrink-0 border-b bg-gradient-to-br from-background via-background to-primary/[0.04] px-6 pt-6 pb-4">
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                  <Utensils className="h-4 w-4" />
+                </span>
+                {editingRecipe ? "Editar receta" : "Crear nueva receta"}
+              </DialogTitle>
             </DialogHeader>
-            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1 -mr-1">
-              <form onSubmit={handleSaveRecipe} className="space-y-4 pb-2">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4">
+              <form onSubmit={handleSaveRecipe} className="space-y-5 pb-2">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <Label htmlFor="name">Nombre de la receta</Label>
@@ -395,6 +633,7 @@ export default function AdminRecipes() {
                       id="name"
                       name="name"
                       required
+                      className="mt-1.5 rounded-xl h-11"
                       defaultValue={editingRecipe?.name}
                     />
                   </div>
@@ -403,14 +642,15 @@ export default function AdminRecipes() {
                     <Textarea
                       id="description"
                       name="description"
+                      className="mt-1.5 rounded-xl"
                       defaultValue={editingRecipe?.description}
                       rows={3}
                     />
                   </div>
                   <div>
                     <Label htmlFor="category">Categoría</Label>
-                    <Select name="category" defaultValue={editingRecipe?.category || "Platos principales"}>
-                      <SelectTrigger>
+                    <Select value={formCategory} onValueChange={setFormCategory}>
+                      <SelectTrigger className="mt-1.5 rounded-xl h-11">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -427,9 +667,32 @@ export default function AdminRecipes() {
                       id="servings"
                       name="servings"
                       type="number"
+                      className="mt-1.5 rounded-xl h-11"
                       defaultValue={editingRecipe?.servings || 2}
                       min="1"
                       required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="prepTime">Prep. (min)</Label>
+                    <Input
+                      id="prepTime"
+                      type="number"
+                      min="0"
+                      className="mt-1.5 rounded-xl h-11"
+                      value={formPrepTime}
+                      onChange={(e) => setFormPrepTime(Number(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="cookTime">Cocción (min)</Label>
+                    <Input
+                      id="cookTime"
+                      type="number"
+                      min="0"
+                      className="mt-1.5 rounded-xl h-11"
+                      value={formCookTime}
+                      onChange={(e) => setFormCookTime(Number(e.target.value) || 0)}
                     />
                   </div>
                 </div>
@@ -437,7 +700,7 @@ export default function AdminRecipes() {
 
 
                 <div className="space-y-2">
-                  <Label>Ingredientes (del PDF por grupo)</Label>
+                  <Label>Ingredientes (tabla de composición)</Label>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <div className="relative flex-1 max-w-sm">
                       <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -445,14 +708,14 @@ export default function AdminRecipes() {
                         placeholder="Buscar ingrediente..."
                         value={ingredientSearchTerm}
                         onChange={(e) => setIngredientSearchTerm(e.target.value)}
-                        className="pl-8"
+                        className="pl-8 rounded-xl"
                       />
                     </div>
                     <Select
                       value={ingredientGroupFilter}
                       onValueChange={(v) => { setIngredientGroupFilter(v); setIngredientSearchTerm(""); }}
                     >
-                      <SelectTrigger className="w-full max-w-xs sm:w-[200px]">
+                      <SelectTrigger className="w-full max-w-xs sm:w-[200px] rounded-xl">
                         <SelectValue placeholder="Filtrar por grupo" />
                       </SelectTrigger>
                       <SelectContent>
@@ -465,10 +728,10 @@ export default function AdminRecipes() {
                     </Select>
                   </div>
                   {selectedIngredients.length > 0 ? (
-                    <div className="border rounded-md overflow-x-auto mb-2" style={{ maxWidth: "100%" }}>
+                    <div className="border rounded-xl overflow-x-auto mb-2" style={{ maxWidth: "100%" }}>
                       <Table className="min-w-[700px]">
                         <TableHeader>
-                          <TableRow>
+                          <TableRow className="bg-muted/40 hover:bg-muted/40">
                             <TableHead className="w-[140px]">Alimento</TableHead>
                             <TableHead className="text-right w-12">g.</TableHead>
                             <TableHead className="min-w-[160px]">Unidad de medida</TableHead>
@@ -526,9 +789,36 @@ export default function AdminRecipes() {
                       </Table>
                     </div>
                   ) : null}
+                  {selectedIngredients.some((name) => !getRowForIngredient(name)) && (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 mb-2 space-y-2">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                        Ingredientes sin tabla de composición (puedes quitarlos)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedIngredients
+                          .filter((name) => !getRowForIngredient(name))
+                          .map((name) => (
+                            <Badge key={name} variant="outline" className="gap-1 rounded-full pr-1">
+                              <span className="max-w-[200px] truncate">{name}</span>
+                              <button
+                                type="button"
+                                className="rounded-full p-0.5 hover:bg-muted"
+                                onClick={() => toggleIngredient(name)}
+                                aria-label={`Quitar ${name}`}
+                              >
+                                ×
+                              </button>
+                            </Badge>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                   {selectedIngredients.length > 0 && (
-                    <div className="rounded-lg border bg-muted/30 p-3 mb-2">
-                      <p className="text-sm font-medium mb-2">Cálculo neto (suma de ingredientes seleccionados)</p>
+                    <div className="rounded-xl border border-primary/15 bg-primary/[0.04] p-3.5 mb-2">
+                      <p className="text-sm font-semibold mb-2.5 flex items-center gap-2">
+                        <Flame className="h-4 w-4 text-amber-500" />
+                        Cálculo neto (suma de ingredientes)
+                      </p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-1.5 text-sm">
                         <span className="text-muted-foreground">Kcal</span>
                         <span className="tabular-nums font-medium">{Math.round(netNutrients.kcal)}</span>
@@ -557,17 +847,21 @@ export default function AdminRecipes() {
                       </div>
                     </div>
                   )}
-                  <ScrollArea className="h-[240px] border rounded-md p-2 mt-2">
-                    <div className="space-y-2">
+                  <ScrollArea className="h-[240px] border rounded-xl p-2 mt-2 bg-muted/20">
+                    <div className="space-y-1">
                       {filteredIngredientsForRecipe.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-2">
+                        <p className="text-sm text-muted-foreground py-2 px-2">
                           {ingredientSearchTerm.trim() ? "No hay ingredientes que coincidan con la búsqueda." : "No hay ingredientes en este grupo."}
                         </p>
                       ) : (
                         filteredIngredientsForRecipe.map((name) => (
                           <label
                             key={name}
-                            className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1"
+                            className={`flex items-center gap-2 cursor-pointer rounded-lg px-2.5 py-1.5 transition-colors ${
+                              selectedIngredients.includes(name)
+                                ? "bg-primary/10 text-foreground"
+                                : "hover:bg-muted/60"
+                            }`}
                           >
                             <Checkbox
                               checked={selectedIngredients.includes(name)}
@@ -591,6 +885,7 @@ export default function AdminRecipes() {
                   <Textarea
                     id="instructions"
                     name="instructions"
+                    className="mt-1.5 rounded-xl"
                     rows={5}
                     defaultValue={editingRecipe?.instructions.join("\n")}
                     required
@@ -602,29 +897,32 @@ export default function AdminRecipes() {
                   <Input
                     id="tags"
                     name="tags"
+                    className="mt-1.5 rounded-xl h-11"
                     defaultValue={editingRecipe?.tags.join(", ")}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="image">Imagen de la Receta</Label>
+                  <Label htmlFor="image">Imagen de la receta</Label>
                   <Input
                     id="image"
                     name="image"
                     type="file"
                     accept="image/*"
+                    className="mt-1.5 rounded-xl file:mr-3 file:rounded-lg"
                   />
                   {editingRecipe?.image && !editingRecipe.image.startsWith('http') && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Ya tiene una imagen cargada. Suba una nueva para reemplazarla.
+                      Ya tiene una imagen cargada. Sube una nueva para reemplazarla.
                     </p>
                   )}
                 </div>
 
-                <div className="flex justify-end gap-2 pt-4">
+                <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-background pb-1">
                   <Button
                     type="button"
                     variant="outline"
+                    className="rounded-full"
                     onClick={() => {
                       setIsFormOpen(false);
                       setEditingRecipe(null);
@@ -632,8 +930,8 @@ export default function AdminRecipes() {
                   >
                     Cancelar
                   </Button>
-                  <Button type="submit">
-                    {editingRecipe ? "Guardar Cambios" : "Crear Receta"}
+                  <Button type="submit" className="rounded-full shadow-md">
+                    {editingRecipe ? "Guardar cambios" : "Crear receta"}
                   </Button>
                 </div>
               </form>
@@ -641,121 +939,84 @@ export default function AdminRecipes() {
           </DialogContent>
         </Dialog>
 
-        {/* Search and Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-[180px]">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map(cat => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <ChefHat className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{recipes.length}</p>
-                <p className="text-xs text-muted-foreground">Total recetas</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-red-500/10 rounded-lg">
-                <Heart className="h-5 w-5 text-red-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{recipes.filter(r => r.isFavorite).length}</p>
-                <p className="text-xs text-muted-foreground">Favoritas</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <Users className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {recipes.length > 0
-                    ? Math.round(recipes.reduce((acc, r) => acc + (r.servings ?? 0), 0) / recipes.length)
-                    : 0}
-                </p>
-                <p className="text-xs text-muted-foreground">Porciones prom.</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-2 bg-amber-500/10 rounded-lg">
-                <Flame className="h-5 w-5 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">
-                  {recipes.length > 0
-                    ? Math.round(recipes.reduce((acc, r) => acc + (r.calories ?? 0), 0) / recipes.length)
-                    : 0}
-                </p>
-                <p className="text-xs text-muted-foreground">Kcal prom. por receta</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Recipe Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredRecipes.length === 0 ? (
+          <Card className="rounded-2xl border-dashed border-border/80 shadow-sm overflow-hidden">
+            <div className="h-1.5 w-full bg-gradient-to-r from-primary/50 via-amber-500/30 to-transparent" />
+            <CardContent className="text-center py-16 px-6">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+                <ChefHat className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">
+                {searchTerm || selectedCategory !== "Todas" || showFavoritesOnly
+                  ? "No se encontraron recetas"
+                  : "Aún no tienes recetas"}
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
+                {searchTerm || selectedCategory !== "Todas" || showFavoritesOnly
+                  ? "Prueba otro término o limpia los filtros activos."
+                  : "Crea la primera para usarla en planes y menús semanales."}
+              </p>
+              {!searchTerm && selectedCategory === "Todas" && !showFavoritesOnly ? (
+                <Button className="rounded-full shadow-md" onClick={openNewRecipeForm}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Crear receta
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setSelectedCategory("Todas");
+                    setShowFavoritesOnly(false);
+                  }}
+                >
+                  Limpiar filtros
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredRecipes.map((recipe) => (
-            <Card key={recipe.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
-              <div className="relative">
+            <Card
+              key={recipe.id}
+              className="group relative overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/25 cursor-pointer"
+              onClick={() => {
+                setSelectedRecipe(recipe);
+                setIsDetailOpen(true);
+              }}
+            >
+              <div className="relative h-44 overflow-hidden">
                 <img
                   src={getImageUrl(recipe.image)}
                   alt={recipe.name}
-                  className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                <div className="absolute top-2 right-2 flex gap-2">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                <div className="absolute top-2.5 right-2.5 flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  {canModifyRecipe(recipe) && (
                   <Button
                     size="icon"
                     variant="secondary"
-                    className="h-8 w-8 bg-background/80 backdrop-blur-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorite(recipe.id);
-                    }}
+                    className="h-8 w-8 rounded-full bg-background/85 backdrop-blur-sm shadow-sm"
+                    onClick={() => toggleFavorite(recipe.id)}
                   >
-                    <Heart className={`h-4 w-4 ${recipe.isFavorite ? "fill-red-500 text-red-500" : ""}`} />
+                    <Heart className={`h-4 w-4 ${recipe.isFavorite ? "fill-rose-500 text-rose-500" : ""}`} />
                   </Button>
+                  )}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         size="icon"
                         variant="secondary"
-                        className="h-8 w-8 bg-background/80 backdrop-blur-sm"
-                        onClick={(e) => e.stopPropagation()}
+                        className="h-8 w-8 rounded-full bg-background/85 backdrop-blur-sm shadow-sm"
                       >
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="w-48 rounded-xl">
                       <DropdownMenuItem onClick={() => {
                         setSelectedRecipe(recipe);
                         setIsDetailOpen(true);
@@ -763,189 +1024,233 @@ export default function AdminRecipes() {
                         <Eye className="h-4 w-4 mr-2" />
                         Ver detalles
                       </DropdownMenuItem>
+                      {canModifyRecipe(recipe) && (
                       <DropdownMenuItem onClick={() => openEditForm(recipe)}>
                         <Edit className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={() => handleDuplicate(recipe)}>
                         <Copy className="h-4 w-4 mr-2" />
                         Duplicar
                       </DropdownMenuItem>
+                      {canModifyRecipe(recipe) && (
                       <DropdownMenuItem
-                        className="text-destructive"
+                        className="text-destructive focus:text-destructive"
                         onClick={() => confirmDelete(recipe)}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Eliminar
                       </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <Badge className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm text-foreground">
+                <Badge className="absolute bottom-2.5 left-2.5 rounded-full bg-background/90 text-foreground border-0 shadow-sm backdrop-blur-sm">
                   {recipe.category}
                 </Badge>
+                {recipe.is_public && Number(recipe.created_by_id) !== Number(currentUserId) && (
+                  <Badge className="absolute bottom-2.5 right-2.5 rounded-full bg-sky-500/90 text-white border-0 shadow-sm text-[10px]">
+                    Pública
+                  </Badge>
+                )}
               </div>
-              <CardContent
-                className="p-4"
-                onClick={() => {
-                  setSelectedRecipe(recipe);
-                  setIsDetailOpen(true);
-                }}
-              >
-                <h3 className="font-semibold text-lg mb-1">{recipe.name}</h3>
-                <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{recipe.description}</p>
-
-                <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-                  <span className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    {recipe.servings} porc.
-                  </span>
-                  <span className="flex items-center gap-1 font-medium text-amber-600">
-                    <Flame className="h-3.5 w-3.5" />
-                    {recipe.calories ?? 0} kcal
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-3 border-t border-border/50 pt-2">
-                  <span className="text-primary font-medium">Prot: {(recipe.protein ?? 0)} g</span>
-                  <span className="text-amber-600 font-medium">Carb: {(recipe.carbs ?? 0)} g</span>
-                  <span className="text-yellow-700 font-medium">Grasas: {(recipe.fat ?? 0)} g</span>
+              <CardContent className="p-4 space-y-3">
+                <div>
+                  <h3 className="font-semibold text-base tracking-tight line-clamp-1">{recipe.name}</h3>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1 min-h-[2.5rem]">
+                    {recipe.description || "Sin descripción"}
+                  </p>
                 </div>
 
-                <div className="flex flex-wrap gap-1">
-                  {recipe.tags.slice(0, 3).map(tag => (
-                    <Badge key={tag} variant="outline" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))}
-                  {recipe.tags.length > 3 && (
-                    <Badge variant="outline" className="text-xs">
-                      +{recipe.tags.length - 3}
-                    </Badge>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border bg-muted/30 px-2 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                      <Users className="h-3 w-3" />
+                      Porc.
+                    </div>
+                    <p className="text-sm font-semibold tabular-nums">{recipe.servings ?? 0}</p>
+                  </div>
+                  <div className="rounded-xl border bg-amber-500/5 border-amber-500/20 px-2 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-0.5">
+                      <Flame className="h-3 w-3" />
+                      Kcal
+                    </div>
+                    <p className="text-sm font-semibold tabular-nums text-amber-700 dark:text-amber-300">{recipe.calories ?? 0}</p>
+                  </div>
+                  <div className="rounded-xl border bg-primary/5 border-primary/20 px-2 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-primary mb-0.5">
+                      <Beef className="h-3 w-3" />
+                      Prot
+                    </div>
+                    <p className="text-sm font-semibold tabular-nums text-primary">{recipe.protein ?? 0}g</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground rounded-xl bg-muted/40 px-3 py-2 ring-1 ring-border/50">
+                  <span className="font-medium text-sky-700 dark:text-sky-300">CHO {(recipe.carbs ?? 0)} g</span>
+                  <span className="font-medium text-yellow-700 dark:text-yellow-300">Grasa {(recipe.fat ?? 0)} g</span>
+                  {(recipe.prepTime > 0 || recipe.cookTime > 0) && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {(recipe.prepTime || 0) + (recipe.cookTime || 0)} min
+                    </span>
                   )}
                 </div>
+
+                {(recipe.tags?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {recipe.tags.slice(0, 3).map(tag => (
+                      <Badge key={tag} variant="outline" className="rounded-full text-[10px] px-2 py-0">
+                        {tag}
+                      </Badge>
+                    ))}
+                    {recipe.tags.length > 3 && (
+                      <Badge variant="outline" className="rounded-full text-[10px] px-2 py-0">
+                        +{recipe.tags.length - 3}
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
         </div>
-
-        {filteredRecipes.length === 0 && (
-          <div className="text-center py-12">
-            <ChefHat className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium">No se encontraron recetas</h3>
-            <p className="text-muted-foreground">
-              {searchTerm || selectedCategory !== "Todas"
-                ? "Intenta con otros términos de búsqueda o categoría"
-                : "Comienza creando tu primera receta"}
-            </p>
-            {!searchTerm && selectedCategory === "Todas" && (
-              <Button className="mt-4" onClick={openNewRecipeForm}>
-                <Plus className="h-4 w-4 mr-2" />
-                Crear Primera Receta
-              </Button>
-            )}
-          </div>
         )}
 
         {/* Recipe Detail Dialog */}
         <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
-          <DialogContent className="max-w-3xl max-h-[90vh]">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden p-0 gap-0">
             {selectedRecipe && (
               <>
-                <DialogHeader>
-                  <div className="flex items-center justify-between">
-                    <DialogTitle>{selectedRecipe.name}</DialogTitle>
-                    <div className="flex gap-2">
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={() => {
-                          openEditForm(selectedRecipe);
-                          setIsDetailOpen(false);
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={() => toggleFavorite(selectedRecipe.id)}
-                      >
-                        <Heart className={`h-4 w-4 ${selectedRecipe.isFavorite ? "fill-red-500 text-red-500" : ""}`} />
-                      </Button>
+                <div className="relative h-48 sm:h-56 overflow-hidden">
+                  <img
+                    src={getImageUrl(selectedRecipe.image)}
+                    alt={selectedRecipe.name}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
+                    <DialogHeader className="space-y-2 text-left">
+                      <div className="flex items-end justify-between gap-3">
+                        <div className="min-w-0">
+                          <Badge className="rounded-full mb-2 bg-primary/90 hover:bg-primary/90">
+                            {selectedRecipe.category}
+                          </Badge>
+                          <DialogTitle className="text-xl sm:text-2xl tracking-tight">
+                            {selectedRecipe.name}
+                          </DialogTitle>
+                        </div>
+                        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {canModifyRecipe(selectedRecipe) && (
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="rounded-full bg-background/90 backdrop-blur-sm"
+                            onClick={() => {
+                              openEditForm(selectedRecipe);
+                              setIsDetailOpen(false);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          )}
+                          {canModifyRecipe(selectedRecipe) && (
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="rounded-full bg-background/90 backdrop-blur-sm"
+                            onClick={() => toggleFavorite(selectedRecipe.id)}
+                          >
+                            <Heart className={`h-4 w-4 ${selectedRecipe.isFavorite ? "fill-rose-500 text-rose-500" : ""}`} />
+                          </Button>
+                          )}
+                        </div>
+                      </div>
+                    </DialogHeader>
+                  </div>
+                </div>
+
+                <div className="overflow-y-auto max-h-[calc(90vh-14rem)] px-6 py-5 space-y-5">
+                  {selectedRecipe.description && (
+                    <p className="text-sm text-muted-foreground leading-relaxed">{selectedRecipe.description}</p>
+                  )}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="rounded-xl border bg-muted/30 p-3 text-center">
+                      <Users className="h-4 w-4 mx-auto mb-1 text-sky-500" />
+                      <p className="text-sm font-semibold tabular-nums">{selectedRecipe.servings}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Porciones</p>
+                    </div>
+                    <div className="rounded-xl border bg-amber-500/5 border-amber-500/20 p-3 text-center">
+                      <Flame className="h-4 w-4 mx-auto mb-1 text-amber-500" />
+                      <p className="text-sm font-semibold tabular-nums">{selectedRecipe.calories ?? 0}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Kcal</p>
+                    </div>
+                    <div className="rounded-xl border bg-primary/5 border-primary/20 p-3 text-center">
+                      <Beef className="h-4 w-4 mx-auto mb-1 text-primary" />
+                      <p className="text-sm font-semibold tabular-nums">{selectedRecipe.protein ?? 0} g</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Proteína</p>
+                    </div>
+                    <div className="rounded-xl border bg-muted/30 p-3 text-center">
+                      <Utensils className="h-4 w-4 mx-auto mb-1 text-emerald-500" />
+                      <p className="text-sm font-semibold tabular-nums">
+                        {(selectedRecipe.carbs ?? 0)}/{(selectedRecipe.fat ?? 0)}
+                      </p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">CHO / Grasa</p>
                     </div>
                   </div>
-                </DialogHeader>
-                <ScrollArea className="max-h-[70vh]">
-                  <div className="space-y-6">
-                    <div className="relative h-64 sm:h-80">
-                      <img
-                        src={getImageUrl(selectedRecipe.image)}
-                        alt={selectedRecipe.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
 
-                    <p className="text-muted-foreground">{selectedRecipe.description}</p>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-3 bg-muted rounded-lg">
-                        <Users className="h-5 w-5 mx-auto mb-1 text-blue-500" />
-                        <p className="text-sm font-medium">{selectedRecipe.servings}</p>
-                        <p className="text-xs text-muted-foreground">Porciones</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted rounded-lg">
-                        <ChefHat className="h-5 w-5 mx-auto mb-1 text-green-500" />
-                        <p className="text-sm font-medium">{selectedRecipe.category}</p>
-                        <p className="text-xs text-muted-foreground">Categoría</p>
-                      </div>
-                    </div>
-
-
-
-                    <Tabs defaultValue="ingredients">
-                      <TabsList className="w-full">
-                        <TabsTrigger value="ingredients" className="flex-1">Ingredientes</TabsTrigger>
-                        <TabsTrigger value="instructions" className="flex-1">Instrucciones</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="ingredients" className="mt-4">
-                        <ul className="space-y-2">
-                          {selectedRecipe.ingredients.map((ingredient, idx) => {
-                            const row = getCompositionRowForIngredient(ingredient);
-                            const grams = row?.portion_grams;
-                            const label =
-                              grams != null && grams !== 0
-                                ? `${row!.name}: ${grams} g`
-                                : ingredient;
-                            return (
-                              <li key={idx} className="flex items-center gap-2">
-                                <div className="h-2 w-2 rounded-full bg-primary" />
-                                <span>{label}</span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </TabsContent>
-                      <TabsContent value="instructions" className="mt-4">
-                        <ol className="space-y-3">
-                          {selectedRecipe.instructions.map((instruction, idx) => (
-                            <li key={idx} className="flex gap-3">
-                              <span className="flex-shrink-0 h-6 w-6 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center">
+                  <Tabs defaultValue="ingredients">
+                    <TabsList className="w-full h-auto p-1 rounded-xl bg-muted/60 grid grid-cols-2">
+                      <TabsTrigger value="ingredients" className="rounded-lg data-[state=active]:shadow-sm">Ingredientes</TabsTrigger>
+                      <TabsTrigger value="instructions" className="rounded-lg data-[state=active]:shadow-sm">Instrucciones</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="ingredients" className="mt-4">
+                      <ul className="space-y-2">
+                        {selectedRecipe.ingredients.map((ingredient, idx) => {
+                          const row = getCompositionRowForIngredient(ingredient);
+                          const grams = row?.portion_grams;
+                          const label =
+                            grams != null && grams !== 0
+                              ? `${row!.name}: ${grams} g`
+                              : ingredient;
+                          return (
+                            <li
+                              key={idx}
+                              className="flex items-center gap-3 rounded-xl border bg-muted/20 px-3 py-2.5 text-sm"
+                            >
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
                                 {idx + 1}
                               </span>
-                              <span>{instruction}</span>
+                              <span>{label}</span>
                             </li>
-                          ))}
-                        </ol>
-                      </TabsContent>
-                    </Tabs>
+                          );
+                        })}
+                      </ul>
+                    </TabsContent>
+                    <TabsContent value="instructions" className="mt-4">
+                      <ol className="space-y-3">
+                        {selectedRecipe.instructions.map((instruction, idx) => (
+                          <li key={idx} className="flex gap-3 rounded-xl border bg-muted/20 p-3">
+                            <span className="flex-shrink-0 h-7 w-7 rounded-full bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center shadow-sm">
+                              {idx + 1}
+                            </span>
+                            <span className="text-sm leading-relaxed pt-0.5">{instruction}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </TabsContent>
+                  </Tabs>
 
-                    <div className="flex flex-wrap gap-2">
+                  {(selectedRecipe.tags?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1 border-t">
                       {selectedRecipe.tags.map(tag => (
-                        <Badge key={tag} variant="secondary">{tag}</Badge>
+                        <Badge key={tag} variant="secondary" className="rounded-full">{tag}</Badge>
                       ))}
                     </div>
-                  </div>
-                </ScrollArea>
+                  )}
+                </div>
               </>
             )}
           </DialogContent>
@@ -953,27 +1258,27 @@ export default function AdminRecipes() {
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent>
+          <AlertDialogContent className="rounded-2xl">
             <AlertDialogHeader>
-              <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+              <AlertDialogTitle>¿Eliminar receta?</AlertDialogTitle>
               <AlertDialogDescription>
-                Estás a punto de eliminar la receta "{recipeToDelete?.name}". Esta acción no se puede deshacer.
+                Vas a eliminar “{recipeToDelete?.name}”. Esta acción no se puede deshacer.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setRecipeToDelete(null)}>
+              <AlertDialogCancel className="rounded-full" onClick={() => setRecipeToDelete(null)}>
                 Cancelar
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className="rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
-                Eliminar Receta
+                Eliminar receta
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </AdminLayout >
+    </AdminLayout>
   );
 }

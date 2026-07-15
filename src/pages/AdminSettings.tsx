@@ -19,15 +19,12 @@ import {
   Shield,
   Palette,
   Globe,
-  CreditCard,
-  Building,
   Mail,
   Phone,
   Camera,
   Save,
   Moon,
   Sun,
-  Monitor,
   Loader2
 } from "lucide-react";
 
@@ -101,8 +98,6 @@ const AdminSettings = () => {
     confirmPassword: ""
   });
 
-  const [billing, setBilling] = useState<any>(null);
-
   // Cargar configuración al montar el componente
   useEffect(() => {
     if (userId) {
@@ -151,33 +146,11 @@ const AdminSettings = () => {
       if (data.appearance.theme) {
         setTheme(data.appearance.theme);
       }
-
-      // Cargar información de facturación
-      loadBilling();
     } catch (error) {
       console.error("Error al cargar configuración:", error);
       toast.error("Error al cargar la configuración");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadBilling = async () => {
-    if (!userId) return;
-
-    try {
-      const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/admin/billing/${userId}`, {
-        headers: {
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setBilling(data);
-      }
-    } catch (error) {
-      console.error("Error al cargar facturación:", error);
     }
   };
 
@@ -456,7 +429,7 @@ const AdminSettings = () => {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
             <TabsTrigger value="profile" className="gap-2">
               <User className="h-4 w-4" />
               Perfil
@@ -468,10 +441,6 @@ const AdminSettings = () => {
             <TabsTrigger value="appearance" className="gap-2">
               <Palette className="h-4 w-4" />
               Apariencia
-            </TabsTrigger>
-            <TabsTrigger value="billing" className="gap-2">
-              <CreditCard className="h-4 w-4" />
-              Facturación
             </TabsTrigger>
           </TabsList>
 
@@ -855,96 +824,6 @@ const AdminSettings = () => {
               )}
               {saving ? "Guardando..." : "Guardar preferencias"}
             </Button>
-          </TabsContent>
-
-          {/* Billing Tab */}
-          <TabsContent value="billing" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building className="h-5 w-5" />
-                  Plan Actual
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {billing && (
-                  <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
-                    <div>
-                      <h3 className="text-lg font-semibold">{billing.plan.name}</h3>
-                      <p className="text-sm text-muted-foreground">{billing.plan.description}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold">
-                        €{billing.plan.price}
-                        <span className="text-sm font-normal text-muted-foreground">/mes</span>
-                      </p>
-                      <Button variant="outline" size="sm" className="mt-2">
-                        Cambiar plan
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Método de Pago
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {billing?.payment_method && (
-                  <div className="flex items-center justify-between p-4 rounded-lg border">
-                    <div className="flex items-center gap-4">
-                      <div className="h-10 w-16 rounded bg-muted flex items-center justify-center text-xs font-medium">
-                        {billing.payment_method.brand}
-                      </div>
-                      <div>
-                        <p className="font-medium">
-                          •••• •••• •••• {billing.payment_method.last4}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Expira {billing.payment_method.expiry}
-                        </p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm">Editar</Button>
-                  </div>
-                )}
-                <Button variant="outline" className="w-full">
-                  Añadir método de pago
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Historial de Facturación</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {billing?.invoices?.map((invoice: any, i: number) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between py-2 border-b last:border-0"
-                    >
-                      <div>
-                        <p className="font-medium">{invoice.date}</p>
-                        <p className="text-sm text-muted-foreground">€{invoice.amount.toFixed(2)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-green-600 capitalize">
-                          {invoice.status === "paid" ? "Pagado" : invoice.status}
-                        </span>
-                        <Button variant="ghost" size="sm">Descargar</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
         </Tabs>
       </div>

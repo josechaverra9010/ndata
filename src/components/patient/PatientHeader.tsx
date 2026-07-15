@@ -96,9 +96,9 @@ export function PatientHeader() {
   const handleNotificationClick = (notification: Notification) => {
     // Navegar según el tipo de notificación
     if (notification.type === 'appointment') {
-      navigate('/paciente/citas');
+      navigate('/patient/appointments');
     } else if (notification.type === 'reminder') {
-      navigate('/paciente/progreso');
+      navigate('/patient/progress');
     }
   };
 

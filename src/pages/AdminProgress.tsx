@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { AdminLayout } from "@/layouts/AdminLayout";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -32,14 +43,14 @@ import {
   Minus,
   Filter,
   Plus,
-  Loader2,
   Calendar,
   MoreHorizontal,
   Trash2,
   History,
-  MessageSquare
+  MessageSquare,
+  X,
+  Users,
 } from "lucide-react";
-import axios from "axios";
 import { API_URL } from "@/config/api";
 import {
   LineChart as RechartsLineChart,
@@ -155,23 +166,62 @@ const AdminProgress = () => {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [noteForm, setNoteForm] = useState({ note: "" });
 
-  const { toast } = useToast();
+  // Estados para eliminar
+  const [deleteTarget, setDeleteTarget] = useState<
+    null | { type: "metric" | "achievement" | "note"; id: number; label: string }
+  >(null);
+  const [deleting, setDeleting] = useState(false);
 
+  const { toast } = useToast();
+  const isInitialLoad = useRef(true);
+  const openedFromUrl = useRef<number | null>(null);
+
+  // Stats una vez al montar
   useEffect(() => {
-    fetchPatients();
     fetchStats();
+  }, []);
+
+  // Listado: debounce de búsqueda + filtro de tendencia (sin doble fetch)
+  useEffect(() => {
+    const delay = searchTerm ? 300 : 0;
+    const timer = setTimeout(() => {
+      fetchPatients();
+    }, delay);
+    return () => clearTimeout(timer);
   }, [searchTerm, filterTrend]);
+
+  // Deep-link ?patientId= abre detalle aunque no esté en la lista filtrada
+  useEffect(() => {
+    if (loading) return;
+    const patientIdParam = searchParams.get("patientId");
+    if (!patientIdParam) return;
+    const patientId = parseInt(patientIdParam, 10);
+    if (Number.isNaN(patientId)) return;
+    if (openedFromUrl.current === patientId) return;
+    openedFromUrl.current = patientId;
+    fetchPatientDetails(patientId);
+  }, [loading, searchParams]);
+
+  const authHeaders = () => {
+    const token = localStorage.getItem("userToken");
+    return {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
 
   const fetchPatients = async () => {
     try {
-      setLoading(true);
-      const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/progress/patients?trend=${filterTrend}&search=${searchTerm}`, {
-        headers: { "Authorization": `Bearer ${token}` }
+      if (isInitialLoad.current) setLoading(true);
+      const params = new URLSearchParams({
+        trend: filterTrend || "all",
+        search: searchTerm || "",
+      });
+      const response = await fetch(`${API_URL}/progress/patients?${params.toString()}`, {
+        headers: authHeaders(),
       });
       if (!response.ok) throw new Error("Error al cargar pacientes");
       const data = await response.json();
-      setPatients(data);
+      setPatients(Array.isArray(data) ? data : []);
     } catch (error) {
       toast({
         title: "Error",
@@ -180,42 +230,32 @@ const AdminProgress = () => {
       });
     } finally {
       setLoading(false);
+      isInitialLoad.current = false;
     }
   };
 
-  // Efecto para seleccionar paciente desde URL una vez cargados
-  useEffect(() => {
-    const patientIdParam = searchParams.get("patientId");
-    if (patientIdParam && patients.length > 0) {
-      const patientId = parseInt(patientIdParam);
-      const patient = patients.find(p => p.id === patientId);
-      if (patient) {
-        fetchPatientDetails(patientId);
-        // Opcional: Abrir automáticamente el diálogo de agregar métrica
-        // setAddMetricOpen(true); 
-      }
-    }
-  }, [patients, searchParams]);
-
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/progress/stats`, {
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: authHeaders(),
       });
       if (!response.ok) throw new Error("Error al cargar estadísticas");
       const data = await response.json();
       setStats(data);
     } catch (error) {
       console.error("Error al cargar estadísticas:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las estadísticas de progreso",
+        variant: "destructive",
+      });
     }
   };
 
   const fetchPatientDetails = async (patientId: number) => {
     try {
-      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/progress/patients/${patientId}`, {
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: authHeaders(),
       });
       if (!response.ok) throw new Error("Error al cargar detalles");
       const data = await response.json();
@@ -241,14 +281,13 @@ const AdminProgress = () => {
     }
 
     try {
-      const token = localStorage.getItem("userToken");
       const url = editingMetricId
         ? `${API_URL}/progress/metrics/${editingMetricId}`
         : `${API_URL}/progress/metrics`;
 
       const response = await fetch(url.trim(), {
         method: editingMetricId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           patient_id: selectedPatient.id,
           date: metricForm.date,
@@ -331,17 +370,25 @@ const AdminProgress = () => {
         ? `${API_URL}/progress/achievements/${editingAchievementId}`
         : `${API_URL}/progress/achievements`;
 
-      const token = localStorage.getItem("userToken");
+      const body = editingAchievementId
+        ? {
+            title: achievementForm.title,
+            description: achievementForm.description || null,
+            achieved_date: achievementForm.achieved_date,
+            icon: "award",
+          }
+        : {
+            patient_id: selectedPatient.id,
+            title: achievementForm.title,
+            description: achievementForm.description || null,
+            achieved_date: achievementForm.achieved_date,
+            icon: "award",
+          };
+
       const response = await fetch(url, {
         method: editingAchievementId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({
-          patient_id: selectedPatient.id,
-          title: achievementForm.title,
-          description: achievementForm.description || null,
-          achieved_date: achievementForm.achieved_date,
-          icon: "award"
-        })
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) throw new Error(editingAchievementId ? "Error al actualizar logro" : "Error al crear logro");
@@ -380,21 +427,21 @@ const AdminProgress = () => {
     }
 
     try {
-      const token = localStorage.getItem("userToken");
-      const userId = token ? JSON.parse(atob(token.split('.')[1])).id : 1;
-
       const url = editingNoteId
         ? `${API_URL}/progress/notes/${editingNoteId}`
         : `${API_URL}/progress/notes`;
 
+      const body = editingNoteId
+        ? { note: noteForm.note }
+        : {
+            patient_id: selectedPatient.id,
+            note: noteForm.note,
+          };
+
       const response = await fetch(url, {
         method: editingNoteId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({
-          patient_id: selectedPatient.id,
-          note: noteForm.note,
-          created_by: userId
-        })
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) throw new Error(editingNoteId ? "Error al actualizar nota" : "Error al crear nota");
@@ -418,14 +465,6 @@ const AdminProgress = () => {
     }
   };
 
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchPatients();
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, filterTrend]);
-
   const getTrendIcon = (trend: string) => {
     switch (trend) {
       case "up":
@@ -443,313 +482,492 @@ const AdminProgress = () => {
 
     if (trend === "down") {
       return (
-        <Badge variant={isWeightLoss ? "default" : "destructive"} className="gap-1">
+        <Badge
+          variant="outline"
+          className={`gap-1 rounded-full text-[10px] ${
+            isWeightLoss
+              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : "border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+          }`}
+        >
           <TrendingDown className="h-3 w-3" />
           Bajando
         </Badge>
       );
     } else if (trend === "up") {
       return (
-        <Badge variant={isGain ? "default" : "secondary"} className="gap-1">
+        <Badge
+          variant="outline"
+          className={`gap-1 rounded-full text-[10px] ${
+            isGain
+              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+          }`}
+        >
           <TrendingUp className="h-3 w-3" />
           Subiendo
         </Badge>
       );
     }
     return (
-      <Badge variant="outline" className="gap-1">
+      <Badge variant="outline" className="gap-1 rounded-full text-[10px] border-border bg-muted/50 text-muted-foreground">
         <Activity className="h-3 w-3" />
         Estable
       </Badge>
     );
   };
 
-  // Preparar datos para las gráficas
+  // Preparar datos para las gráficas (fechas reales)
   const prepareChartData = (metrics: Metric[]) => {
-    return metrics.map((m, index) => ({
-      date: `Sem ${index + 1}`,
-      weight: m.weight,
-      body_fat: m.body_fat,
-      muscle: m.muscle,
-      water: m.water,
-      waist: m.waist,
-      hip: m.hip,
-      chest: m.chest,
-      arm: m.arm
-    }));
+    return metrics.map((m) => {
+      let label = m.date;
+      try {
+        const d = new Date(m.date.includes("T") ? m.date : `${m.date}T00:00:00`);
+        if (!Number.isNaN(d.getTime())) {
+          label = d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+        }
+      } catch {
+        /* keep raw */
+      }
+      return {
+        date: label,
+        weight: m.weight,
+        body_fat: m.body_fat,
+        muscle: m.muscle,
+        water: m.water,
+        waist: m.waist,
+        hip: m.hip,
+        chest: m.chest,
+        arm: m.arm,
+      };
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedPatient || !deleteTarget) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    try {
+      const path =
+        target.type === "metric"
+          ? `/progress/metrics/${target.id}`
+          : target.type === "achievement"
+            ? `/progress/achievements/${target.id}`
+            : `/progress/notes/${target.id}`;
+
+      const response = await fetch(`${API_URL}${path}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!response.ok) throw new Error("Error al eliminar");
+
+      toast({
+        title: "Éxito",
+        description:
+          target.type === "metric"
+            ? "Métrica eliminada"
+            : target.type === "achievement"
+              ? "Logro eliminado"
+              : "Nota eliminada",
+      });
+
+      setDeleteTarget(null);
+      await fetchPatientDetails(selectedPatient.id);
+      if (target.type === "metric") {
+        fetchPatients();
+        fetchStats();
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (loading) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+        <LoadingScreen message="Cargando progreso" />
       </AdminLayout>
     );
   }
-
-  const handleDeleteMetric = async (metricId: number) => {
-    if (!selectedPatient || !confirm("¿Estás seguro de eliminar esta métrica?")) return;
-    try {
-      const token = localStorage.getItem("userToken");
-      await axios.delete(`${API_URL}/progress/metrics/${metricId}`, { headers: { Authorization: `Bearer ${token}` } });
-      toast({ title: "Éxito", description: "Métrica eliminada" });
-      fetchPatientDetails(selectedPatient.id);
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" });
-    }
-  };
-
-  const handleDeleteAchievement = async (achievementId: number) => {
-    if (!selectedPatient || !confirm("¿Estás seguro de eliminar este logro?")) return;
-    try {
-      const token = localStorage.getItem("userToken");
-      await axios.delete(`${API_URL}/progress/achievements/${achievementId}`, { headers: { Authorization: `Bearer ${token}` } });
-      toast({ title: "Éxito", description: "Logro eliminado" });
-      fetchPatientDetails(selectedPatient.id);
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" });
-    }
-  };
-
-  const handleDeleteNote = async (noteId: number) => {
-    if (!selectedPatient || !confirm("¿Estás seguro de eliminar esta nota?")) return;
-    try {
-      const token = localStorage.getItem("userToken");
-      await axios.delete(`${API_URL}/progress/notes/${noteId}`, { headers: { Authorization: `Bearer ${token}` } });
-      toast({ title: "Éxito", description: "Nota eliminada" });
-      fetchPatientDetails(selectedPatient.id);
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" });
-    }
-  };
 
   return (
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Progreso de Pacientes</h1>
-            <p className="text-muted-foreground">Seguimiento y evolución de tus pacientes</p>
+        <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-emerald-500/5 p-5 sm:p-6">
+          <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/10 blur-2xl" />
+          <div className="absolute -left-6 bottom-0 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
+          <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-sm ring-1 ring-primary/20">
+                <TrendingUp className="h-6 w-6" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Progreso</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Seguimiento de peso, adherencia y evolución
+                  {patients.length > 0 && (
+                    <span className="font-medium text-foreground/80"> · {patients.length} pacientes</span>
+                  )}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Pacientes Activos</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total_patients}</div>
-              <p className="text-xs text-muted-foreground">En seguimiento</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Adherencia Promedio</CardTitle>
-              <Target className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.avg_adherence}%</div>
-              <Progress value={stats.avg_adherence} className="mt-2 h-2" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">En Objetivo</CardTitle>
-              <Award className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.patients_on_track}/{stats.total_patients}</div>
-              <p className="text-xs text-muted-foreground">Pacientes al día</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Peso Total Perdido</CardTitle>
-              <Scale className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total_weight_lost.toFixed(2)} kg</div>
-              <p className="text-xs text-muted-foreground">Entre todos los pacientes</p>
-            </CardContent>
-          </Card>
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-primary/10 p-2.5">
+                <Users className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">En seguimiento</p>
+                <p className="text-2xl font-bold tracking-tight tabular-nums">{stats.total_patients}</p>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-amber-500/10 p-2.5">
+                <Target className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-muted-foreground">Adherencia prom.</p>
+                <p className="text-2xl font-bold tracking-tight tabular-nums">{stats.avg_adherence}%</p>
+                <Progress value={stats.avg_adherence} className="mt-1.5 h-1.5" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-emerald-500/10 p-2.5">
+                <Award className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">En objetivo</p>
+                <p className="text-2xl font-bold tracking-tight tabular-nums">
+                  {stats.patients_on_track}
+                  <span className="text-sm font-medium text-muted-foreground">/{stats.total_patients}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-sky-500/10 p-2.5">
+                <Scale className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Peso perdido</p>
+                <p className="text-2xl font-bold tracking-tight tabular-nums">
+                  {stats.total_weight_lost.toFixed(1)}
+                  <span className="text-sm font-medium text-muted-foreground ml-1">kg</span>
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col gap-4 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Select value={filterTrend} onValueChange={setFilterTrend}>
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Filtrar por tendencia" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las tendencias</SelectItem>
-              <SelectItem value="down">Bajando peso</SelectItem>
-              <SelectItem value="up">Subiendo peso</SelectItem>
-              <SelectItem value="stable">Estable</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Card className="rounded-2xl border-border/80 shadow-sm">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar por nombre de paciente..."
+                  className="pl-10 h-11 rounded-xl bg-muted/30 border-border focus-visible:ring-2 focus-visible:ring-primary/20"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <Select value={filterTrend} onValueChange={setFilterTrend}>
+                <SelectTrigger className="w-full sm:w-[200px] h-11 rounded-xl">
+                  <Filter className="mr-2 h-4 w-4 shrink-0" />
+                  <SelectValue placeholder="Tendencia" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="down">Bajando peso</SelectItem>
+                  <SelectItem value="up">Subiendo peso</SelectItem>
+                  <SelectItem value="stable">Estable</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "all", label: "Todas" },
+                { value: "down", label: "Bajando" },
+                { value: "up", label: "Subiendo" },
+                { value: "stable", label: "Estable" },
+              ].map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setFilterTrend(t.value)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-all border ${
+                    filterTrend === t.value
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {(searchTerm || filterTrend !== "all") && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Filtros activos:</span>
+                {searchTerm && (
+                  <Badge variant="secondary" className="rounded-full gap-1 pl-2.5 pr-1 py-1">
+                    “{searchTerm}”
+                    <button type="button" className="rounded-full p-0.5 hover:bg-muted" onClick={() => setSearchTerm("")}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filterTrend !== "all" && (
+                  <Badge variant="secondary" className="rounded-full gap-1 pl-2.5 pr-1 py-1 capitalize">
+                    {filterTrend === "down" ? "Bajando" : filterTrend === "up" ? "Subiendo" : "Estable"}
+                    <button type="button" className="rounded-full p-0.5 hover:bg-muted" onClick={() => setFilterTrend("all")}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs rounded-full"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setFilterTrend("all");
+                  }}
+                >
+                  Limpiar todo
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Patient Progress List */}
-        <div className="grid gap-4">
-          {patients.map((patient) => (
-            <Card key={patient.id} className="overflow-hidden">
-              <CardContent className="p-0">
-                <div className="flex flex-col lg:flex-row">
-                  {/* Patient Info */}
-                  <div className="flex items-center gap-4 p-4 lg:w-1/3">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={patient.avatar} />
-                      <AvatarFallback className="bg-primary/10 text-primary">
-                        {patient.name.split(" ").map(n => n[0]).join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{patient.name}</h3>
-                      <p className="text-sm text-muted-foreground">{patient.plan}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {getTrendBadge(patient.trend, patient.plan)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Metrics */}
-                  <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30">
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Scale className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Peso Actual</span>
-                      </div>
-                      <p className="text-lg font-bold">{patient.current_weight} kg</p>
-                      <div className="flex items-center justify-center text-xs text-muted-foreground">
-                        {getTrendIcon(patient.trend)}
-                        <span className="ml-1">
-                          {Math.abs(patient.current_weight - patient.initial_weight).toFixed(2)} kg
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Target className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Objetivo</span>
-                      </div>
-                      <p className="text-lg font-bold">{patient.goal_weight} kg</p>
-                      <p className="text-xs text-muted-foreground">
-                        Faltan {Math.abs(patient.goal_weight - patient.current_weight).toFixed(2)} kg
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Flame className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Adherencia</span>
-                      </div>
-                      <p className="text-lg font-bold">{patient.weekly_adherence}%</p>
-                      <Progress value={patient.weekly_adherence} className="h-1.5 mt-1" />
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <LineChart className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Progreso</span>
-                      </div>
-                      <p className="text-lg font-bold">{patient.progress_percentage}%</p>
-                      <Progress value={patient.progress_percentage} className="h-1.5 mt-1" />
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center justify-end p-4 lg:w-auto gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/messages?patientId=${patient.id}`);
-                      }}
-                      className="hidden md:flex gap-2"
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                      Mensaje
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => fetchPatientDetails(patient.id)}
-                      className="gap-2"
-                    >
-                      Ver detalles
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {patients.length === 0 && (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Activity className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold">No se encontraron pacientes</h3>
-              <p className="text-muted-foreground">Intenta con otros filtros de búsqueda</p>
+        {patients.length === 0 ? (
+          <Card className="rounded-2xl border-dashed border-border/80 shadow-sm overflow-hidden">
+            <div className="h-1.5 w-full bg-gradient-to-r from-primary/50 via-emerald-500/30 to-transparent" />
+            <CardContent className="text-center py-16 px-6">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+                <Activity className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No se encontraron pacientes</h3>
+              <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
+                {searchTerm || filterTrend !== "all"
+                  ? "Prueba otro término o limpia los filtros activos."
+                  : "Cuando asignes planes a pacientes, su progreso aparecerá aquí."}
+              </p>
+              {(searchTerm || filterTrend !== "all") && (
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setFilterTrend("all");
+                  }}
+                >
+                  Limpiar filtros
+                </Button>
+              )}
             </CardContent>
           </Card>
+        ) : (
+          <div className="grid gap-4">
+            {patients.map((patient) => {
+              const delta = patient.current_weight - patient.initial_weight;
+              const remaining = Math.abs(patient.goal_weight - patient.current_weight);
+              const initials = patient.name
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase();
+              return (
+                <Card
+                  key={patient.id}
+                  className="group relative overflow-hidden rounded-2xl border-border/80 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/25 cursor-pointer"
+                  onClick={() => fetchPatientDetails(patient.id)}
+                >
+                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-emerald-500/70 to-sky-500/50" />
+                  <CardContent className="p-0">
+                    <div className="flex flex-col xl:flex-row xl:items-stretch">
+                      {/* Patient Info */}
+                      <div className="flex items-center gap-4 p-5 xl:w-[280px] shrink-0">
+                        <Avatar className="h-12 w-12 border-2 border-background shadow-sm ring-2 ring-primary/15">
+                          <AvatarImage src={patient.avatar} />
+                          <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate tracking-tight">{patient.name}</h3>
+                          <p className="text-sm text-muted-foreground truncate">{patient.plan || "Sin plan"}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {getTrendBadge(patient.trend, patient.plan || "")}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Metrics */}
+                      <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-2 p-4 xl:py-5 xl:pr-2 bg-muted/25 xl:border-l border-t xl:border-t-0">
+                        <div className="rounded-xl border bg-background/80 px-3 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                            <Scale className="h-3 w-3" />
+                            Actual
+                          </div>
+                          <p className="text-lg font-bold tabular-nums">{patient.current_weight} kg</p>
+                          <div className="flex items-center justify-center text-[11px] text-muted-foreground mt-0.5">
+                            {getTrendIcon(patient.trend)}
+                            <span className="ml-1 tabular-nums">
+                              {delta > 0 ? "+" : ""}
+                              {delta.toFixed(1)} kg
+                            </span>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border bg-background/80 px-3 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">
+                            <Target className="h-3 w-3" />
+                            Objetivo
+                          </div>
+                          <p className="text-lg font-bold tabular-nums">{patient.goal_weight} kg</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Faltan {remaining.toFixed(1)} kg
+                          </p>
+                        </div>
+                        <div className="rounded-xl border bg-amber-500/5 border-amber-500/20 px-3 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-0.5">
+                            <Flame className="h-3 w-3" />
+                            Adherencia
+                          </div>
+                          <p className="text-lg font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                            {patient.weekly_adherence}%
+                          </p>
+                          <Progress value={patient.weekly_adherence} className="h-1.5 mt-1.5" />
+                        </div>
+                        <div className="rounded-xl border bg-primary/5 border-primary/20 px-3 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-primary mb-0.5">
+                            <LineChart className="h-3 w-3" />
+                            Progreso
+                          </div>
+                          <p className="text-lg font-bold tabular-nums text-primary">{patient.progress_percentage}%</p>
+                          <Progress value={patient.progress_percentage} className="h-1.5 mt-1.5" />
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div
+                        className="flex items-center justify-end gap-2 p-4 xl:w-auto xl:border-l border-t xl:border-t-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/messages?patientId=${patient.id}`)}
+                          className="hidden md:inline-flex rounded-full h-9 gap-1.5"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          Mensaje
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => fetchPatientDetails(patient.id)}
+                          className="rounded-full h-9 gap-1"
+                        >
+                          Detalles
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
 
         {/* Patient Details Dialog */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-3">
-                {selectedPatient && (
-                  <>
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={selectedPatient.avatar} />
-                      <AvatarFallback className="bg-primary/10 text-primary">
-                        {selectedPatient.name.split(" ").map(n => n[0]).join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <span>{selectedPatient.name}</span>
-                      <p className="text-sm font-normal text-muted-foreground">
-                        {selectedPatient.plan}
-                      </p>
-                    </div>
-                  </>
-                )}
-              </DialogTitle>
-            </DialogHeader>
-
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0">
             {selectedPatient && (
-              <ScrollArea className="max-h-[calc(90vh-120px)]">
+              <>
+                <div className="sticky top-0 z-10 border-b bg-gradient-to-br from-background via-background to-primary/[0.04] px-6 pt-6 pb-4">
+                  <DialogHeader className="text-left space-y-0">
+                    <DialogTitle className="sr-only">{selectedPatient.name}</DialogTitle>
+                    <DialogDescription className="sr-only">Detalle de progreso del paciente</DialogDescription>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pr-6">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar className="h-14 w-14 border-2 border-primary/15 shadow-sm">
+                          <AvatarImage src={selectedPatient.avatar} />
+                          <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                            {selectedPatient.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-lg tracking-tight truncate">{selectedPatient.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">{selectedPatient.plan}</p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            {getTrendBadge(selectedPatient.trend, selectedPatient.plan || "")}
+                            <Badge variant="secondary" className="rounded-full text-[10px]">
+                              {selectedPatient.progress_percentage}% progreso
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 shrink-0 sm:max-w-[280px]">
+                        <div className="rounded-xl border bg-background/80 px-2.5 py-2 text-center shadow-sm">
+                          <p className="text-[10px] uppercase text-muted-foreground">Actual</p>
+                          <p className="text-sm font-bold tabular-nums">{selectedPatient.current_weight} kg</p>
+                        </div>
+                        <div className="rounded-xl border bg-background/80 px-2.5 py-2 text-center shadow-sm">
+                          <p className="text-[10px] uppercase text-muted-foreground">Meta</p>
+                          <p className="text-sm font-bold tabular-nums">{selectedPatient.goal_weight} kg</p>
+                        </div>
+                        <div className="rounded-xl border bg-amber-500/5 border-amber-500/20 px-2.5 py-2 text-center shadow-sm">
+                          <p className="text-[10px] uppercase text-amber-700 dark:text-amber-400">Adher.</p>
+                          <p className="text-sm font-bold tabular-nums">{selectedPatient.weekly_adherence}%</p>
+                        </div>
+                      </div>
+                    </div>
+                  </DialogHeader>
+                </div>
+
+                <ScrollArea className="max-h-[calc(90vh-9rem)] px-6 py-4">
                 <Tabs defaultValue="evolution" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="evolution">Evolución</TabsTrigger>
-                    <TabsTrigger value="metrics">Métricas</TabsTrigger>
-                    <TabsTrigger value="achievements">Logros</TabsTrigger>
+                  <TabsList className="grid w-full grid-cols-3 h-auto p-1 rounded-xl bg-muted/60">
+                    <TabsTrigger value="evolution" className="rounded-lg data-[state=active]:shadow-sm">Evolución</TabsTrigger>
+                    <TabsTrigger value="metrics" className="rounded-lg data-[state=active]:shadow-sm">Métricas</TabsTrigger>
+                    <TabsTrigger value="achievements" className="rounded-lg data-[state=active]:shadow-sm">Logros</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="evolution" className="space-y-4 mt-4">
                     {/* Weight Chart */}
-                    <Card>
+                    <Card className="rounded-2xl border-border/80 shadow-sm">
                       <CardHeader>
                         <CardTitle className="text-base flex items-center gap-2">
-                          <Scale className="h-4 w-4" />
-                          Evolución del Peso
+                          <Scale className="h-4 w-4 text-primary" />
+                          Evolución del peso
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
@@ -864,9 +1082,9 @@ const AdminProgress = () => {
                           notes: ""
                         });
                         setAddMetricOpen(true);
-                      }} size="sm">
+                      }} size="sm" className="rounded-full">
                         <Plus className="h-4 w-4 mr-2" />
-                        Agregar Métrica
+                        Agregar métrica
                       </Button>
                     </div>
 
@@ -912,65 +1130,72 @@ const AdminProgress = () => {
                           </CardHeader>
                           <CardContent>
                             <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].body_fat && (
+                              {(() => {
+                                const latest = selectedPatient.metrics[selectedPatient.metrics.length - 1];
+                                return (
+                                  <>
+                              {latest.body_fat != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground whitespace-nowrap">Grasa corporal</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].body_fat}%
+                                    {latest.body_fat}%
                                   </span>
                                 </div>
                               )}
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].muscle && (
+                              {latest.muscle != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground whitespace-nowrap">Masa muscular</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].muscle}%
+                                    {latest.muscle}%
                                   </span>
                                 </div>
                               )}
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].water && (
+                              {latest.water != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground whitespace-nowrap">Agua corporal</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].water}%
+                                    {latest.water}%
                                   </span>
                                 </div>
                               )}
 
                               <div className="col-span-2 border-t my-1 pt-1 opacity-50"></div>
 
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].waist && (
+                              {latest.waist != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground">Cintura</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].waist} cm
+                                    {latest.waist} cm
                                   </span>
                                 </div>
                               )}
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].hip && (
+                              {latest.hip != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground">Cadera</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].hip} cm
+                                    {latest.hip} cm
                                   </span>
                                 </div>
                               )}
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].chest && (
+                              {latest.chest != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground">Pecho</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].chest} cm
+                                    {latest.chest} cm
                                   </span>
                                 </div>
                               )}
-                              {selectedPatient.metrics[selectedPatient.metrics.length - 1].arm && (
+                              {latest.arm != null && (
                                 <div className="flex justify-between">
                                   <span className="text-xs text-muted-foreground">Brazo</span>
                                   <span className="text-xs font-medium">
-                                    {selectedPatient.metrics[selectedPatient.metrics.length - 1].arm} cm
+                                    {latest.arm} cm
                                   </span>
                                 </div>
                               )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </CardContent>
                         </Card>
@@ -1065,7 +1290,18 @@ const AdminProgress = () => {
                                       >
                                         <MoreHorizontal className="h-4 w-4" />
                                       </Button>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/90" onClick={() => handleDeleteMetric(metric.id)}>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive hover:text-destructive/90"
+                                        onClick={() =>
+                                          setDeleteTarget({
+                                            type: "metric",
+                                            id: metric.id,
+                                            label: `métrica del ${new Date(metric.date).toLocaleDateString()}`,
+                                          })
+                                        }
+                                      >
                                         <Trash2 className="h-4 w-4" />
                                       </Button>
                                     </td>
@@ -1137,7 +1373,18 @@ const AdminProgress = () => {
                                   >
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteAchievement(achievement.id)}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                    onClick={() =>
+                                      setDeleteTarget({
+                                        type: "achievement",
+                                        id: achievement.id,
+                                        label: `logro “${achievement.title}”`,
+                                      })
+                                    }
+                                  >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
@@ -1198,7 +1445,13 @@ const AdminProgress = () => {
                                     variant="ghost"
                                     size="icon"
                                     className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                    onClick={() => handleDeleteNote(note.id)}
+                                    onClick={() =>
+                                      setDeleteTarget({
+                                        type: "note",
+                                        id: note.id,
+                                        label: "esta nota",
+                                      })
+                                    }
                                   >
                                     <Trash2 className="h-3 w-3" />
                                   </Button>
@@ -1215,23 +1468,31 @@ const AdminProgress = () => {
                     </Card>
                   </TabsContent>
                 </Tabs>
-              </ScrollArea>
+                </ScrollArea>
+              </>
             )}
           </DialogContent>
         </Dialog>
 
         {/* Add Metric Dialog */}
         <Dialog open={addMetricOpen} onOpenChange={setAddMetricOpen}>
-          <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingMetricId ? "Editar Métrica" : "Agregar Nueva Métrica"}</DialogTitle>
+          <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-hidden p-0 gap-0">
+            <DialogHeader className="border-b bg-gradient-to-br from-primary/10 via-background to-background px-6 pt-6 pb-4">
+              <DialogTitle className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/20">
+                  <Scale className="h-4 w-4" />
+                </span>
+                {editingMetricId ? "Editar métrica" : "Agregar métrica"}
+              </DialogTitle>
+              <DialogDescription>Registra peso, composición y medidas corporales</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-4 px-6 py-4 overflow-y-auto max-h-[calc(90vh-10rem)]">
               <div>
                 <Label htmlFor="metric-date">Fecha</Label>
                 <Input
                   id="metric-date"
                   type="date"
+                  className="mt-1.5 h-11 rounded-xl"
                   value={metricForm.date}
                   onChange={(e) => setMetricForm({ ...metricForm, date: e.target.value })}
                 />
@@ -1242,17 +1503,19 @@ const AdminProgress = () => {
                   id="metric-weight"
                   type="number"
                   step="0.1"
+                  className="mt-1.5 h-11 rounded-xl"
                   value={metricForm.weight}
                   onChange={(e) => setMetricForm({ ...metricForm, weight: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label htmlFor="metric-fat">Grasa (%)</Label>
                   <Input
                     id="metric-fat"
                     type="number"
                     step="0.1"
+                    className="mt-1.5 rounded-xl"
                     value={metricForm.body_fat}
                     onChange={(e) => setMetricForm({ ...metricForm, body_fat: e.target.value })}
                   />
@@ -1263,6 +1526,7 @@ const AdminProgress = () => {
                     id="metric-muscle"
                     type="number"
                     step="0.1"
+                    className="mt-1.5 rounded-xl"
                     value={metricForm.muscle}
                     onChange={(e) => setMetricForm({ ...metricForm, muscle: e.target.value })}
                   />
@@ -1273,6 +1537,7 @@ const AdminProgress = () => {
                     id="metric-water"
                     type="number"
                     step="0.1"
+                    className="mt-1.5 rounded-xl"
                     value={metricForm.water}
                     onChange={(e) => setMetricForm({ ...metricForm, water: e.target.value })}
                   />
@@ -1282,24 +1547,26 @@ const AdminProgress = () => {
                 <Label htmlFor="metric-notes">Notas</Label>
                 <Textarea
                   id="metric-notes"
+                  className="mt-1.5 rounded-xl resize-none"
                   value={metricForm.notes}
                   onChange={(e) => setMetricForm({ ...metricForm, notes: e.target.value })}
                 />
               </div>
 
-              <div className="separator flex items-center gap-2 py-2">
+              <div className="separator flex items-center gap-2 py-1">
                 <div className="h-px bg-border flex-1"></div>
                 <span className="text-[10px] text-muted-foreground uppercase font-semibold">Medidas (cm)</span>
                 <div className="h-px bg-border flex-1"></div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="metric-waist" className="text-xs">Cintura</Label>
                   <Input
                     id="metric-waist"
                     type="number"
                     step="0.1"
+                    className="mt-1 rounded-xl"
                     value={metricForm.waist}
                     onChange={(e) => setMetricForm({ ...metricForm, waist: e.target.value })}
                   />
@@ -1310,6 +1577,7 @@ const AdminProgress = () => {
                     id="metric-hip"
                     type="number"
                     step="0.1"
+                    className="mt-1 rounded-xl"
                     value={metricForm.hip}
                     onChange={(e) => setMetricForm({ ...metricForm, hip: e.target.value })}
                   />
@@ -1320,6 +1588,7 @@ const AdminProgress = () => {
                     id="metric-chest"
                     type="number"
                     step="0.1"
+                    className="mt-1 rounded-xl"
                     value={metricForm.chest}
                     onChange={(e) => setMetricForm({ ...metricForm, chest: e.target.value })}
                   />
@@ -1330,35 +1599,41 @@ const AdminProgress = () => {
                     id="metric-arm"
                     type="number"
                     step="0.1"
+                    className="mt-1 rounded-xl"
                     value={metricForm.arm}
                     onChange={(e) => setMetricForm({ ...metricForm, arm: e.target.value })}
                   />
                 </div>
               </div>
-
-              <div className="flex gap-2 justify-end pt-4">
-                <Button variant="outline" onClick={() => setAddMetricOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleAddMetric}>
-                  {editingMetricId ? "Actualizar" : "Guardar"} Métrica
-                </Button>
-              </div>
+            </div>
+            <div className="flex gap-2 justify-end border-t bg-muted/30 px-6 py-4">
+              <Button variant="outline" className="rounded-full" onClick={() => setAddMetricOpen(false)}>
+                Cancelar
+              </Button>
+              <Button className="rounded-full" onClick={handleAddMetric}>
+                {editingMetricId ? "Actualizar" : "Guardar"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
 
         {/* Add Achievement Dialog */}
         <Dialog open={addAchievementOpen} onOpenChange={setAddAchievementOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingAchievementId ? "Editar Logro" : "Agregar Nuevo Logro"}</DialogTitle>
+          <DialogContent className="sm:max-w-[440px] p-0 gap-0 overflow-hidden">
+            <DialogHeader className="border-b bg-gradient-to-br from-amber-500/10 via-background to-background px-6 pt-6 pb-4">
+              <DialogTitle className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/20">
+                  <Award className="h-4 w-4" />
+                </span>
+                {editingAchievementId ? "Editar logro" : "Agregar logro"}
+              </DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-4 px-6 py-4">
               <div>
                 <Label htmlFor="achievement-title">Título *</Label>
                 <Input
                   id="achievement-title"
+                  className="mt-1.5 h-11 rounded-xl"
                   value={achievementForm.title}
                   onChange={(e) => setAchievementForm({ ...achievementForm, title: e.target.value })}
                 />
@@ -1367,6 +1642,7 @@ const AdminProgress = () => {
                 <Label htmlFor="achievement-description">Descripción</Label>
                 <Textarea
                   id="achievement-description"
+                  className="mt-1.5 rounded-xl resize-none"
                   value={achievementForm.description}
                   onChange={(e) => setAchievementForm({ ...achievementForm, description: e.target.value })}
                 />
@@ -1376,49 +1652,83 @@ const AdminProgress = () => {
                 <Input
                   id="achievement-date"
                   type="date"
+                  className="mt-1.5 h-11 rounded-xl"
                   value={achievementForm.achieved_date}
                   onChange={(e) => setAchievementForm({ ...achievementForm, achieved_date: e.target.value })}
                 />
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setAddAchievementOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleAddAchievement}>
-                  {editingAchievementId ? "Actualizar" : "Guardar"} Logro
-                </Button>
-              </div>
+            </div>
+            <div className="flex gap-2 justify-end border-t bg-muted/30 px-6 py-4">
+              <Button variant="outline" className="rounded-full" onClick={() => setAddAchievementOpen(false)}>
+                Cancelar
+              </Button>
+              <Button className="rounded-full" onClick={handleAddAchievement}>
+                {editingAchievementId ? "Actualizar" : "Guardar"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
 
         {/* Add Note Dialog */}
         <Dialog open={addNoteOpen} onOpenChange={setAddNoteOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingNoteId ? "Editar Nota" : "Agregar Nota"} del Nutricionista</DialogTitle>
+          <DialogContent className="sm:max-w-[440px] p-0 gap-0 overflow-hidden">
+            <DialogHeader className="border-b bg-gradient-to-br from-emerald-500/10 via-background to-background px-6 pt-6 pb-4">
+              <DialogTitle className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/20">
+                  <Apple className="h-4 w-4" />
+                </span>
+                {editingNoteId ? "Editar nota" : "Agregar nota"}
+              </DialogTitle>
+              <DialogDescription>Nota clínica del nutricionista</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-4 px-6 py-4">
               <div>
                 <Label htmlFor="note-content">Nota *</Label>
                 <Textarea
                   id="note-content"
                   rows={5}
+                  className="mt-1.5 rounded-xl resize-none"
                   value={noteForm.note}
                   onChange={(e) => setNoteForm({ note: e.target.value })}
                 />
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setAddNoteOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleAddNote}>
-                  {editingNoteId ? "Actualizar" : "Guardar"} Nota
-                </Button>
-              </div>
+            </div>
+            <div className="flex gap-2 justify-end border-t bg-muted/30 px-6 py-4">
+              <Button variant="outline" className="rounded-full" onClick={() => setAddNoteOpen(false)}>
+                Cancelar
+              </Button>
+              <Button className="rounded-full" onClick={handleAddNote}>
+                {editingNoteId ? "Actualizar" : "Guardar"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
+          <AlertDialogContent className="rounded-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Vas a eliminar {deleteTarget?.label}. Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-full" disabled={deleting}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={(e) => {
+                  e.preventDefault();
+                  confirmDelete();
+                }}
+                disabled={deleting}
+              >
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AdminLayout>
   );

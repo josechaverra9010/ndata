@@ -178,21 +178,7 @@ export default function PatientProgress() {
     );
   }
 
-  if (!progressData || !progressData.has_data) {
-    return (
-      <PatientLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
-          <Scale className="h-16 w-16 text-muted-foreground/30" />
-          <div className="text-center">
-            <h2 className="text-xl font-bold">Aún no hay datos de progreso</h2>
-            <p className="text-muted-foreground mt-2">Tu nutricionista registrará tus mediciones durante las consultas.</p>
-          </div>
-        </div>
-      </PatientLayout>
-    );
-  }
-
-  const { summary, body_composition, charts, achievements } = progressData;
+  const hasProgressData = !!(progressData && progressData.has_data);
 
   function renderAddModal() {
     return (
@@ -311,6 +297,31 @@ export default function PatientProgress() {
       </Dialog>
     );
   }
+
+  if (!hasProgressData) {
+    return (
+      <PatientLayout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 px-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+            <Scale className="h-8 w-8 text-primary" />
+          </div>
+          <div className="text-center max-w-md">
+            <h2 className="text-xl font-bold">Aún no hay datos de progreso</h2>
+            <p className="text-muted-foreground mt-2">
+              Registra tu primera medición o espera a que tu nutricionista la cargue en consulta.
+            </p>
+          </div>
+          <Button className="rounded-full" onClick={() => setIsAddModalOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Registrar primera medición
+          </Button>
+          {renderAddModal()}
+        </div>
+      </PatientLayout>
+    );
+  }
+
+  const { summary, body_composition, charts, achievements } = progressData!;
 
   const imc = calculateIMC(summary.current_weight);
   const getIMCBadge = (val: number) => {

@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Calendar, TrendingUp, Utensils, Plus, Pause, Play, Trash2, ClipboardList, Edit } from "lucide-react";
+import { Loader2, Calendar, TrendingUp, Utensils, Plus, Pause, Play, Trash2, ClipboardList } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
@@ -54,10 +54,9 @@ interface PatientPlansDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAssignPlan?: () => void;
-  onEditPlan?: (assignment: PatientPlanAssignment) => void;
 }
 
-export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan, onEditPlan }: PatientPlansDialogProps) {
+export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }: PatientPlansDialogProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [assignments, setAssignments] = useState<PatientPlanAssignment[]>([]);
@@ -291,16 +290,6 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan, 
                         >
                           <ClipboardList className="h-4 w-4 mr-1" />
                           <span className="text-xs">Ver Plan</span>
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onEditPlan?.(assignment)}
-                          className="text-muted-foreground hover:text-primary"
-                          title="Editar asignación"
-                        >
-                          <Edit className="h-4 w-4" />
                         </Button>
 
                         {assignment.status === "active" ? (

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,9 @@ import {
   Clock,
   Plus,
   Loader2,
+  Camera,
+  TrendingUp,
+  MessageSquare,
 } from "lucide-react";
 import { Recordatorio24hForm } from "./Recordatorio24hForm";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +46,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+const formatListOrText = (value: string[] | string | null | undefined) => {
+  if (value == null || value === "") return "No registrado";
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(", ") : "No registrado";
+  }
+  return String(value);
+};
+
+const resolveMediaUrl = (url: string | null | undefined) => {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
+    return url;
+  }
+  const origin = API_URL.replace(/\/api\/?$/, "");
+  return `${origin}${url.startsWith("/") ? url : `/${url}`}`;
+};
 
 const getFrequencyLabel = (freqId: string) => {
   if (!freqId) return "No registrado";
@@ -124,6 +145,13 @@ interface Patient {
   edad_formateada: string | null;
   evaluacion_nutricional: string | null;
   frecuencia_consumo: any[] | null;
+  direccion?: string | null;
+  alergias?: string[] | string | null;
+  preferencias?: string[] | string | null;
+  objetivos_salud?: string | null;
+  condiciones_medicas?: string | null;
+  alimentos_disgusto?: string | null;
+  antecedentes_familiares?: string | null;
 }
 
 interface PatientDetailsDialogProps {
@@ -137,9 +165,15 @@ interface PatientDetailsDialogProps {
 }
 
 const statusStyles: Record<string, string> = {
-  activo: "bg-success/10 text-success border-success/20",
-  pendiente: "bg-warning/10 text-warning border-warning/20",
-  inactivo: "bg-muted text-muted-foreground border-muted",
+  activo: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/25",
+  pendiente: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25",
+  inactivo: "bg-muted text-muted-foreground border-border",
+};
+
+const statusDot: Record<string, string> = {
+  activo: "bg-emerald-500",
+  pendiente: "bg-amber-500",
+  inactivo: "bg-muted-foreground/50",
 };
 
 export function PatientDetailsDialog({
@@ -152,11 +186,19 @@ export function PatientDetailsDialog({
   onClinicalHistory,
 }: PatientDetailsDialogProps) {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [recalls, setRecalls] = useState<any[]>([]);
   const [loadingRecalls, setLoadingRecalls] = useState(false);
   const [showRecallForm, setShowRecallForm] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAvatarUrl(patient?.foto_perfil || null);
+  }, [patient?.id, patient?.foto_perfil, open]);
 
   // SOLUCIÓN AL ERROR: Si no hay paciente, no renderizamos nada para evitar el crash
   if (!patient) return null;
@@ -169,6 +211,7 @@ export function PatientDetailsDialog({
   // Función para formatear fechas de forma segura
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return "No especificado";
+    if (dateString === "Sin cita" || dateString === "Sin programar") return "Sin cita";
 
     try {
       const date = new Date(dateString);
@@ -177,7 +220,9 @@ export function PatientDetailsDialog({
       return date.toLocaleDateString('es-ES', {
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        hour: dateString.includes(":") ? '2-digit' : undefined,
+        minute: dateString.includes(":") ? '2-digit' : undefined,
       });
     } catch {
       return dateString;
@@ -203,6 +248,52 @@ export function PatientDetailsDialog({
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "Archivo muy grande",
+        description: "La imagen no puede superar 2MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const token = localStorage.getItem("userToken");
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch(`${API_URL}/patient/${patient.id}/upload-avatar`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result.detail || "No se pudo subir la foto");
+      }
+      setAvatarUrl(result.foto_url);
+      toast({
+        title: "Foto actualizada",
+        description: "La foto de perfil del paciente se guardó correctamente",
+      });
+      onUpdate?.();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo subir la foto",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleDelete = async () => {
     try {
       setDeleting(true);
@@ -215,7 +306,9 @@ export function PatientDetailsDialog({
       });
 
       if (!response.ok) {
-        throw new Error("Error al eliminar paciente");
+        const err = await response.json().catch(() => ({}));
+        const detail = typeof err.detail === "string" ? err.detail : "Error al eliminar paciente";
+        throw new Error(detail);
       }
 
       toast({
@@ -226,11 +319,11 @@ export function PatientDetailsDialog({
       setDeleteDialogOpen(false);
       onOpenChange(false);
       onUpdate?.();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting patient:", error);
       toast({
         title: "Error",
-        description: "No se pudo eliminar el paciente",
+        description: error?.message || "No se pudo eliminar el paciente",
         variant: "destructive",
       });
     } finally {
@@ -241,112 +334,203 @@ export function PatientDetailsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <div className="w-full flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-16 w-16 border-2 border-primary/20">
-                    <AvatarImage src={patient.foto_perfil || ""} alt={`${patient.nombres} ${patient.apellidos}`} />
-                    <AvatarFallback className="bg-primary/10 text-primary text-lg">
-                      {getInitials(patient.nombres, patient.apellidos)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-lg">{patient.nombres} {patient.apellidos}</span>
-                      <Badge variant="outline" className={statusStyles[patient.status] || statusStyles.activo}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+          <div className="sticky top-0 z-10 border-b bg-gradient-to-br from-background via-background to-primary/[0.04] px-6 pt-6 pb-4">
+            <DialogHeader>
+              <DialogTitle className="sr-only">
+                {patient.nombres} {patient.apellidos}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Información detallada del paciente
+              </DialogDescription>
+              <div className="w-full flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Avatar className="h-16 w-16 border-2 border-primary/15 shadow-sm">
+                      <AvatarImage src={resolveMediaUrl(avatarUrl)} alt={`${patient.nombres} ${patient.apellidos}`} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+                        {getInitials(patient.nombres, patient.apellidos)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span
+                      className={`absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background ${statusDot[patient.status] || statusDot.activo}`}
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="secondary"
+                      className="absolute -bottom-1 -left-1 h-7 w-7 rounded-full shadow border"
+                      disabled={uploadingAvatar}
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Cambiar foto"
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Camera className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-lg tracking-tight truncate">
+                        {patient.nombres} {patient.apellidos}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={`capitalize text-[11px] ${statusStyles[patient.status] || statusStyles.activo}`}
+                      >
                         {patient.status}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold">
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      <Badge
+                        variant="secondary"
+                        className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold tracking-wide"
+                      >
                         {patient.edad_formateada || "Edad no registrada"}
                       </Badge>
-                      <DialogDescription>
-                        Información detallada del paciente
-                      </DialogDescription>
+                      {patient.email && (
+                        <span className="text-xs text-muted-foreground truncate max-w-[220px]">
+                          {patient.email}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="border-primary/20 hover:bg-primary/5 hover:text-primary"
+                    onClick={() => {
+                      onOpenChange(false);
+                      navigate(`/progress?patientId=${patient.id}`);
+                    }}
+                  >
+                    <TrendingUp className="h-4 w-4 mr-2" />
+                    Progreso
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-primary/20 hover:bg-primary/5 hover:text-primary"
+                    onClick={() => {
+                      onOpenChange(false);
+                      navigate(`/messages?patientId=${patient.id}`);
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Mensajes
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-primary/20 hover:bg-primary/5 hover:text-primary"
                     onClick={() => {
                       onOpenChange(false);
                       onClinicalHistory?.();
                     }}
                   >
                     <FileText className="h-4 w-4 mr-2" />
-                    Generar historia clínica
+                    Historia clínica
                   </Button>
                 </div>
               </div>
-            </DialogTitle>
-          </DialogHeader>
+            </DialogHeader>
+          </div>
 
+          <div className="px-6 py-4">
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-y-1">
-              <TabsTrigger value="general">General</TabsTrigger>
-              <TabsTrigger value="health">Salud</TabsTrigger>
-              <TabsTrigger value="evaluacion">Evaluación</TabsTrigger>
-              <TabsTrigger value="frecuencia">Frecuencia</TabsTrigger>
-              <TabsTrigger value="recuerdos" onClick={fetchRecalls}>Recordatorio</TabsTrigger>
-              <TabsTrigger value="plans">Planes</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-1 h-auto p-1 bg-muted/60 rounded-xl">
+              <TabsTrigger value="general" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">General</TabsTrigger>
+              <TabsTrigger value="health" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Salud</TabsTrigger>
+              <TabsTrigger value="evaluacion" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Evaluación</TabsTrigger>
+              <TabsTrigger value="frecuencia" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Frecuencia</TabsTrigger>
+              <TabsTrigger value="recuerdos" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm" onClick={fetchRecalls}>Recordatorio</TabsTrigger>
+              <TabsTrigger value="plans" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Planes</TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="space-y-4 mt-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                    <Mail className="h-5 w-5 text-primary mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Email</p>
-                      <p className="text-sm mt-1">{patient.email}</p>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <Mail className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</p>
+                      <p className="text-sm mt-0.5 truncate">{patient.email}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                    <Phone className="h-5 w-5 text-primary mt-0.5" />
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <Phone className="h-4 w-4 text-primary" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Teléfono</p>
-                      <p className="text-sm mt-1">{patient.telefono || "No registrado"}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Teléfono</p>
+                      <p className="text-sm mt-0.5">{patient.telefono || "No registrado"}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                    <User className="h-5 w-5 text-primary mt-0.5" />
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <User className="h-4 w-4 text-primary" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">ID del Sistema</p>
-                      <p className="text-sm mt-1">#{patient.id}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ID del sistema</p>
+                      <p className="text-sm mt-0.5">#{patient.id}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <MapPin className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dirección</p>
+                      <p className="text-sm mt-0.5">{patient.direccion || "No registrada"}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                    <Calendar className="h-5 w-5 text-primary mt-0.5" />
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <Calendar className="h-4 w-4 text-primary" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Próxima Cita</p>
-                      <p className="text-sm mt-1">{formatDate(patient.proxima_cita)}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Próxima cita</p>
+                      <p className="text-sm mt-0.5">{formatDate(patient.proxima_cita)}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                    <Activity className="h-5 w-5 text-primary mt-0.5" />
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <Activity className="h-4 w-4 text-primary" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Nivel de Actividad</p>
-                      <p className="text-sm mt-1 capitalize">{patient.nivel_actividad || "No especificado"}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nivel de actividad</p>
+                      <p className="text-sm mt-0.5 capitalize">{patient.nivel_actividad || "No especificado"}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                    <FileText className="h-5 w-5 text-primary mt-0.5" />
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="rounded-lg bg-primary/10 p-2">
+                      <FileText className="h-4 w-4 text-primary" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Rol</p>
-                      <p className="text-sm mt-1 capitalize">{patient.role}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Rol</p>
+                      <p className="text-sm mt-0.5 capitalize">{patient.role}</p>
                     </div>
                   </div>
                 </div>
@@ -437,6 +621,39 @@ export function PatientDetailsDialog({
                           className="h-full rounded-full bg-primary transition-all duration-500"
                           style={{ width: `${patient.progreso}%` }}
                         />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-lg border border-border bg-card">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertCircle className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Información clínica</h3>
+                    </div>
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Alergias</p>
+                        <p className="mt-0.5">{formatListOrText(patient.alergias)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Preferencias</p>
+                        <p className="mt-0.5">{formatListOrText(patient.preferencias)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Condiciones médicas</p>
+                        <p className="mt-0.5">{patient.condiciones_medicas || "No registrado"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Objetivos de salud</p>
+                        <p className="mt-0.5">{patient.objetivos_salud || "No registrado"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Alimentos que no le gustan</p>
+                        <p className="mt-0.5">{patient.alimentos_disgusto || "No registrado"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide">Antecedentes familiares</p>
+                        <p className="mt-0.5">{patient.antecedentes_familiares || "No registrado"}</p>
                       </div>
                     </div>
                   </div>
@@ -591,9 +808,10 @@ export function PatientDetailsDialog({
             </TabsContent>
           </Tabs>
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t">
+          <div className="flex items-center justify-end gap-2 pt-4 mt-2 border-t">
             <Button
               variant="outline"
+              className="rounded-full"
               onClick={() => {
                 onEdit?.();
                 onOpenChange(false);
@@ -604,11 +822,13 @@ export function PatientDetailsDialog({
             </Button>
             <Button
               variant="destructive"
+              className="rounded-full"
               onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 className="h-4 w-4 mr-2" />
               Eliminar
             </Button>
+          </div>
           </div>
         </DialogContent>
       </Dialog>

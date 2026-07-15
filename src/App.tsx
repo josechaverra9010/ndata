@@ -18,6 +18,7 @@ import AdminProgress from "./pages/AdminProgress";
 import AdminSettings from "./pages/AdminSettings";
 import Auth from "./pages/Auth";
 import AdminWeeklyMenus from "./pages/AdminWeeklyMenus";
+import Consultation from "./pages/Consultation";
 import NotFound from "./pages/NotFound";
 import PatientDashboard from "./pages/patient/PatientDashboard";
 import MyPlan from "./pages/patient/MyPlan";
@@ -65,14 +66,15 @@ const App = () => (
 
               {/* Admin Routes */}
               <Route path="/" element={<ProtectedRoute allowedRoles={['admin']}><Index /></ProtectedRoute>} />
-              <Route path="/patients" element={<ProtectedRoute allowedRoles={['admin']}><Patients /></ProtectedRoute>} />
+              <Route path="/patients" element={<ProtectedRoute allowedRoles={['admin', 'superadmin']}><Patients /></ProtectedRoute>} />
               <Route path="/meal-plans" element={<ProtectedRoute allowedRoles={['admin']}><MealPlans /></ProtectedRoute>} />
               <Route path="/appointments" element={<ProtectedRoute allowedRoles={['admin']}><AdminCalendar /></ProtectedRoute>} />
+              <Route path="/consultation" element={<ProtectedRoute allowedRoles={['admin']}><Consultation /></ProtectedRoute>} />
               <Route path="/messages" element={<ProtectedRoute allowedRoles={['admin']}><AdminMessages /></ProtectedRoute>} />
               <Route path="/recipes" element={<ProtectedRoute allowedRoles={['admin']}><AdminRecipes /></ProtectedRoute>} />
               <Route path="/composition-table" element={<ProtectedRoute allowedRoles={['admin']}><AdminCompositionTable /></ProtectedRoute>} />
               <Route path="/progress" element={<ProtectedRoute allowedRoles={['admin']}><AdminProgress /></ProtectedRoute>} />
-              <Route path="/weekly-menus" element={<ProtectedRoute allowedRoles={['admin']}><AdminWeeklyMenus /></ProtectedRoute>} />
+              <Route path="/weekly-menus" element={<ProtectedRoute allowedRoles={['admin', 'superadmin']}><AdminWeeklyMenus /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin']}><AdminSettings /></ProtectedRoute>} />
               <Route path="/support" element={<ProtectedRoute allowedRoles={['admin']}><AdminSupport /></ProtectedRoute>} />
 

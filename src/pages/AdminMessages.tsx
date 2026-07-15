@@ -10,14 +10,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   Send,
-  Paperclip,
   MoreVertical,
-  Phone,
-  Video,
   Check,
   CheckCheck,
   Clock,
-  Image as ImageIcon,
   Plus
 } from "lucide-react";
 import { format, isToday, isYesterday } from "date-fns";
@@ -28,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Add import
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -51,70 +47,6 @@ interface Conversation {
   isOnline: boolean;
   messages: Message[];
 }
-
-const mockConversations: Conversation[] = [
-  {
-    id: "1",
-    patientName: "María García",
-    lastMessage: "Gracias por la información del plan",
-    lastMessageTime: new Date().toISOString(),
-    unreadCount: 2,
-    isOnline: true,
-    messages: [
-      { id: "1", content: "Hola doctora, ¿cómo está?", sender: "patient", timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), status: "read", type: "text" },
-      { id: "2", content: "¡Hola María! Muy bien, ¿en qué puedo ayudarte?", sender: "admin", timestamp: new Date(Date.now() - 3600000 * 1.5).toISOString(), status: "read", type: "text" },
-      { id: "3", content: "Quería preguntarle sobre mi plan de alimentación", sender: "patient", timestamp: new Date(Date.now() - 3600000).toISOString(), status: "read", type: "text" },
-      { id: "4", content: "Claro, te he actualizado el plan con más opciones de desayuno. Puedes verlo en la sección 'Mi Plan'", sender: "admin", timestamp: new Date(Date.now() - 1800000).toISOString(), status: "read", type: "text" },
-      { id: "5", content: "Gracias por la información del plan", sender: "patient", timestamp: new Date().toISOString(), status: "read", type: "text" },
-    ],
-  },
-  {
-    id: "2",
-    patientName: "Carlos López",
-    lastMessage: "¿A qué hora es la cita?",
-    lastMessageTime: new Date(Date.now() - 3600000).toISOString(),
-    unreadCount: 1,
-    isOnline: false,
-    messages: [
-      { id: "1", content: "Buenos días, ¿a qué hora es mi cita de mañana?", sender: "patient", timestamp: new Date(Date.now() - 3600000).toISOString(), status: "read", type: "text" },
-    ],
-  },
-  {
-    id: "3",
-    patientName: "Ana Martínez",
-    lastMessage: "Perfecto, nos vemos el lunes",
-    lastMessageTime: new Date(Date.now() - 86400000).toISOString(),
-    unreadCount: 0,
-    isOnline: true,
-    messages: [
-      { id: "1", content: "Hola Ana, te confirmo la cita para el lunes a las 10:00", sender: "admin", timestamp: new Date(Date.now() - 86400000 - 3600000).toISOString(), status: "read", type: "text" },
-      { id: "2", content: "Perfecto, nos vemos el lunes", sender: "patient", timestamp: new Date(Date.now() - 86400000).toISOString(), status: "read", type: "text" },
-    ],
-  },
-  {
-    id: "4",
-    patientName: "Pedro Sánchez",
-    lastMessage: "He seguido todas las indicaciones",
-    lastMessageTime: new Date(Date.now() - 172800000).toISOString(),
-    unreadCount: 0,
-    isOnline: false,
-    messages: [
-      { id: "1", content: "Doctor, he seguido todas las indicaciones de esta semana", sender: "patient", timestamp: new Date(Date.now() - 172800000).toISOString(), status: "read", type: "text" },
-    ],
-  },
-  {
-    id: "5",
-    patientName: "Laura Fernández",
-    lastMessage: "¿Puedo comer frutos secos?",
-    lastMessageTime: new Date(Date.now() - 259200000).toISOString(),
-    unreadCount: 0,
-    isOnline: false,
-    messages: [
-      { id: "1", content: "Hola, tengo una duda sobre mi dieta", sender: "patient", timestamp: new Date(Date.now() - 259200000 - 3600000).toISOString(), status: "read", type: "text" },
-      { id: "2", content: "¿Puedo comer frutos secos?", sender: "patient", timestamp: new Date(Date.now() - 259200000).toISOString(), status: "read", type: "text" },
-    ],
-  },
-];
 
 export default function AdminMessages() {
   const navigate = useNavigate();
@@ -411,20 +343,6 @@ export default function AdminMessages() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => toast({ title: "Iniciando llamada..." })}
-                      >
-                        <Phone className="h-5 w-5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => toast({ title: "Iniciando videollamada..." })}
-                      >
-                        <Video className="h-5 w-5" />
-                      </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -433,16 +351,13 @@ export default function AdminMessages() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => navigate(`/progress?patientId=${selectedConversation.id}`)}>
-                            Ver perfil
+                            Ver progreso
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => navigate("/appointments")}>
                             Agendar cita
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast({ title: "Archivando conversación..." })}>
-                            Archivar conversación
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">
-                            Eliminar conversación
+                          <DropdownMenuItem onClick={() => navigate(`/patients?patientId=${selectedConversation.id}`)}>
+                            Ver paciente
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -482,24 +397,11 @@ export default function AdminMessages() {
                 {/* Message Input */}
                 <div className="border-t p-4">
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => toast({ title: "Adjuntar archivo" })}
-                    >
-                      <Paperclip className="h-5 w-5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => toast({ title: "Enviar imagen" })}
-                    >
-                      <ImageIcon className="h-5 w-5" />
-                    </Button>
                     <Input
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyPress={handleKeyPress}
+                      placeholder="Escribe un mensaje..."
                       className="flex-1"
                     />
                     <Button
