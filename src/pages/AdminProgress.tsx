@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { AdminLayout } from "@/layouts/AdminLayout";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { LoadingGate } from "@/components/LoadingGate";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,8 @@ import {
 } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { todayInColombiaISO, formatInColombia } from "@/lib/timezone";
+import { isSpecialtyTipo } from "@/lib/specialtyModule";
+import { SpecialtyProgressHub } from "@/components/specialty/SpecialtyProgressHub";
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -95,6 +97,12 @@ interface PatientProgress {
 }
 
 interface PatientProgressDetails extends PatientProgress {
+  fecha_nacimiento?: string | null;
+  genero?: string | null;
+  altura?: number | null;
+  perimetro_cefalico?: string | null;
+  plan_tipo?: string | null;
+  edad_formateada?: string | null;
   metrics: Metric[];
   achievements: string[];
   achievementsList?: { id: number; title: string; description: string; date: string }[];
@@ -121,6 +129,9 @@ interface Stats {
   patients_on_track: number;
   total_weight_lost: number;
 }
+
+const isPatientSpecialtyEligible = (patient: PatientProgressDetails | null | undefined) =>
+  isSpecialtyTipo(patient?.plan_tipo);
 
 const AdminProgress = () => {
   const [searchParams] = useSearchParams();
@@ -578,16 +589,9 @@ const AdminProgress = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <AdminLayout>
-        <LoadingScreen message="Cargando progreso" />
-      </AdminLayout>
-    );
-  }
-
   return (
     <AdminLayout>
+      <LoadingGate loading={loading} message="Cargando progreso">
       <div className="space-y-6">
         {/* Header */}
         <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-emerald-500/5 p-5 sm:p-6">
@@ -949,9 +953,12 @@ const AdminProgress = () => {
 
                 <ScrollArea className="max-h-[calc(90vh-9rem)] px-6 py-4">
                 <Tabs defaultValue="evolution" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3 h-auto p-1 rounded-xl bg-muted/60">
+                  <TabsList className={`grid w-full ${isPatientSpecialtyEligible(selectedPatient) ? "grid-cols-4" : "grid-cols-3"} h-auto p-1 rounded-xl bg-muted/60`}>
                     <TabsTrigger value="evolution" className="rounded-lg data-[state=active]:shadow-sm">Evolución</TabsTrigger>
                     <TabsTrigger value="metrics" className="rounded-lg data-[state=active]:shadow-sm">Métricas</TabsTrigger>
+                    {isPatientSpecialtyEligible(selectedPatient) && (
+                      <TabsTrigger value="specialty" className="rounded-lg data-[state=active]:shadow-sm">Especialidad</TabsTrigger>
+                    )}
                     <TabsTrigger value="achievements" className="rounded-lg data-[state=active]:shadow-sm">Logros</TabsTrigger>
                   </TabsList>
 
@@ -1312,6 +1319,15 @@ const AdminProgress = () => {
                       </CardContent>
                     </Card>
                   </TabsContent>
+
+                  {isPatientSpecialtyEligible(selectedPatient) && (
+                    <TabsContent value="specialty" className="space-y-4 mt-4">
+                      <SpecialtyProgressHub
+                        patientId={selectedPatient.id}
+                        readOnly={false}
+                      />
+                    </TabsContent>
+                  )}
 
                   <TabsContent value="achievements" className="space-y-4 mt-4">
                     <Card>
@@ -1724,6 +1740,7 @@ const AdminProgress = () => {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+      </LoadingGate>
     </AdminLayout>
   );
 };

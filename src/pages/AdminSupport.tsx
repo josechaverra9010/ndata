@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { MessageSquare, Filter, Send, CheckCircle, Clock, AlertCircle, Plus } from "lucide-react";
+import { MessageSquare, Filter, Send, CheckCircle, Clock, AlertCircle, Plus, ArrowUpCircle } from "lucide-react";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { formatDateTimeInColombia } from "@/lib/timezone";
@@ -28,6 +28,8 @@ interface Ticket {
     created_at: string;
     updated_at: string;
     resolved_at: string | null;
+    escalated?: boolean;
+    ticket_level?: string;
 }
 
 const AdminSupport = () => {
@@ -141,6 +143,32 @@ const AdminSupport = () => {
                 title: "Error",
                 description: "No se pudo actualizar el estado",
                 variant: "destructive"
+            });
+        }
+    };
+
+    const handleEscalate = async (ticketId: number) => {
+        try {
+            const token = localStorage.getItem("userToken");
+            const res = await fetch(`${API_URL}/support/tickets/${ticketId}/escalate`, {
+                method: "POST",
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                toast({
+                    title: "Escalado a L2",
+                    description: "El equipo central de soporte tomará el caso",
+                });
+                fetchTickets();
+            } else {
+                throw new Error(data.detail || "No se pudo escalar");
+            }
+        } catch (error: unknown) {
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "No se pudo escalar",
+                variant: "destructive",
             });
         }
     };
@@ -295,6 +323,9 @@ const AdminSupport = () => {
                                                     {getStatusIcon(ticket.status)}
                                                     <h4 className="font-semibold">{ticket.subject}</h4>
                                                     {getPriorityBadge(ticket.priority)}
+                                                    {ticket.escalated && (
+                                                        <Badge variant="secondary">L2 · Escalado</Badge>
+                                                    )}
                                                 </div>
 
                                                 <p className="text-sm text-muted-foreground">
@@ -319,6 +350,17 @@ const AdminSupport = () => {
 
                                             <div className="flex flex-col gap-2">
                                                 {getStatusBadge(ticket.status)}
+
+                                                {!ticket.escalated && ticket.status !== "closed" && ticket.status !== "resolved" && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        onClick={() => handleEscalate(ticket.id)}
+                                                    >
+                                                        <ArrowUpCircle className="h-4 w-4 mr-1" />
+                                                        Escalar L2
+                                                    </Button>
+                                                )}
 
                                                 <Dialog>
                                                     <DialogTrigger asChild>

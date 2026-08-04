@@ -2,6 +2,7 @@ import { Bell, Shield, ChevronDown } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { resolveMediaUrl } from "@/lib/media";
 import { MobileSidebar } from "@/components/MobileSidebar";
 import { SuperadminSidebarContent } from "./SuperadminSidebarContent";
 
@@ -39,7 +40,7 @@ export function SuperadminHeader() {
           className="flex items-center gap-2 rounded-full bg-muted/50 py-1 pl-1 pr-2 transition-colors hover:bg-muted lg:gap-3 lg:py-1.5 lg:pl-1.5 lg:pr-3"
         >
           <Avatar className="h-7 w-7 border-2 border-destructive/20 lg:h-8 lg:w-8">
-            <AvatarImage src={user?.avatar || ""} />
+            <AvatarImage src={resolveMediaUrl(user?.avatar)} />
             <AvatarFallback className="bg-destructive text-destructive-foreground text-xs lg:text-sm">
               {user?.name ? user.name.substring(0, 2).toUpperCase() : 'SA'}
             </AvatarFallback>

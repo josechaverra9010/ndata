@@ -22,6 +22,7 @@ import {
   AlertCircle,
   ClipboardList,
   Stethoscope,
+  BookOpen,
 } from "lucide-react";
 
 interface AdminQuickActionsProps {
@@ -81,6 +82,14 @@ export function AdminQuickActions({ open: controlledOpen, onOpenChange }: AdminQ
           </CommandItem>
         </CommandGroup>
         <CommandGroup heading="Atención prioritaria">
+          <CommandItem onSelect={() => go("/interventions")}>
+            <BookOpen className="mr-2 h-4 w-4" />
+            Biblioteca de intervenciones
+          </CommandItem>
+          <CommandItem onSelect={() => go("/work-queue")}>
+            <ClipboardList className="mr-2 h-4 w-4 text-primary" />
+            Cola de trabajo
+          </CommandItem>
           <CommandItem onSelect={() => go("/patients?filter=sin_cita")}>
             <AlertCircle className="mr-2 h-4 w-4 text-amber-600" />
             Pacientes sin cita

@@ -25,6 +25,7 @@ const DEFAULT_HERO_IMAGE =
 
 interface ArticleCard {
   id: number;
+  slug?: string | null;
   title: string;
   excerpt: string;
   category: string;
@@ -281,7 +282,7 @@ const Home = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredArticles.map((article) => (
-                  <Link key={article.id} to={`/article/${article.id}`}>
+                  <Link key={article.id} to={article.slug ? `/article/${article.slug}` : `/article/${article.id}`}>
                     <Card className="group overflow-hidden border-border/60 hover:border-primary/20 transition-all hover:shadow-xl h-full cursor-pointer">
                       <div className="aspect-video overflow-hidden">
                         <img

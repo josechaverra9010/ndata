@@ -15,7 +15,10 @@ import {
   Trash2,
   Edit,
   Download,
-  Filter
+  Filter,
+  ArrowRightLeft,
+  Building2,
+  CheckSquare,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,8 +34,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { TransferPatientDialog } from "@/components/admin/TransferPatientDialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { startUserImpersonation } from "@/lib/impersonation";
+import { Eye } from "lucide-react";
 
 interface User {
   id: number;
@@ -43,6 +51,14 @@ interface User {
   avatar?: string;
   createdAt: string;
   lastLogin?: string;
+  nutritionist_id?: number | null;
+  nutritionist_name?: string | null;
+  organization_name?: string | null;
+}
+
+interface OrganizationOption {
+  id: number;
+  name: string;
 }
 
 import { API_URL } from "@/config/api";
@@ -57,6 +73,8 @@ export default function SuperadminUsers() {
   const [isNewUserOpen, setIsNewUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferUser, setTransferUser] = useState<User | null>(null);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -64,10 +82,29 @@ export default function SuperadminUsers() {
     phone: "",
     password: ""
   });
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
+  const [reassignOrgOpen, setReassignOrgOpen] = useState(false);
+  const [reassignOrgId, setReassignOrgId] = useState<string>("");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailTarget, setEmailTarget] = useState<User | null>(null);
+  const [emailSubject, setEmailSubject] = useState("Mensaje de NutriData");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+
+  const authHeaders = (): HeadersInit => {
+    const token = localStorage.getItem("userToken");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   // Cargar usuarios desde el backend
   useEffect(() => {
     fetchUsers();
+    fetch(`${API_URL}/superadmin/organizations`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((orgs) => setOrganizations(orgs.map((o: OrganizationOption) => ({ id: o.id, name: o.name }))))
+      .catch(() => {});
   }, [filterRole, filterStatus]);
 
   const fetchUsers = async () => {
@@ -77,9 +114,12 @@ export default function SuperadminUsers() {
       if (filterRole !== "all") params.append("role", filterRole);
       if (filterStatus !== "all") params.append("status", filterStatus);
 
-      const response = await fetch(`${API_URL}/superadmin/users?${params}`);
+      const response = await fetch(`${API_URL}/superadmin/users?${params}`, {
+        headers: authHeaders(),
+      });
       const data = await response.json();
       setUsers(data);
+      setSelectedIds([]);
     } catch (error) {
       console.error("Error al cargar usuarios:", error);
       toast.error("Error al cargar usuarios");
@@ -98,6 +138,7 @@ export default function SuperadminUsers() {
     try {
       const response = await fetch(`${API_URL}/superadmin/users/${userId}/toggle-status`, {
         method: "PATCH",
+        headers: authHeaders(),
       });
 
       if (response.ok) {
@@ -119,6 +160,7 @@ export default function SuperadminUsers() {
     try {
       const response = await fetch(`${API_URL}/superadmin/users/${userId}`, {
         method: "DELETE",
+        headers: authHeaders(),
       });
 
       if (response.ok) {
@@ -145,6 +187,7 @@ export default function SuperadminUsers() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify(newUser),
       });
@@ -172,6 +215,7 @@ export default function SuperadminUsers() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify({
           name: selectedUser.name,
@@ -197,18 +241,21 @@ export default function SuperadminUsers() {
     }
   };
 
-  const handleExportUsers = async () => {
+  const handleExportUsers = async (ids?: number[]) => {
     try {
-      const response = await fetch(`${API_URL}/superadmin/users/export`);
+      const response = await fetch(`${API_URL}/superadmin/users/export`, {
+        headers: authHeaders(),
+      });
       const data = await response.json();
+      const rows = ids?.length
+        ? data.data.filter((row: { ID: number }) => ids.includes(row.ID))
+        : data.data;
 
-      // Convertir a CSV
       const csv = [
-        Object.keys(data.data[0]).join(","),
-        ...data.data.map((row: any) => Object.values(row).join(","))
+        Object.keys(rows[0] || data.data[0]).join(","),
+        ...rows.map((row: Record<string, unknown>) => Object.values(row).join(",")),
       ].join("\n");
 
-      // Descargar archivo
       const blob = new Blob([csv], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -216,12 +263,77 @@ export default function SuperadminUsers() {
       a.download = `usuarios_${todayInColombiaISO()}.csv`;
       a.click();
 
-      toast.success("Usuarios exportados correctamente");
+      toast.success(ids?.length ? `Exportados ${rows.length} usuarios` : "Usuarios exportados");
     } catch (error) {
       console.error("Error:", error);
       toast.error("Error al exportar usuarios");
     }
   };
+
+  const handleSendEmail = async () => {
+    if (!emailTarget || !emailMessage.trim()) {
+      toast.error("Escribe un mensaje");
+      return;
+    }
+    setEmailSending(true);
+    try {
+      const res = await fetch(`${API_URL}/superadmin/users/${emailTarget.id}/notify`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: emailSubject,
+          message: emailMessage,
+          send_email: true,
+          send_in_app: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al enviar");
+      toast.success(data.email_sent ? "Email y notificación enviados" : "Notificación in-app enviada");
+      setEmailOpen(false);
+      setEmailTarget(null);
+      setEmailMessage("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error al enviar mensaje");
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const runBulkAction = async (action: string, extra?: Record<string, unknown>) => {
+    if (selectedIds.length === 0) {
+      toast.error("Selecciona al menos un usuario");
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/superadmin/users/bulk-action`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ action, user_ids: selectedIds, ...extra }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error en acción masiva");
+      toast.success(data.message || "Acción completada");
+      setSelectedIds([]);
+      setReassignOrgOpen(false);
+      fetchUsers();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error en acción masiva");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedIds(checked ? filteredUsers.map((u) => u.id) : []);
+  };
+
+  const toggleSelect = (id: number, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
+  };
+
+  const selectedAdmins = selectedIds.filter((id) => users.find((u) => u.id === id)?.role === "admin");
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -316,12 +428,54 @@ export default function SuperadminUsers() {
           </CardContent>
         </Card>
 
+        {/* Bulk actions */}
+        {selectedIds.length > 0 && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="py-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium mr-2">
+                {selectedIds.length} seleccionado(s)
+              </span>
+              <Button size="sm" variant="outline" disabled={bulkLoading} onClick={() => runBulkAction("activate")}>
+                <UserCheck className="h-4 w-4 mr-1" /> Activar
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkLoading} onClick={() => runBulkAction("deactivate")}>
+                <UserX className="h-4 w-4 mr-1" /> Desactivar
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkLoading} onClick={() => handleExportUsers(selectedIds)}>
+                <Download className="h-4 w-4 mr-1" /> Exportar selección
+              </Button>
+              {selectedAdmins.length > 0 && (
+                <Button size="sm" variant="outline" disabled={bulkLoading} onClick={() => setReassignOrgOpen(true)}>
+                  <Building2 className="h-4 w-4 mr-1" /> Reasignar org ({selectedAdmins.length})
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={bulkLoading}
+                onClick={() => {
+                  if (confirm(`¿Eliminar ${selectedIds.length} usuario(s)?`)) runBulkAction("delete");
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Users Table */}
         <Card className="border-border bg-card">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-foreground">
               {filteredUsers.length} usuarios encontrados
             </CardTitle>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox
+                checked={filteredUsers.length > 0 && selectedIds.length === filteredUsers.length}
+                onCheckedChange={(v) => toggleSelectAll(Boolean(v))}
+              />
+              Seleccionar todos
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -330,6 +484,10 @@ export default function SuperadminUsers() {
                   key={user.id}
                   className="flex items-center gap-4 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                 >
+                  <Checkbox
+                    checked={selectedIds.includes(user.id)}
+                    onCheckedChange={(v) => toggleSelect(user.id, Boolean(v))}
+                  />
                   <Avatar className="h-12 w-12">
                     <AvatarImage src={user.avatar} />
                     <AvatarFallback className="bg-primary/10 text-primary">
@@ -343,6 +501,19 @@ export default function SuperadminUsers() {
                       {getStatusBadge(user.status)}
                     </div>
                     <p className="text-sm text-muted-foreground">{user.email}</p>
+                    {user.role === "patient" && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Nutricionista:{" "}
+                        <span className="text-foreground/80">
+                          {user.nutritionist_name || "Sin asignar"}
+                        </span>
+                      </p>
+                    )}
+                    {user.role === "admin" && user.organization_name && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Org: <span className="text-foreground/80">{user.organization_name}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="text-right text-sm text-muted-foreground">
                     <p>Creado: {user.createdAt}</p>
@@ -362,7 +533,38 @@ export default function SuperadminUsers() {
                         <Edit className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      {(user.role === "patient" || user.role === "admin") && user.status === "activo" && (
+                        <DropdownMenuItem onClick={async () => {
+                          const reason = window.prompt(
+                            "Motivo de impersonación (mín. 5 caracteres — queda en auditoría):"
+                          );
+                          if (!reason?.trim()) return;
+                          const ok = await startUserImpersonation(user.id, reason.trim());
+                          if (!ok) toast.error("No se pudo impersonar. Verifica el motivo (mín. 5 caracteres).");
+                        }}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          Ver como usuario
+                        </DropdownMenuItem>
+                      )}
+                      {user.role === "patient" && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setTransferUser(user);
+                            setTransferOpen(true);
+                          }}
+                        >
+                          <ArrowRightLeft className="h-4 w-4 mr-2" />
+                          Transferir nutricionista
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEmailTarget(user);
+                          setEmailSubject("Mensaje de NutriData");
+                          setEmailMessage("");
+                          setEmailOpen(true);
+                        }}
+                      >
                         <Mail className="h-4 w-4 mr-2" />
                         Enviar email
                       </DropdownMenuItem>
@@ -514,6 +716,92 @@ export default function SuperadminUsers() {
             </Button>
             <Button onClick={handleEditUser} className="gradient-primary border-0">
               Guardar Cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <TransferPatientDialog
+        open={transferOpen}
+        onOpenChange={(v) => {
+          setTransferOpen(v);
+          if (!v) setTransferUser(null);
+        }}
+        patients={transferUser ? [transferUser] : []}
+        onSuccess={fetchUsers}
+      />
+
+      <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar mensaje a {emailTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="email-subject">Asunto</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-message">Mensaje</Label>
+              <Textarea
+                id="email-message"
+                rows={5}
+                value={emailMessage}
+                onChange={(e) => setEmailMessage(e.target.value)}
+                placeholder="Escribe el mensaje para el usuario..."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Se enviará email (si SMTP está configurado) y notificación in-app.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailOpen(false)}>Cancelar</Button>
+            <Button disabled={emailSending || !emailMessage.trim()} onClick={handleSendEmail}>
+              {emailSending ? "Enviando..." : "Enviar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reassignOrgOpen} onOpenChange={setReassignOrgOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reasignar organización</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Se reasignarán {selectedAdmins.length} nutricionista(s) seleccionado(s).
+            </p>
+            <Select value={reassignOrgId} onValueChange={setReassignOrgId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Organización destino" />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((o) => (
+                  <SelectItem key={o.id} value={String(o.id)}>
+                    {o.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReassignOrgOpen(false)}>Cancelar</Button>
+            <Button
+              disabled={!reassignOrgId || bulkLoading}
+              onClick={() =>
+                runBulkAction("reassign_org", {
+                  organization_id: Number(reassignOrgId),
+                  user_ids: selectedAdmins,
+                })
+              }
+            >
+              Reasignar
             </Button>
           </DialogFooter>
         </DialogContent>

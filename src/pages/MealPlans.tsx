@@ -53,6 +53,7 @@ const planTypeLabels: Record<string, string> = {
   gestante: "Gestante",
   gestante_adolescente: "Gestante adolescente",
   hospitalizado: "Hospitalizado",
+  geriatrico: "Geriátrico",
   deportista: "Deportista",
 };
 

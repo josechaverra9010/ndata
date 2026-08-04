@@ -26,6 +26,9 @@ const Auth = () => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [isResetting, setIsResetting] = useState(false);
+  const [requires2fa, setRequires2fa] = useState(false);
+  const [tempToken, setTempToken] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [formData, setFormData] = useState({
     nombres: "",
     apellidos: "",
@@ -63,8 +66,13 @@ const Auth = () => {
       const data = await response.json();
 
       if (response.ok) {
-        // El backend devuelve: { success, token, profile_complete, user: { name, role } }
-        // Pero necesitamos el ID del usuario también
+        if (data.requires_2fa && data.temp_token) {
+          setRequires2fa(true);
+          setTempToken(data.temp_token);
+          toast.info("Verificación 2FA", { description: "Ingresa el código de tu app autenticadora" });
+          setIsLoading(false);
+          return;
+        }
 
         const userId = data.user.id;
         const userRole = data.user.role;
@@ -112,6 +120,37 @@ const Auth = () => {
       toast.error("Error de conexión", {
         description: "El servidor no responde"
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handle2faSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/2fa/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: totpCode, temp_token: tempToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Código inválido");
+      localStorage.setItem("userToken", data.token);
+      const userData = {
+        id: String(data.user.id),
+        name: data.user.name,
+        role: data.user.role,
+        email: formData.email,
+        avatar: data.user.avatar || "",
+        createdAt: new Date().toISOString(),
+      };
+      localStorage.setItem("userData", JSON.stringify(userData));
+      setUser(userData);
+      toast.success("2FA verificado");
+      navigate(getRedirectPath(data.user.role));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Error 2FA");
     } finally {
       setIsLoading(false);
     }
@@ -211,6 +250,25 @@ const Auth = () => {
           </div>
 
           {/* Form */}
+          {requires2fa ? (
+            <form onSubmit={handle2faSubmit} className="space-y-5 animate-login-stagger">
+              <p className="text-sm text-muted-foreground">Código de autenticación (6 dígitos o backup)</p>
+              <Input
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\s/g, ""))}
+                placeholder="000000"
+                className="h-12 text-center text-lg tracking-widest"
+                maxLength={8}
+                autoFocus
+              />
+              <Button type="submit" className="w-full h-12" disabled={isLoading}>
+                {isLoading ? "Verificando..." : "Verificar 2FA"}
+              </Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => { setRequires2fa(false); setTotpCode(""); }}>
+                Volver al login
+              </Button>
+            </form>
+          ) : (
           <form
             onSubmit={handleSubmit}
             className="space-y-5 animate-login-stagger"
@@ -320,6 +378,7 @@ const Auth = () => {
               )}
             </Button>
           </form>
+          )}
 
 
         </div>

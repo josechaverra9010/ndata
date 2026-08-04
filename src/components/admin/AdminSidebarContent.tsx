@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -10,21 +11,31 @@ import {
   TrendingUp,
   CalendarDays,
   Stethoscope,
+  BarChart3,
+  Building2,
+  ClipboardList,
+  BookOpen,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/use-theme";
+import { fetchNutritionistFeatureFlags, isAdminRouteEnabled, subscribeFeatureFlagRefresh } from "@/lib/featureFlags";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
+  { icon: ClipboardList, label: "Cola de trabajo", path: "/work-queue" },
   { icon: Users, label: "Pacientes", path: "/patients" },
   { icon: Stethoscope, label: "Consulta", path: "/consultation" },
+  { icon: BookOpen, label: "Intervenciones", path: "/interventions" },
   { icon: ChefHat, label: "Recetas", path: "/recipes" },
   { icon: CalendarDays, label: "Menú semanal", path: "/weekly-menus" },
   { icon: Calendar, label: "Citas", path: "/appointments" },
   { icon: TrendingUp, label: "Progreso", path: "/progress" },
+  { icon: BarChart3, label: "Adherencia", path: "/analytics" },
+  { icon: Activity, label: "Centro avanzado", path: "/clinical-hub" },
+  { icon: Building2, label: "Clínica CO", path: "/clinical" },
   { icon: MessageSquare, label: "Mensajes", path: "/messages" },
   { icon: LifeBuoy, label: "Soporte", path: "/support" },
 ];
@@ -34,9 +45,20 @@ const bottomMenuItems = [
 ];
 
 export function AdminSidebarContent() {
-  const navigate = useNavigate();
   const { logout } = useAuth();
   const { theme } = useTheme();
+  const [flags, setFlags] = useState<Record<string, boolean> | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("userToken");
+    fetchNutritionistFeatureFlags(token).then(setFlags);
+    return subscribeFeatureFlagRefresh(fetchNutritionistFeatureFlags, setFlags);
+  }, []);
+
+  const visibleMenu = menuItems.filter((item) => {
+    if (!flags) return true;
+    return isAdminRouteEnabled(item.path, flags);
+  });
 
   const handleLogout = () => {
     logout();
@@ -59,7 +81,7 @@ export function AdminSidebarContent() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {menuItems.map((item) => (
+        {visibleMenu.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

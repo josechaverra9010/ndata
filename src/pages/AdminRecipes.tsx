@@ -12,10 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { API_URL } from "@/config/api";
 import { toast } from "sonner";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { LoadingGate } from "@/components/LoadingGate";
 import {
   Search, Plus, Clock, Flame, Users, ChefHat, Heart, Filter, MoreVertical,
-  Edit, Trash2, Copy, Eye, X, Utensils, Beef
+  Edit, Trash2, Copy, Eye, X, Utensils, Beef, Send
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -67,6 +67,10 @@ interface Recipe {
   tags: string[];
   isFavorite: boolean;
   is_public?: boolean;
+  shared_with_me?: boolean;
+  approval_status?: string;
+  rejection_reason?: string | null;
+  is_system?: boolean;
   created_by_id?: number | null;
 }
 
@@ -226,6 +230,28 @@ export default function AdminRecipes() {
       }
     } catch (error) {
       toast.error("Error al actualizar favorito");
+    }
+  };
+
+  const submitForReview = async (recipe: Recipe) => {
+    if (!canModifyRecipe(recipe)) {
+      toast.error("Solo puedes enviar tus propias recetas");
+      return;
+    }
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/recipes/${recipe.id}/submit-for-review`, {
+        method: "POST",
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "No se pudo enviar");
+      const updated = data.recipe || { ...recipe, approval_status: "pending" };
+      setRecipes((prev) => prev.map((r) => (r.id === recipe.id ? { ...r, ...updated } : r)));
+      setSelectedRecipe((prev) => (prev?.id === recipe.id ? { ...prev, ...updated } : prev));
+      toast.success("Receta enviada a moderación del superadmin");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error al enviar");
     }
   };
 
@@ -409,16 +435,9 @@ export default function AdminRecipes() {
     );
   };
 
-  if (loading) {
-    return (
-      <AdminLayout>
-        <LoadingScreen message="Cargando recetas" />
-      </AdminLayout>
-    );
-  }
-
   return (
     <AdminLayout>
+      <LoadingGate loading={loading} message="Cargando recetas">
       <div className="space-y-6">
         {/* Header */}
         <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-amber-500/5 p-5 sm:p-6">
@@ -1034,6 +1053,16 @@ export default function AdminRecipes() {
                         <Copy className="h-4 w-4 mr-2" />
                         Duplicar
                       </DropdownMenuItem>
+                      {canModifyRecipe(recipe) &&
+                        !recipe.is_system &&
+                        (recipe.approval_status === "draft" ||
+                          recipe.approval_status === "rejected" ||
+                          !recipe.approval_status) && (
+                          <DropdownMenuItem onClick={() => submitForReview(recipe)}>
+                            <Send className="h-4 w-4 mr-2" />
+                            Enviar a moderación
+                          </DropdownMenuItem>
+                        )}
                       {canModifyRecipe(recipe) && (
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
@@ -1052,6 +1081,26 @@ export default function AdminRecipes() {
                 {recipe.is_public && Number(recipe.created_by_id) !== Number(currentUserId) && (
                   <Badge className="absolute bottom-2.5 right-2.5 rounded-full bg-sky-500/90 text-white border-0 shadow-sm text-[10px]">
                     Pública
+                  </Badge>
+                )}
+                {!recipe.is_public && recipe.shared_with_me && (
+                  <Badge className="absolute bottom-2.5 right-2.5 rounded-full bg-blue-600/90 text-white border-0 shadow-sm text-[10px]">
+                    Compartida
+                  </Badge>
+                )}
+                {canModifyRecipe(recipe) && recipe.approval_status === "pending" && (
+                  <Badge className="absolute top-2.5 left-2.5 rounded-full bg-amber-500/90 text-white border-0 shadow-sm text-[10px]">
+                    En revisión
+                  </Badge>
+                )}
+                {canModifyRecipe(recipe) && recipe.approval_status === "rejected" && (
+                  <Badge className="absolute top-2.5 left-2.5 rounded-full bg-red-500/90 text-white border-0 shadow-sm text-[10px]">
+                    Rechazada
+                  </Badge>
+                )}
+                {canModifyRecipe(recipe) && recipe.approval_status === "approved" && recipe.is_public && (
+                  <Badge className="absolute top-2.5 left-2.5 rounded-full bg-emerald-500/90 text-white border-0 shadow-sm text-[10px]">
+                    Pública aprobada
                   </Badge>
                 )}
               </div>
@@ -1279,6 +1328,7 @@ export default function AdminRecipes() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+      </LoadingGate>
     </AdminLayout>
   );
 }

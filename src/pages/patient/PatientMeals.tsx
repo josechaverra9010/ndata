@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { PatientLayout } from "@/layouts/PatientLayout";
+import { LoadingGate } from "@/components/LoadingGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -333,20 +334,6 @@ export default function PatientMeals() {
     meal.foods.some(food => food.name.toLowerCase().includes(searchQuery.toLowerCase()))
   ) || [];
 
-  if (loading) {
-    return (
-      <PatientLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center space-y-4">
-            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-            <p className="text-muted-foreground">Cargando tus comidas...</p>
-          </div>
-        </div>
-      </PatientLayout>
-    );
-  }
-
-  // Si no hay patientId válido
   if (!patientId) {
     return (
       <PatientLayout>
@@ -366,24 +353,18 @@ export default function PatientMeals() {
     );
   }
 
-  if (!mealsData) {
-    return (
-      <PatientLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Card className="p-8 text-center">
-            <Utensils className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
-            <p className="text-muted-foreground mb-4">No se pudieron cargar las comidas</p>
-            <Button onClick={fetchMealsData}>Reintentar</Button>
-          </Card>
-        </div>
-      </PatientLayout>
-    );
-  }
-
-  const { summary } = mealsData;
-
   return (
     <PatientLayout>
+      <LoadingGate loading={loading} message="Cargando tus comidas">
+        {!mealsData ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Card className="p-8 text-center">
+              <Utensils className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
+              <p className="text-muted-foreground mb-4">No se pudieron cargar las comidas</p>
+              <Button onClick={fetchMealsData}>Reintentar</Button>
+            </Card>
+          </div>
+        ) : (
       <div className="space-y-4 lg:space-y-6 animate-fade-in">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -420,7 +401,7 @@ export default function PatientMeals() {
               <div className="min-w-0">
                 <p className="text-xs lg:text-sm text-muted-foreground truncate">Calorías</p>
                 <p className="text-base lg:text-xl font-bold text-foreground">
-                  {summary.calories.consumed} / {summary.calories.target}
+                  {mealsData.summary.calories.consumed} / {mealsData.summary.calories.target}
                 </p>
               </div>
             </CardContent>
@@ -435,7 +416,7 @@ export default function PatientMeals() {
               <div className="min-w-0">
                 <p className="text-xs lg:text-sm text-muted-foreground truncate">Proteínas</p>
                 <p className="text-base lg:text-xl font-bold text-foreground">
-                  {summary.protein.consumed}g / {summary.protein.target}g
+                  {mealsData.summary.protein.consumed}g / {mealsData.summary.protein.target}g
                 </p>
               </div>
             </CardContent>
@@ -450,7 +431,7 @@ export default function PatientMeals() {
               <div className="min-w-0">
                 <p className="text-xs lg:text-sm text-muted-foreground truncate">Carbos</p>
                 <p className="text-base lg:text-xl font-bold text-foreground">
-                  {summary.carbs.consumed}g / {summary.carbs.target}g
+                  {mealsData.summary.carbs.consumed}g / {mealsData.summary.carbs.target}g
                 </p>
               </div>
             </CardContent>
@@ -465,7 +446,7 @@ export default function PatientMeals() {
               <div className="min-w-0">
                 <p className="text-xs lg:text-sm text-muted-foreground truncate">Grasas</p>
                 <p className="text-base lg:text-xl font-bold text-foreground">
-                  {summary.fat.consumed}g / {summary.fat.target}g
+                  {mealsData.summary.fat.consumed}g / {mealsData.summary.fat.target}g
                 </p>
               </div>
             </CardContent>
@@ -692,6 +673,8 @@ export default function PatientMeals() {
           </DialogContent>
         </Dialog>
       </div>
+        )}
+      </LoadingGate>
     </PatientLayout>
   );
 }

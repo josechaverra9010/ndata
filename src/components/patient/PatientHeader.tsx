@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/popover";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
+import { resolveMediaUrl } from "@/lib/media";
 import { useAuth } from "@/hooks/useAuth";
 
 interface Notification {
@@ -76,14 +77,14 @@ export function PatientHeader() {
   const fetchNotifications = async () => {
     try {
       const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patient/${patientId}/notifications`, {
+      const response = await fetch(`${API_URL}/patient/${patientId}/notifications/inbox?limit=8`, {
         headers: {
           ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         }
       });
       const data = await response.json();
       setNotifications(data.notifications || []);
-      setUnreadCount(data.count || 0);
+      setUnreadCount(data.unread_count ?? data.count ?? 0);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     }
@@ -94,11 +95,12 @@ export function PatientHeader() {
   };
 
   const handleNotificationClick = (notification: Notification) => {
-    // Navegar según el tipo de notificación
-    if (notification.type === 'appointment') {
+    if (notification.type === 'appointment' || notification.type === 'appointment_reminder') {
       navigate('/patient/appointments');
     } else if (notification.type === 'reminder') {
-      navigate('/patient/progress');
+      navigate('/patient/meals');
+    } else {
+      navigate('/patient/notifications');
     }
   };
 
@@ -214,7 +216,11 @@ export function PatientHeader() {
             </div>
             {notifications.length > 0 && (
               <div className="border-t border-border p-2">
-                <button className="w-full text-center text-sm text-primary hover:text-primary/80 py-2">
+                <button
+                  type="button"
+                  className="w-full text-center text-sm text-primary hover:text-primary/80 py-2"
+                  onClick={() => navigate('/patient/notifications')}
+                >
                   Ver todas las notificaciones
                 </button>
               </div>
@@ -229,7 +235,7 @@ export function PatientHeader() {
               <Avatar className="h-7 w-7 border-2 border-primary/20 lg:h-8 lg:w-8">
                 {(patientData?.photo || user?.avatar || (user as any)?.foto_perfil) ? (
                   <AvatarImage
-                    src={patientData?.photo || user?.avatar || (user as any)?.foto_perfil || ""}
+                    src={resolveMediaUrl(patientData?.photo || user?.avatar || (user as any)?.foto_perfil)}
                     alt={patientData?.name || user?.name || 'Paciente'}
                   />
                 ) : (
@@ -250,11 +256,11 @@ export function PatientHeader() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {/*<DropdownMenuItem onClick={() => navigate('/paciente/perfil')}>
+            <DropdownMenuItem onClick={() => navigate('/patient/profile')}>
               <User className="mr-2 h-4 w-4" />
               <span>Mi Perfil</span>
-            </DropdownMenuItem>*/}
-            <DropdownMenuItem onClick={() => navigate('/paciente/configuracion')}>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/patient/settings')}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Configuración</span>
             </DropdownMenuItem>

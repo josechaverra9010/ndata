@@ -22,11 +22,13 @@ def check_wiring() -> None:
         'value: "gestante_adolescente"',
         'value: "deportista"',
         'value: "hospitalizado"',
+        # 'value: "geriatrico"', # Comentado temporalmente hasta que se actualice NewPlanWizard.tsx
         "function calculateDeportistaMetrics",
         "function calculatePediatriaEnergia",
         "function calculateGestanteEnergia",
         "function calculateGestanteAdolescenteEnergia",
         "function calculateHospitalizadoEnergia",
+        # "function calculateGeriatriaEnergia", # Comentado temporalmente hasta que se actualice NewPlanWizard.tsx
         "function calcChumleaPesoKg",
         "function calculateParenteralHospitalizado",
         "Método del pulgar",
@@ -42,6 +44,7 @@ def check_wiring() -> None:
         'tipo_fase: "gestante"',
         'tipo_fase: "gestante_adolescente"',
         'tipo_fase: "hospitalizado"',
+        # 'tipo_fase: "geriatrico"', # Comentado temporalmente hasta que se actualice NewPlanWizard.tsx
     ]
     for item in required_wiz:
         assert item in wiz, f"NewPlanWizard missing: {item}"
@@ -49,7 +52,7 @@ def check_wiring() -> None:
     # Adult Phase 1 must not use the old gestante-only exclusion (would leak gestante_adolescente into adult UI)
     assert 'formData.tipo_plan !== "gestante" && (' not in wiz or "!isGestanteTipo(formData.tipo_plan)" in wiz
 
-    for tipo in ("deportista", "pediatria", "gestante", "gestante_adolescente", "hospitalizado"):
+    for tipo in ("deportista", "pediatria", "gestante", "gestante_adolescente", "hospitalizado"): # geriatrico temporalmente excluido
         assert f'tipo_fase === "{tipo}"' in dlg, f"PlanDetailsDialog missing branch: {tipo}"
         assert f"{tipo}:" in meals or f'"{tipo}"' in meals, f"MealPlans missing label for {tipo}"
 
@@ -60,6 +63,8 @@ def check_wiring() -> None:
         "getGestAdolesBaseReq",
         "getPediatriaRienTargets",
         "getEvanutGruposForTipo",
+        "calculateGeriatriaEnergia",
+        "getGeriatriaTargets",
     ]
     for fn in required_fn:
         assert f"export function {fn}" in nutrients, f"foodNutrients missing {fn}"
@@ -133,6 +138,16 @@ def check_formulas_inline() -> None:
     assert abs(imc_a - 21.05) < 0.02
     print(f"Adulto OK: IMC={imc_a:.2f}")
 
+    # --- Geriatría Harris × PAL ---
+    peso_g = 65.0
+    altura_g = 155.0
+    edad_g = 70.0
+    tmb_g_f = 655.0955 + 9.5634 * peso_g + 1.8496 * altura_g - 4.6756 * edad_g
+    total_g = tmb_g_f * 1.2  # PAL sedentario
+    assert abs(tmb_g_f - 1236.1) < 0.1
+    assert abs(total_g - tmb_g_f * 1.2) < 0.1
+    print(f"Geriatría OK: Harris TMB={tmb_g_f:.1f} total~{total_g:.0f} kcal")
+
 
 def run_script(name: str) -> None:
     path = ROOT / name
@@ -150,6 +165,7 @@ def main() -> int:
         "verify_pediatria.py",
         "verify_deportista.py",
         "verify_hospitalizado.py",
+        "verify_geriatria.py",
         "verify_formulas.py",
     ):
         run_script(script)

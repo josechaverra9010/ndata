@@ -39,6 +39,11 @@ export default function PatientMessages() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const API_ORIGIN = API_URL.replace(/\/api\/?$/, "");
 
   const token = localStorage.getItem("userToken");
 
@@ -102,8 +107,9 @@ export default function PatientMessages() {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation || !token) return;
+  const handleSendMessage = async (content?: string, type: Message["type"] = "text") => {
+    const body = (content ?? newMessage).trim();
+    if (!body || !selectedConversation || !token) return;
     try {
       const res = await fetch(`${API_URL}/messages`, {
         method: "POST",
@@ -113,8 +119,8 @@ export default function PatientMessages() {
         },
         body: JSON.stringify({
           receiver_id: parseInt(selectedConversation.id),
-          content: newMessage,
-          type: "text",
+          content: body,
+          type,
         }),
       });
       if (!res.ok) throw new Error();
@@ -123,19 +129,72 @@ export default function PatientMessages() {
         ...prev,
         {
           id: String(data.id ?? Date.now()),
-          content: newMessage,
+          content: body,
           sender: "patient",
           timestamp: String(data.timestamp ?? new Date().toISOString()),
           status: "sent",
-          type: "text",
+          type,
         },
       ]);
-      setNewMessage("");
+      if (type === "text") setNewMessage("");
       fetchConversations();
       scrollToBottom();
     } catch {
       toast({ title: "Error", description: "No se pudo enviar el mensaje", variant: "destructive" });
     }
+  };
+
+  const uploadAndSend = async (file: File, asImage: boolean) => {
+    if (!selectedConversation || !token) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_URL}/messages/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const url = String(data.url ?? "");
+      const fullUrl = url.startsWith("/") ? `${API_ORIGIN}${url}` : url;
+      const msgType = (data.type === "image" || asImage ? "image" : "file") as Message["type"];
+      const display = msgType === "image" ? fullUrl : `${data.filename || "Archivo"}|${fullUrl}`;
+      await handleSendMessage(display, msgType);
+      toast({ title: "Enviado", description: "Adjunto enviado correctamente" });
+    } catch {
+      toast({ title: "Error", description: "No se pudo subir el archivo", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>, asImage: boolean) => {
+    const file = e.target.files?.[0];
+    if (file) uploadAndSend(file, asImage);
+    e.target.value = "";
+  };
+
+  const renderMessageContent = (msg: Message) => {
+    if (msg.type === "image") {
+      return (
+        <a href={msg.content} target="_blank" rel="noreferrer" className="block">
+          <img src={msg.content} alt="Imagen adjunta" className="max-w-full rounded-lg max-h-48 object-cover" />
+        </a>
+      );
+    }
+    if (msg.type === "file") {
+      const [label, href] = msg.content.includes("|") ? msg.content.split("|") : ["Archivo", msg.content];
+      const link = href.startsWith("http") ? href : `${API_ORIGIN}${href}`;
+      return (
+        <a href={link} target="_blank" rel="noreferrer" className="text-sm underline flex items-center gap-1">
+          <Paperclip className="h-3.5 w-3.5" />
+          {label}
+        </a>
+      );
+    }
+    return <p className="text-sm">{msg.content}</p>;
   };
 
   useEffect(() => {
@@ -247,7 +306,7 @@ export default function PatientMessages() {
                       {messages.map((msg) => (
                         <div key={msg.id} className={`flex ${msg.sender === "patient" ? "justify-end" : "justify-start"}`}>
                           <div className={`max-w-[70%] rounded-2xl px-4 py-2 ${msg.sender === "patient" ? "bg-primary text-primary-foreground rounded-br-md" : "bg-muted rounded-bl-md"}`}>
-                            <p className="text-sm">{msg.content}</p>
+                            {renderMessageContent(msg)}
                             <div className={`flex items-center justify-end gap-1 mt-1 ${msg.sender === "patient" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                               <span className="text-xs">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                               {msg.sender === "patient" && (msg.status === "read" ? <CheckCheck className="h-3 w-3" /> : <Check className="h-3 w-3" />)}
@@ -261,11 +320,37 @@ export default function PatientMessages() {
                 </CardContent>
 
                 <div className="border-t border-border p-2 lg:p-4">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt"
+                    onChange={(e) => onFileSelected(e, false)}
+                  />
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => onFileSelected(e, true)}
+                  />
                   <div className="flex items-center gap-1 lg:gap-2">
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-8 w-8 lg:h-10 lg:w-10">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-foreground h-8 w-8 lg:h-10 lg:w-10"
+                      disabled={uploading || !selectedConversation}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <Paperclip className="h-4 w-4 lg:h-5 lg:w-5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-8 w-8 lg:h-10 lg:w-10 hidden sm:flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-foreground h-8 w-8 lg:h-10 lg:w-10 hidden sm:flex"
+                      disabled={uploading || !selectedConversation}
+                      onClick={() => imageInputRef.current?.click()}
+                    >
                       <Image className="h-4 w-4 lg:h-5 lg:w-5" />
                     </Button>
                     <Input
@@ -278,8 +363,8 @@ export default function PatientMessages() {
                       <Smile className="h-4 w-4 lg:h-5 lg:w-5" />
                     </Button>
                     <Button
-                      onClick={handleSendMessage}
-                      disabled={!newMessage.trim()}
+                      onClick={() => handleSendMessage()}
+                      disabled={!newMessage.trim() || uploading}
                       size="icon"
                       className="gradient-primary shadow-glow h-8 w-8 lg:h-10 lg:w-10"
                     >

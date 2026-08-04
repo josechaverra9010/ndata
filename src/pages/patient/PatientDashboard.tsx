@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { PatientLayout } from "@/layouts/PatientLayout";
+import { LoadingGate } from "@/components/LoadingGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,12 @@ import {
   ArrowRight,
   Lightbulb,
   Scale,
+  Trophy,
+  GraduationCap,
+  HeartPulse,
+  Building2,
+  Camera,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -148,6 +155,7 @@ export default function PatientDashboard() {
   const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false);
   const [newWeight, setNewWeight] = useState("");
   const [savingWeight, setSavingWeight] = useState(false);
+  const [nextAction, setNextAction] = useState<{ label: string; path: string } | null>(null);
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const patientId = user?.id;
@@ -246,16 +254,23 @@ export default function PatientDashboard() {
   const fetchDashboardData = async () => {
     try {
       const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patient/${patientId}/dashboard/complete`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const [dashRes, adherenceRes] = await Promise.all([
+        fetch(`${API_URL}/patient/${patientId}/dashboard/complete`, { headers }),
+        fetch(`${API_URL}/patient/${patientId}/adherence?days=7`, { headers }),
+      ]);
 
-      if (!response.ok) throw new Error("Error al cargar datos");
+      if (!dashRes.ok) throw new Error("Error al cargar datos");
 
-      const data = await response.json();
+      const data = await dashRes.json();
       setDashboardData(data);
+
+      if (adherenceRes.ok) {
+        const adherence = await adherenceRes.json();
+        if (adherence?.next_action) {
+          setNextAction(adherence.next_action);
+        }
+      }
     } catch (error) {
       console.error("Error fetching dashboard:", error);
       toast({
@@ -392,37 +407,82 @@ export default function PatientDashboard() {
     }
   };
 
-  if (loading || isAuthLoading) {
-    return (
-      <PatientLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+  return (
+    <PatientLayout>
+      <LoadingGate loading={loading || isAuthLoading} message="Cargando tu dashboard" className="min-h-[60vh]">
+        {!dashboardData ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
+            <div className="max-w-md w-full rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center">
+              <p className="font-semibold text-foreground">No se pudieron cargar los datos</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Revisa tu conexión e inténtalo de nuevo.
+              </p>
+              <Button className="mt-5 rounded-full" onClick={fetchDashboardData}>
+                Reintentar
+              </Button>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">Cargando tu dashboard…</p>
-        </div>
-      </PatientLayout>
-    );
-  }
+        ) : (
+          <DashboardContent
+            dashboardData={dashboardData}
+            nextAction={nextAction}
+            navigate={navigate}
+            firstName={firstName}
+            todayLabel={todayLabel}
+            patientId={patientId!}
+            user={user}
+            updatingMeal={updatingMeal}
+            addingWater={addingWater}
+            selectedMeal={selectedMeal}
+            mealDetailForModal={mealDetailForModal}
+            loadingMealDetail={loadingMealDetail}
+            isDetailsOpen={isDetailsOpen}
+            isWeightDialogOpen={isWeightDialogOpen}
+            newWeight={newWeight}
+            savingWeight={savingWeight}
+            setSelectedMeal={setSelectedMeal}
+            setIsDetailsOpen={setIsDetailsOpen}
+            setIsWeightDialogOpen={setIsWeightDialogOpen}
+            setNewWeight={setNewWeight}
+            handleToggleMeal={handleToggleMeal}
+            handleAddWater={handleAddWater}
+            handleUpdateWeight={handleUpdateWeight}
+            getImageUrl={getImageUrl}
+            toast={toast}
+          />
+        )}
+      </LoadingGate>
+    </PatientLayout>
+  );
+}
 
-  if (!dashboardData) {
-    return (
-      <PatientLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
-          <div className="max-w-md w-full rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center">
-            <p className="font-semibold text-foreground">No se pudieron cargar los datos</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Revisa tu conexión e inténtalo de nuevo.
-            </p>
-            <Button className="mt-5 rounded-full" onClick={fetchDashboardData}>
-              Reintentar
-            </Button>
-          </div>
-        </div>
-      </PatientLayout>
-    );
-  }
-
+function DashboardContent({
+  dashboardData,
+  nextAction,
+  navigate,
+  firstName,
+  todayLabel,
+  patientId,
+  user,
+  updatingMeal,
+  addingWater,
+  selectedMeal,
+  mealDetailForModal,
+  loadingMealDetail,
+  isDetailsOpen,
+  isWeightDialogOpen,
+  newWeight,
+  savingWeight,
+  setSelectedMeal,
+  setIsDetailsOpen,
+  setIsWeightDialogOpen,
+  setNewWeight,
+  handleToggleMeal,
+  handleAddWater,
+  handleUpdateWeight,
+  getImageUrl,
+  toast,
+}: any) {
   const { stats, today_meals, week_progress, next_appointment, tip_of_day } = dashboardData;
   const peso =
     stats.peso_actual ?? (user as { peso_actual?: number } | null)?.peso_actual ?? null;
@@ -462,8 +522,42 @@ export default function PatientDashboard() {
   ];
 
   return (
-    <PatientLayout>
+    <>
       <div className="space-y-5 lg:space-y-7 animate-fade-in">
+        {nextAction && (
+          <button
+            type="button"
+            onClick={() => navigate(nextAction.path)}
+            className="w-full flex items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3 text-left hover:bg-primary/10 transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Activity className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm font-medium truncate">{nextAction.label}</span>
+            </div>
+            <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+          </button>
+        )}
+
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {[
+            { icon: Trophy, label: "Retos", path: "/patient/challenges" },
+            { icon: GraduationCap, label: "Aprender", path: "/patient/learn" },
+            { icon: Camera, label: "Diario", path: "/patient/food-diary" },
+            { icon: ArrowRightLeft, label: "Sustituir", path: "/patient/substitutions" },
+            { icon: HeartPulse, label: "Bienestar", path: "/patient/habits" },
+            { icon: Building2, label: "Mi Programa", path: "/patient/program" },
+          ].map((item) => (
+            <button
+              key={item.path}
+              type="button"
+              onClick={() => navigate(item.path)}
+              className="flex flex-col items-center gap-1.5 rounded-xl border border-border/70 bg-card p-3 hover:border-primary/30 hover:bg-primary/[0.03] transition-colors"
+            >
+              <item.icon className="h-5 w-5 text-primary" />
+              <span className="text-[11px] font-medium">{item.label}</span>
+            </button>
+          ))}
+        </div>
         {/* Hero */}
         <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.08] p-5 sm:p-6 shadow-card">
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
@@ -604,7 +698,13 @@ export default function PatientDashboard() {
             <Progress value={Math.min(100, stats.meals.percentage)} className="mt-3 h-1.5" />
           </div>
 
-          <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
+          <div
+            className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden cursor-pointer hover:border-emerald-500/30 transition-colors"
+            onClick={() => navigate("/patient/adherence")}
+            onKeyDown={(e) => e.key === "Enter" && navigate("/patient/adherence")}
+            role="button"
+            tabIndex={0}
+          >
             <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-500 to-lime-400" />
             <div className="pl-2 flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -988,6 +1088,6 @@ export default function PatientDashboard() {
         getImageUrl={getImageUrl}
         loading={loadingMealDetail}
       />
-    </PatientLayout>
+    </>
   );
 }

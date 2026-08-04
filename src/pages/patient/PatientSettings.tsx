@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -20,7 +22,11 @@ import {
   EyeOff,
   Lock,
   Monitor,
-  Loader2
+  Loader2,
+  Building2,
+  Gift,
+  Download,
+  Trash2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -32,6 +38,14 @@ export default function PatientSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [orgCode, setOrgCode] = useState("");
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [myOrg, setMyOrg] = useState<{
+    id: number;
+    name: string;
+    code: string;
+    benefit_label?: string;
+  } | null>(null);
 
   const [notifications, setNotifications] = useState({
     emailReminders: true,
@@ -53,6 +67,84 @@ export default function PatientSettings() {
     newPassword: "",
     confirmPassword: ""
   });
+  const [deletionReason, setDeletionReason] = useState("");
+  const [privacyLoading, setPrivacyLoading] = useState(false);
+  const [deletionRequest, setDeletionRequest] = useState<{
+    id: number;
+    status: string;
+    reason?: string;
+    created_at?: string;
+    scheduled_at?: string | null;
+    completed_at?: string | null;
+  } | null>(null);
+
+  const DELETION_STATUS_LABELS: Record<string, string> = {
+    pending: "En revisión",
+    approved: "Aprobada — en proceso",
+    rejected: "Rechazada",
+    completed: "Completada",
+  };
+
+  const authHeaders = (): HeadersInit => {
+    const token = localStorage.getItem("userToken");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const handleExportMyData = async () => {
+    setPrivacyLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/patient/data-export`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("No se pudo exportar");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mis-datos-nutridata.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Datos exportados (Ley 1581)");
+    } catch {
+      toast.error("Error al exportar tus datos");
+    } finally {
+      setPrivacyLoading(false);
+    }
+  };
+
+  const handleDeletionRequest = async () => {
+    if (!deletionReason.trim()) {
+      toast.error("Indica el motivo de la solicitud");
+      return;
+    }
+    setPrivacyLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/patient/deletion-request`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: deletionReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error");
+      toast.success("Solicitud enviada. El equipo la revisará pronto.");
+      setDeletionReason("");
+      loadDeletionStatus();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error al enviar solicitud");
+    } finally {
+      setPrivacyLoading(false);
+    }
+  };
+
+  const loadDeletionStatus = async () => {
+    try {
+      const res = await fetch(`${API_URL}/patient/deletion-request/status`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setDeletionRequest(data.has_request ? data.request : null);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
 
   const getUserId = () => {
     if (user?.id) return user.id;
@@ -69,10 +161,79 @@ export default function PatientSettings() {
   useEffect(() => {
     if (userId) {
       loadSettings();
+      loadMyOrganization();
+      loadDeletionStatus();
     } else {
       setLoading(false);
     }
   }, [userId]);
+
+  const loadMyOrganization = async () => {
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/organizations/me`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMyOrg(data.organization || null);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const joinOrganization = async () => {
+    if (!orgCode.trim()) {
+      toast.error("Ingresa el código de tu organización");
+      return;
+    }
+    setOrgLoading(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/organizations/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ code: orgCode.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo afiliar");
+      }
+      toast.success(data.message || "Afiliado correctamente");
+      setOrgCode("");
+      setMyOrg(data.organization || null);
+    } catch (e: any) {
+      toast.error(e?.message || "Error al afiliarse");
+    } finally {
+      setOrgLoading(false);
+    }
+  };
+
+  const leaveOrganization = async () => {
+    if (!confirm("¿Salir de la organización? Perderás el beneficio asociado.")) return;
+    setOrgLoading(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/organizations/me`, {
+        method: "DELETE",
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo salir");
+      }
+      toast.success("Saliste de la organización");
+      setMyOrg(null);
+    } catch (e: any) {
+      toast.error(e?.message || "Error");
+    } finally {
+      setOrgLoading(false);
+    }
+  };
 
   const loadSettings = async () => {
     if (!userId) return;
@@ -98,6 +259,24 @@ export default function PatientSettings() {
         units: data.appearance.units,
         dateFormat: data.appearance.dateFormat
       });
+
+      if (token) {
+        const prefsRes = await fetch(`${API_URL}/patient/${userId}/reminder-preferences`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (prefsRes.ok) {
+          const prefs = await prefsRes.json();
+          setNotifications((prev) => ({
+            ...prev,
+            emailReminders: prefs.email_enabled ?? prev.emailReminders,
+            pushMeals: prefs.push_enabled ?? prev.pushMeals,
+            pushAppointments: prefs.push_enabled ?? prev.pushAppointments,
+            smsReminders: prefs.whatsapp_enabled ?? prev.smsReminders,
+            weeklyReport: prefs.weekly_report ?? prev.weeklyReport,
+            tips: prefs.tips_enabled ?? prev.tips,
+          }));
+        }
+      }
 
       if (data.appearance.theme) {
         setTheme(data.appearance.theme);
@@ -137,6 +316,21 @@ export default function PatientSettings() {
       if (!notifResponse.ok) {
         throw new Error("Error al guardar notificaciones");
       }
+
+      await fetch(`${API_URL}/patient/${userId}/reminder-preferences`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          whatsapp_enabled: notifications.smsReminders,
+          email_enabled: notifications.emailReminders,
+          push_enabled: notifications.pushMeals || notifications.pushAppointments,
+          weekly_report: notifications.weeklyReport,
+          tips_enabled: notifications.tips,
+        }),
+      });
 
       // Guardar apariencia
       const appearanceResponse = await fetch(`${API_URL}/patient/appearance/${userId}`, {
@@ -241,6 +435,63 @@ export default function PatientSettings() {
           <h1 className="text-2xl font-bold text-foreground">Configuración</h1>
           <p className="text-muted-foreground">Personaliza tu experiencia en NutriPlan</p>
         </div>
+
+        <Card className="border-border shadow-card lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Building2 className="h-5 w-5 text-primary" />
+              Organización / convenio
+            </CardTitle>
+            <CardDescription>
+              Si tu empresa o clínica tiene convenio con NutriData, ingresa el código para activar tu beneficio.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {myOrg ? (
+              <div className="rounded-xl border bg-primary/5 border-primary/20 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-foreground">{myOrg.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                      Código: {myOrg.code}
+                    </p>
+                    {myOrg.benefit_label && (
+                      <p className="text-sm mt-2 flex items-center gap-1.5 text-primary">
+                        <Gift className="h-4 w-4" />
+                        {myOrg.benefit_label}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={orgLoading}
+                    onClick={leaveOrganization}
+                  >
+                    Salir
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  value={orgCode}
+                  onChange={(e) => setOrgCode(e.target.value.toUpperCase())}
+                  placeholder="Código de organización (ej. EMPRESA-A1B2)"
+                  className="font-mono"
+                />
+                <Button disabled={orgLoading} onClick={joinOrganization} className="shrink-0">
+                  {orgLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Gift className="h-4 w-4 mr-2" />
+                  )}
+                  Activar beneficio
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Notifications */}
@@ -526,6 +777,86 @@ export default function PatientSettings() {
                     Cerrar todas las sesiones
                   </Button>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Privacidad Ley 1581 */}
+          <Card className="border-border shadow-card lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Shield className="h-5 w-5 text-primary" />
+                Privacidad y datos personales
+              </CardTitle>
+              <CardDescription>
+                Derechos ARCO — Ley 1581 de 2012 (Habeas Data Colombia)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-3">
+                <h4 className="font-medium flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Exportar mis datos
+                </h4>
+                <p className="text-sm text-muted-foreground">
+                  Descarga una copia de tu perfil, planes, métricas y consentimientos en JSON.
+                </p>
+                <Button variant="outline" onClick={handleExportMyData} disabled={privacyLoading}>
+                  {privacyLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                  Descargar mis datos
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <h4 className="font-medium flex items-center gap-2 text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                  Solicitar eliminación
+                </h4>
+                <p className="text-sm text-muted-foreground">
+                  Solicita la eliminación/anonymización de tu cuenta. Revisión manual por el equipo.
+                </p>
+                {deletionRequest && (
+                  <div className="rounded-lg border p-3 bg-muted/40 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">Tu solicitud</span>
+                      <Badge
+                        variant={
+                          deletionRequest.status === "rejected"
+                            ? "destructive"
+                            : deletionRequest.status === "completed"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {DELETION_STATUS_LABELS[deletionRequest.status] || deletionRequest.status}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Recibirás una notificación in-app (y correo si está configurado) cuando cambie el estado.
+                    </p>
+                    {deletionRequest.created_at && (
+                      <p className="text-xs text-muted-foreground">
+                        Enviada: {new Date(deletionRequest.created_at).toLocaleDateString("es-CO")}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {!deletionRequest || deletionRequest.status === "rejected" ? (
+                  <>
+                <Textarea
+                  rows={3}
+                  placeholder="Motivo de la solicitud..."
+                  value={deletionReason}
+                  onChange={(e) => setDeletionReason(e.target.value)}
+                />
+                <Button variant="destructive" onClick={handleDeletionRequest} disabled={privacyLoading}>
+                  Enviar solicitud
+                </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Ya tienes una solicitud activa. Revisa tus notificaciones para actualizaciones.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>

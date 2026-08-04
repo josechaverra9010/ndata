@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 import { API_URL } from "@/config/api";
+import { resolveMediaUrl } from "@/lib/media";
 
 const AdminSettings = () => {
   const [loading, setLoading] = useState(true);
@@ -454,7 +455,7 @@ const AdminSettings = () => {
               <CardContent className="space-y-6">
                 <div className="flex items-center gap-6">
                   <Avatar className="h-24 w-24">
-                    <AvatarImage src={profile.avatar} />
+                    <AvatarImage src={resolveMediaUrl(profile.avatar)} />
                     <AvatarFallback className="text-2xl bg-primary/10 text-primary">
                       {getInitials(profile.name || "AN")}
                     </AvatarFallback>

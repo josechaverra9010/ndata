@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { API_URL } from "@/config/api";
+import { resolveMediaUrl } from "@/lib/media";
 import {
   User,
   Mail,
@@ -33,20 +34,18 @@ import {
   Camera,
   TrendingUp,
   MessageSquare,
+  RotateCcw,
 } from "lucide-react";
 import { Recordatorio24hForm } from "./Recordatorio24hForm";
 import { useToast } from "@/hooks/use-toast";
 import { formatInColombia, formatDateTimeInColombia } from "@/lib/timezone";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  BIO_HEMOGRAMA,
+  BIO_LIPIDOS,
+  BIO_OTROS,
+  normalizeBioquimicos,
+} from "@/components/shared/BioquimicosForm";
+import { DeletePatientDialog } from "@/components/admin/DeletePatientDialog";
 
 const formatListOrText = (value: string[] | string | null | undefined) => {
   if (value == null || value === "") return "No registrado";
@@ -54,15 +53,6 @@ const formatListOrText = (value: string[] | string | null | undefined) => {
     return value.length > 0 ? value.join(", ") : "No registrado";
   }
   return String(value);
-};
-
-const resolveMediaUrl = (url: string | null | undefined) => {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:")) {
-    return url;
-  }
-  const origin = API_URL.replace(/\/api\/?$/, "");
-  return `${origin}${url.startsWith("/") ? url : `/${url}`}`;
 };
 
 const getFrequencyLabel = (freqId: string) => {
@@ -153,6 +143,15 @@ interface Patient {
   condiciones_medicas?: string | null;
   alimentos_disgusto?: string | null;
   antecedentes_familiares?: string | null;
+  acompanante_nombre?: string | null;
+  acompanante_parentesco?: string | null;
+  acompanante_telefono?: string | null;
+  acompanante_email?: string | null;
+  acompanante_documento?: string | null;
+  acompanante_observaciones?: string | null;
+  programa_eps?: string | null;
+  examenes_bioquimicos?: Record<string, string> | null;
+  deleted_at?: string | null;
 }
 
 interface PatientDetailsDialogProps {
@@ -163,6 +162,8 @@ interface PatientDetailsDialogProps {
   onEdit?: () => void;
   onViewPlans?: () => void;
   onClinicalHistory?: () => void;
+  /** Vista desde papelera: mostrar recuperar / eliminar definitivo */
+  inTrash?: boolean;
 }
 
 const statusStyles: Record<string, string> = {
@@ -185,12 +186,14 @@ export function PatientDetailsDialog({
   onEdit,
   onViewPlans,
   onClinicalHistory,
+  inTrash = false,
 }: PatientDetailsDialogProps) {
   const { toast } = useToast();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [permanentDelete, setPermanentDelete] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [recalls, setRecalls] = useState<any[]>([]);
   const [loadingRecalls, setLoadingRecalls] = useState(false);
   const [showRecallForm, setShowRecallForm] = useState(false);
@@ -285,43 +288,6 @@ export function PatientDetailsDialog({
     } finally {
       setUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      setDeleting(true);
-      const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patients/${patient.id}`, {
-        method: "DELETE",
-        headers: {
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        }
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        const detail = typeof err.detail === "string" ? err.detail : "Error al eliminar paciente";
-        throw new Error(detail);
-      }
-
-      toast({
-        title: "¡Éxito!",
-        description: "Paciente eliminado correctamente",
-      });
-
-      setDeleteDialogOpen(false);
-      onOpenChange(false);
-      onUpdate?.();
-    } catch (error: any) {
-      console.error("Error deleting patient:", error);
-      toast({
-        title: "Error",
-        description: error?.message || "No se pudo eliminar el paciente",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -444,9 +410,10 @@ export function PatientDetailsDialog({
 
           <div className="px-6 py-4">
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-1 h-auto p-1 bg-muted/60 rounded-xl">
+            <TabsList className="grid w-full grid-cols-3 md:grid-cols-7 gap-1 h-auto p-1 bg-muted/60 rounded-xl">
               <TabsTrigger value="general" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">General</TabsTrigger>
               <TabsTrigger value="health" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Salud</TabsTrigger>
+              <TabsTrigger value="bioquimico" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Bioquímico</TabsTrigger>
               <TabsTrigger value="evaluacion" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Evaluación</TabsTrigger>
               <TabsTrigger value="frecuencia" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm">Frecuencia</TabsTrigger>
               <TabsTrigger value="recuerdos" className="rounded-lg text-xs sm:text-sm data-[state=active]:shadow-sm" onClick={fetchRecalls}>Recordatorio</TabsTrigger>
@@ -495,6 +462,46 @@ export function PatientDetailsDialog({
                       <p className="text-sm mt-0.5">{patient.direccion || "No registrada"}</p>
                     </div>
                   </div>
+
+                  {(patient.acompanante_nombre || patient.acompanante_telefono) && (
+                    <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors md:col-span-2">
+                      <div className="rounded-lg bg-primary/10 p-2">
+                        <User className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Acompañante</p>
+                        <p className="text-sm font-medium">
+                          {patient.acompanante_nombre || "—"}
+                          {patient.acompanante_parentesco ? ` (${patient.acompanante_parentesco})` : ""}
+                        </p>
+                        {patient.acompanante_telefono && (
+                          <p className="text-xs text-muted-foreground">Tel: {patient.acompanante_telefono}</p>
+                        )}
+                        {patient.acompanante_email && (
+                          <p className="text-xs text-muted-foreground">Email: {patient.acompanante_email}</p>
+                        )}
+                        {patient.acompanante_documento && (
+                          <p className="text-xs text-muted-foreground">Doc: {patient.acompanante_documento}</p>
+                        )}
+                        {patient.acompanante_observaciones && (
+                          <p className="text-xs text-muted-foreground">{patient.acompanante_observaciones}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {patient.programa_eps && (
+                    <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors md:col-span-2">
+                      <div className="rounded-lg bg-primary/10 p-2">
+                        <Heart className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Programa al que pertenece a su EPS (si aplica)
+                        </p>
+                        <p className="text-sm font-medium whitespace-pre-wrap">{patient.programa_eps}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">
@@ -655,6 +662,73 @@ export function PatientDetailsDialog({
               </div>
             </TabsContent>
 
+            <TabsContent value="bioquimico" className="space-y-4 mt-4">
+              {(() => {
+                const bio = normalizeBioquimicos(patient.examenes_bioquimicos as any);
+                const groups = [
+                  { title: "Hemograma y otros", rows: BIO_HEMOGRAMA },
+                  { title: "Otros", rows: BIO_OTROS },
+                  { title: "Perfil lipídico", rows: BIO_LIPIDOS },
+                ];
+                const hasAny = Object.values(bio).some((v) => String(v || "").trim());
+                if (!hasAny) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground italic border rounded-lg">
+                      <AlertCircle className="h-8 w-8 mb-2 opacity-20" />
+                      <p>No hay exámenes bioquímicos registrados.</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-4">
+                    {bio.bio_fecha_examenes && (
+                      <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted-foreground uppercase tracking-wide">Fecha de los exámenes</span>
+                        <span className="font-medium">{bio.bio_fecha_examenes}</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      {groups.map((g) => (
+                        <div key={g.title} className="rounded-lg border overflow-hidden">
+                          <div className="bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide">
+                            {g.title}
+                          </div>
+                          <div className="divide-y">
+                            {g.rows.map(({ key, analisisKey, label }) => (
+                              <div key={key} className="px-3 py-2 space-y-1 text-sm">
+                                <div className="grid grid-cols-[1fr_auto] gap-2">
+                                  <span>{label}</span>
+                                  <span className="font-medium tabular-nums">{bio[key] || "—"}</span>
+                                </div>
+                                {bio[analisisKey] && (
+                                  <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                    <span className="font-medium text-foreground/80">Análisis:</span>{" "}
+                                    {bio[analisisKey]}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {bio.bio_analisis && (
+                      <div className="rounded-lg border p-3 text-sm">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Análisis general</p>
+                        <p className="whitespace-pre-wrap">{bio.bio_analisis}</p>
+                      </div>
+                    )}
+                    {bio.bioquimicos && (
+                      <div className="rounded-lg border p-3 text-sm">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Observaciones</p>
+                        <p className="whitespace-pre-wrap">{bio.bioquimicos}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </TabsContent>
+
             <TabsContent value="evaluacion" className="space-y-4 mt-4">
               <div className="p-4 rounded-lg border border-border bg-card min-h-[200px]">
                 <div className="flex items-center gap-2 mb-3">
@@ -803,51 +877,114 @@ export function PatientDetailsDialog({
           </Tabs>
 
           <div className="flex items-center justify-end gap-2 pt-4 mt-2 border-t">
-            <Button
-              variant="outline"
-              className="rounded-full"
-              onClick={() => {
-                onEdit?.();
-                onOpenChange(false);
-              }}
-            >
-              <Edit className="h-4 w-4 mr-2" />
-              Editar
-            </Button>
-            <Button
-              variant="destructive"
-              className="rounded-full"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Eliminar
-            </Button>
+            {inTrash || patient.deleted_at ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  disabled={restoring}
+                  onClick={async () => {
+                    if (!patient) return;
+                    setRestoring(true);
+                    try {
+                      const token = localStorage.getItem("userToken");
+                      const response = await fetch(
+                        `${API_URL}/patients/${patient.id}/restore`,
+                        {
+                          method: "POST",
+                          headers: {
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          },
+                        }
+                      );
+                      const err = await response.json().catch(() => ({}));
+                      if (!response.ok) {
+                        throw new Error(
+                          typeof err.detail === "string"
+                            ? err.detail
+                            : "No se pudo recuperar"
+                        );
+                      }
+                      toast({
+                        title: "Paciente recuperado",
+                        description: `${patient.nombres} ${patient.apellidos} volvió a la lista activa.`,
+                      });
+                      onOpenChange(false);
+                      onUpdate?.();
+                    } catch (e: any) {
+                      toast({
+                        title: "Error",
+                        description: e?.message || "No se pudo recuperar el paciente",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setRestoring(false);
+                    }
+                  }}
+                >
+                  {restoring ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                  )}
+                  Recuperar
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="rounded-full"
+                  onClick={() => {
+                    setPermanentDelete(true);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar definitivamente
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => {
+                    onEdit?.();
+                    onOpenChange(false);
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Editar
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="rounded-full"
+                  onClick={() => {
+                    setPermanentDelete(false);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Mover a papelera
+                </Button>
+              </>
+            )}
           </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción eliminará permanentemente a <strong>{patient.nombres} {patient.apellidos}</strong> y
-              todos sus datos asociados. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleting ? "Eliminando..." : "Sí, eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeletePatientDialog
+        patient={patient}
+        open={deleteDialogOpen}
+        onOpenChange={(v) => {
+          setDeleteDialogOpen(v);
+          if (!v) setPermanentDelete(false);
+        }}
+        permanent={permanentDelete}
+        onSuccess={() => {
+          onOpenChange(false);
+          onUpdate?.();
+        }}
+      />
     </>
   );
 }

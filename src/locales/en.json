@@ -1,0 +1,14 @@
+{
+  "common.searchPatients": "Search patients…",
+  "common.actions": "Actions",
+  "common.quick": "Quick",
+  "common.language": "Language",
+  "common.save": "Save",
+  "common.cancel": "Cancel",
+  "common.loading": "Loading…",
+  "lang.es": "Español",
+  "lang.en": "English",
+  "admin.dashboard": "Dashboard",
+  "admin.patients": "Patients",
+  "admin.settings": "Settings"
+}

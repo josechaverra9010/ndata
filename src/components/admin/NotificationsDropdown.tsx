@@ -47,8 +47,8 @@ export function NotificationsDropdown() {
         const data = await response.json();
         setNotifications(data);
       }
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
+    } catch {
+      // Backend offline — skip noisy console errors
     }
   };
 

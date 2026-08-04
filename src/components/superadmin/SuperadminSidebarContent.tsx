@@ -13,16 +13,36 @@ import {
   LogOut,
   ChefHat,
   Newspaper,
+  Activity,
+  Shield,
+  Flag,
+  Gauge,
+  Scale,
+  Plug,
+  LifeBuoy,
+  BarChart3,
+  Stethoscope,
+  ShieldCheck,
 } from "lucide-react";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/superadmin" },
+  { icon: Activity, label: "Salud tenant", path: "/superadmin/tenant-health" },
+  { icon: Shield, label: "Auditoría", path: "/superadmin/audit" },
   { icon: Users, label: "Usuarios", path: "/superadmin/users" },
   { icon: UserCog, label: "Nutricionistas", path: "/superadmin/nutritionists" },
   { icon: ChefHat, label: "Biblioteca de Recetas", path: "/superadmin/recipes" },
   { icon: Newspaper, label: "Artículos Home", path: "/superadmin/articles" },
   { icon: Building2, label: "Organizaciones", path: "/superadmin/organizations" },
   { icon: CreditCard, label: "Facturación", path: "/superadmin/billing" },
+  { icon: Flag, label: "Módulos / Flags", path: "/superadmin/features" },
+  { icon: Gauge, label: "Ops / Monitoreo", path: "/superadmin/ops" },
+  { icon: Scale, label: "Compliance CO", path: "/superadmin/compliance" },
+  { icon: Plug, label: "Integraciones", path: "/superadmin/integrations" },
+  { icon: LifeBuoy, label: "Soporte L2", path: "/superadmin/support" },
+  { icon: BarChart3, label: "Analítica", path: "/superadmin/analytics" },
+  { icon: Stethoscope, label: "Contenido clínico", path: "/superadmin/clinical-content" },
+  { icon: ShieldCheck, label: "Plataforma", path: "/superadmin/platform" },
 ];
 
 const bottomMenuItems = [

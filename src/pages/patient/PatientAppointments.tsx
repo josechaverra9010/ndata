@@ -29,6 +29,7 @@ import { API_URL } from "@/config/api";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { todayInColombiaISO } from "@/lib/timezone";
+import { AppointmentPrepPanel } from "@/components/patient/AppointmentPrepPanel";
 
 interface Appointment {
   id: number;
@@ -777,6 +778,8 @@ export default function PatientAppointments() {
                                 “{appointment.notes}”
                               </p>
                             )}
+
+                            <AppointmentPrepPanel patientId={patientId!} appointmentId={appointment.id} />
                           </div>
                         </div>
 

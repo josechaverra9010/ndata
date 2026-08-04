@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Filter, Mail, Phone, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList, Users, UserCheck, Clock, FileText, Eye, Activity, Scale, X, TrendingUp, MessageSquare } from "lucide-react";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { Search, Plus, Filter, Mail, Phone, AlertCircle, MoreVertical, Edit, Trash2, Calendar, ClipboardList, Users, UserCheck, Clock, FileText, Eye, Activity, Scale, X, TrendingUp, MessageSquare, Archive, RotateCcw, ArrowRightLeft, Gift } from "lucide-react";
+import { LoadingGate } from "@/components/LoadingGate";
 import { NewPatientDialog } from "@/components/admin/NewPatientDialog";
 import { PatientDetailsDialog } from "@/components/admin/PatientDetailsDialog";
 import { ScheduleAppointmentDialog } from "@/components/admin/ScheduleAppointmentDialog";
@@ -18,20 +18,12 @@ import { AssignPlanWithMenuDialog } from "@/components/admin/AssignPlanWithMenuD
 import { BulkAssignMenuDialog } from "@/components/admin/BulkAssignMenuDialog";
 import { NewPlanWizard } from "@/components/admin/NewPlanWizard";
 import { ClinicalHistoryDialog } from "@/components/admin/ClinicalHistoryDialog";
+import { DeletePatientDialog } from "@/components/admin/DeletePatientDialog";
+import { TransferPatientDialog } from "@/components/admin/TransferPatientDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 // Interface actualizada con todos los campos del backend
 interface Patient {
@@ -66,12 +58,23 @@ interface Patient {
   frecuencia_consumo: any[] | null;
   tiene_plan_activo?: boolean;
   plan_activo?: string | null;
+  deleted_at?: string | null;
+  nutritionist_id?: number | null;
+  nutritionist_name?: string | null;
+  organization?: {
+    id: number;
+    name: string;
+    code?: string;
+    benefit_label?: string;
+    benefit_type?: string;
+  } | null;
 }
 
 const statusStyles: Record<string, string> = {
   activo: "bg-emerald-500/10 text-emerald-700 border-emerald-500/25 dark:text-emerald-300",
   pendiente: "bg-amber-500/10 text-amber-700 border-amber-500/25 dark:text-amber-300",
   inactivo: "bg-muted text-muted-foreground border-border",
+  eliminado: "bg-destructive/10 text-destructive border-destructive/25",
 };
 
 const statusDot: Record<string, string> = {
@@ -82,6 +85,15 @@ const statusDot: Record<string, string> = {
 
 const Patients = () => {
   const { toast } = useToast();
+  const isSuperadmin = (() => {
+    try {
+      const raw = localStorage.getItem("userData");
+      if (!raw) return false;
+      return JSON.parse(raw)?.role === "superadmin";
+    } catch {
+      return false;
+    }
+  })();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +109,12 @@ const Patients = () => {
   const [clinicalHistoryOpen, setClinicalHistoryOpen] = useState(false);
   const [clinicalHistoryPatient, setClinicalHistoryPatient] = useState<Patient | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferPatients, setTransferPatients] = useState<Patient[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [attentionFilter, setAttentionFilter] = useState<"sin_cita" | "sin_plan" | null>(null);
@@ -150,13 +167,14 @@ const Patients = () => {
   }, [searchParams, patients]);
 
   // Función para cargar los pacientes desde el API
-  const fetchPatients = async () => {
+  const fetchPatients = async (trash = showTrash) => {
     try {
       setLoading(true);
       setError(null);
 
       const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patients`, {
+      const qs = trash ? "?trash=true" : "";
+      const response = await fetch(`${API_URL}/patients${qs}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -176,6 +194,21 @@ const Patients = () => {
       }
 
       setPatients(data);
+
+      // Contador de papelera (siempre, para el botón)
+      try {
+        const statsRes = await fetch(`${API_URL}/patients/stats`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (statsRes.ok) {
+          const stats = await statsRes.json();
+          setTrashCount(Number(stats.trash) || 0);
+        }
+      } catch {
+        /* ignore */
+      }
     } catch (error) {
       console.error("Error fetching patients:", error);
       const errorMessage = error instanceof Error ? error.message : "Error desconocido";
@@ -192,8 +225,9 @@ const Patients = () => {
   };
 
   useEffect(() => {
-    fetchPatients();
-  }, []);
+    fetchPatients(showTrash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showTrash]);
 
   // Filtrado de pacientes
   const filteredPatients = patients.filter(patient => {
@@ -201,12 +235,13 @@ const Patients = () => {
     const matchesSearch = fullName.includes(searchQuery.toLowerCase()) ||
       patient.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesStatus = !statusFilter || patient.status === statusFilter;
+    const matchesStatus = showTrash || !statusFilter || patient.status === statusFilter;
     const sinCita =
       !patient.proxima_cita ||
       patient.proxima_cita === "Sin cita" ||
       patient.proxima_cita === "Sin programar";
     const matchesAttention =
+      showTrash ||
       !attentionFilter ||
       (attentionFilter === "sin_cita" && sinCita) ||
       (attentionFilter === "sin_plan" && !patient.tiene_plan_activo);
@@ -276,12 +311,12 @@ const Patients = () => {
 
   // Handler para cuando se actualiza un paciente
   const handlePatientUpdate = () => {
-    fetchPatients();
+    fetchPatients(showTrash);
   };
 
   // Función para reintentar cargar datos
   const handleRetry = () => {
-    fetchPatients();
+    fetchPatients(showTrash);
   };
 
   // Handler para editar paciente
@@ -330,49 +365,46 @@ const Patients = () => {
     setClinicalHistoryOpen(true);
   };
 
-  // Handler para eliminar paciente
+  // Handler para eliminar paciente (mover a papelera)
   const handleDeleteClick = (patient: Patient, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setPatientToDelete(patient);
+    setPermanentDeleteOpen(false);
     setDeleteDialogOpen(true);
   };
 
-  // Confirmar eliminación
-  const handleDeleteConfirm = async () => {
-    if (!patientToDelete) return;
+  const handlePermanentDeleteClick = (patient: Patient, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setPatientToDelete(patient);
+    setPermanentDeleteOpen(true);
+    setDeleteDialogOpen(true);
+  };
 
+  const handleRestore = async (patient: Patient, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     try {
       const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patients/${patientToDelete.id}`, {
-        method: "DELETE",
+      const response = await fetch(`${API_URL}/patients/${patient.id}/restore`, {
+        method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-
+      const err = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        const detail = typeof err.detail === "string" ? err.detail : "Error al eliminar paciente";
-        throw new Error(detail);
+        throw new Error(typeof err.detail === "string" ? err.detail : "No se pudo recuperar");
       }
-
       toast({
-        title: "Paciente eliminado",
-        description: `${patientToDelete.nombres} ${patientToDelete.apellidos} ha sido eliminado correctamente`,
+        title: "Paciente recuperado",
+        description: `${patient.nombres} ${patient.apellidos} volvió a la lista activa.`,
       });
-
-      fetchPatients();
+      fetchPatients(true);
     } catch (error: any) {
-      console.error("Error deleting patient:", error);
       toast({
         title: "Error",
-        description: error?.message || "No se pudo eliminar el paciente",
+        description: error?.message || "No se pudo recuperar el paciente",
         variant: "destructive",
       });
-    } finally {
-      setDeleteDialogOpen(false);
-      setPatientToDelete(null);
     }
   };
 
@@ -392,31 +424,55 @@ const Patients = () => {
                 <Users className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground">Pacientes</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                  {showTrash ? "Papelera de pacientes" : "Pacientes"}
+                </h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Gestiona fichas, planes, citas e historia clínica
+                  {showTrash
+                    ? "Pacientes eliminados por error. Puedes recuperarlos o eliminarlos definitivamente (autorización del administrador)."
+                    : "Gestiona fichas, planes, citas e historia clínica"}
                   {patients.length > 0 && (
                     <span className="font-medium text-foreground/80"> · {filteredPatients.length} mostrados</span>
                   )}
                 </p>
               </div>
             </div>
-            <Button
-              className="rounded-full shadow-md hover:shadow-lg transition-shadow shrink-0"
-              onClick={() => {
-                setSelectedPatient(null);
-                setNewPatientOpen(true);
-              }}
-              disabled={loading}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo paciente
-            </Button>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <Button
+                variant={showTrash ? "default" : "outline"}
+                className="rounded-full"
+                onClick={() => {
+                  setShowTrash((v) => !v);
+                  setSelectedIds([]);
+                  setStatusFilter(null);
+                  setAttentionFilter(null);
+                }}
+              >
+                <Archive className="mr-2 h-4 w-4" />
+                Papelera
+                {trashCount > 0 && (
+                  <Badge variant="secondary" className="ml-2 rounded-full tabular-nums">
+                    {trashCount}
+                  </Badge>
+                )}
+              </Button>
+              <Button
+                className="rounded-full shadow-md hover:shadow-lg transition-shadow"
+                onClick={() => {
+                  setSelectedPatient(null);
+                  setNewPatientOpen(true);
+                }}
+                disabled={loading || showTrash}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Nuevo paciente
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Stats */}
-        {!loading && patients.length > 0 && (
+        {/* Stats (solo lista activa) */}
+        {!loading && !showTrash && patients.length > 0 && (
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
@@ -505,21 +561,24 @@ const Patients = () => {
                     </button>
                   )}
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="gap-2 h-11 rounded-xl shrink-0" disabled={loading}>
-                      <Filter className="h-4 w-4" />
-                      {statusFilter ? `Estado: ${statusFilter}` : "Filtros"}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[160px]">
-                    <DropdownMenuItem onClick={() => setStatusFilter(null)}>Todos</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setStatusFilter("activo")}>Activos</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setStatusFilter("pendiente")}>Pendientes</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setStatusFilter("inactivo")}>Inactivos</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {!showTrash && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="gap-2 h-11 rounded-xl shrink-0" disabled={loading}>
+                        <Filter className="h-4 w-4" />
+                        {statusFilter ? `Estado: ${statusFilter}` : "Filtros"}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[160px]">
+                      <DropdownMenuItem onClick={() => setStatusFilter(null)}>Todos</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setStatusFilter("activo")}>Activos</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setStatusFilter("pendiente")}>Pendientes</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setStatusFilter("inactivo")}>Inactivos</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
+              {!showTrash && (
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -544,6 +603,7 @@ const Patients = () => {
                   Sin plan ({withoutPlanCount})
                 </Button>
               </div>
+              )}
               {(searchQuery || statusFilter || attentionFilter) && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-muted-foreground">Filtros activos:</span>
@@ -589,7 +649,7 @@ const Patients = () => {
           </CardContent>
         </Card>
 
-        {selectedIds.length > 0 && (
+        {selectedIds.length > 0 && !showTrash && (
           <Card className="rounded-2xl border-primary/25 bg-primary/5 shadow-sm">
             <CardContent className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -614,6 +674,23 @@ const Patients = () => {
                   <ClipboardList className="h-3.5 w-3.5 mr-1" />
                   Asignar menú
                 </Button>
+                {isSuperadmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-full h-8"
+                    onClick={() => {
+                      const selected = patients.filter((p) =>
+                        selectedIds.includes(p.id)
+                      );
+                      setTransferPatients(selected);
+                      setTransferOpen(true);
+                    }}
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5 mr-1" />
+                    Transferir
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -657,9 +734,8 @@ const Patients = () => {
         )}
 
         {/* Patients grid o Loader */}
-        {loading ? (
-          <LoadingScreen message="Cargando pacientes" />
-        ) : filteredPatients.length === 0 ? (
+        <LoadingGate loading={loading} message="Cargando pacientes">
+        {filteredPatients.length === 0 ? (
           <Card className="rounded-2xl border-dashed border-border/80 shadow-sm overflow-hidden">
             <div className="h-1.5 w-full bg-gradient-to-r from-primary/50 via-primary/20 to-transparent" />
             <CardContent className="text-center py-16 px-6">
@@ -667,16 +743,42 @@ const Patients = () => {
                 <Users className="h-8 w-8 text-primary" />
               </div>
               <h3 className="text-lg font-semibold text-foreground mb-2">
-                {searchQuery || statusFilter || attentionFilter
-                  ? "No se encontraron pacientes"
-                  : "Aún no tienes pacientes"}
+                {showTrash
+                  ? searchQuery
+                    ? "No se encontraron pacientes en la papelera"
+                    : "La papelera está vacía"
+                  : searchQuery || statusFilter || attentionFilter
+                    ? "No se encontraron pacientes"
+                    : "Aún no tienes pacientes"}
               </h3>
               <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
-                {searchQuery || statusFilter || attentionFilter
-                  ? "Prueba otro término o limpia los filtros activos."
-                  : "Crea el primero para gestionar menús, citas y seguimiento nutricional."}
+                {showTrash
+                  ? searchQuery
+                    ? "Prueba otro término de búsqueda."
+                    : "Los pacientes que muevas a la papelera aparecerán aquí para recuperarlos o eliminarlos definitivamente."
+                  : searchQuery || statusFilter || attentionFilter
+                    ? "Prueba otro término o limpia los filtros activos."
+                    : "Crea el primero para gestionar menús, citas y seguimiento nutricional."}
               </p>
-              {!searchQuery && !statusFilter && !attentionFilter ? (
+              {showTrash ? (
+                searchQuery ? (
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    Limpiar búsqueda
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => setShowTrash(false)}
+                  >
+                    Volver a pacientes
+                  </Button>
+                )
+              ) : !searchQuery && !statusFilter && !attentionFilter ? (
                 <Button
                   className="rounded-full shadow-md"
                   onClick={() => {
@@ -757,6 +859,25 @@ const Patients = () => {
                             <span className="text-xs text-muted-foreground">
                               {patient.edad_formateada || "Edad N/D"}
                             </span>
+                            {isSuperadmin && (
+                              <Badge
+                                variant="secondary"
+                                className="rounded-full text-[10px] px-2 py-0 max-w-[140px] truncate"
+                                title={patient.nutritionist_name || "Sin nutricionista"}
+                              >
+                                {patient.nutritionist_name || "Sin nutri"}
+                              </Badge>
+                            )}
+                            {patient.organization?.benefit_label && (
+                              <Badge
+                                variant="outline"
+                                className="rounded-full text-[10px] px-2 py-0 max-w-[160px] truncate border-amber-500/30 text-amber-700 dark:text-amber-300 gap-0.5"
+                                title={`${patient.organization.name}: ${patient.organization.benefit_label}`}
+                              >
+                                <Gift className="h-3 w-3" />
+                                {patient.organization.benefit_label}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -772,6 +893,27 @@ const Patients = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-56 rounded-xl">
+                            {showTrash ? (
+                              <>
+                                <DropdownMenuItem onClick={() => handlePatientClick(patient)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Ver ficha
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={(e) => handleRestore(patient, e)}>
+                                  <RotateCcw className="mr-2 h-4 w-4" />
+                                  Recuperar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => handlePermanentDeleteClick(patient, e)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Eliminar definitivamente
+                                </DropdownMenuItem>
+                              </>
+                            ) : (
+                              <>
                             <DropdownMenuItem onClick={() => handlePatientClick(patient)}>
                               <Eye className="mr-2 h-4 w-4" />
                               Ver detalles
@@ -780,6 +922,18 @@ const Patients = () => {
                               <Edit className="mr-2 h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
+                            {isSuperadmin && !showTrash && (
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTransferPatients([patient]);
+                                  setTransferOpen(true);
+                                }}
+                              >
+                                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                                Transferir nutricionista
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem onClick={() => handleSchedule(patient)}>
                               <Calendar className="mr-2 h-4 w-4" />
                               Agendar cita
@@ -826,13 +980,15 @@ const Patients = () => {
                               Mensajes
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteClick(patient)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar
-                            </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteClick(patient)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Mover a papelera
+                              </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -899,9 +1055,32 @@ const Patients = () => {
                     </div>
 
                     <div
-                      className="grid grid-cols-3 gap-2 pt-1"
+                      className={`grid gap-2 pt-1 ${showTrash ? "grid-cols-2" : "grid-cols-3"}`}
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {showTrash ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-full h-8 text-xs"
+                            onClick={(e) => handleRestore(patient, e)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                            Recuperar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="rounded-full h-8 text-xs"
+                            onClick={(e) => handlePermanentDeleteClick(patient, e)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                            Eliminar
+                          </Button>
+                        </>
+                      ) : (
+                        <>
                       <Button
                         size="sm"
                         variant="outline"
@@ -929,6 +1108,8 @@ const Patients = () => {
                         <Plus className="h-3.5 w-3.5 mr-1" />
                         Nuevo
                       </Button>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -936,6 +1117,7 @@ const Patients = () => {
             })}
           </div>
         )}
+        </LoadingGate>
       </div>
 
       {/* Dialogs */}
@@ -986,6 +1168,7 @@ const Patients = () => {
             onEdit={() => handleEdit(selectedPatient)}
             onClinicalHistory={() => handleGenerateReport(selectedPatient)}
             onViewPlans={() => handleViewPlans(selectedPatient)}
+            inTrash={showTrash}
           />
 
 
@@ -1046,30 +1229,33 @@ const Patients = () => {
         }}
       />
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="rounded-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar paciente?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente a{" "}
-              <span className="font-semibold">
-                {patientToDelete?.nombres} {patientToDelete?.apellidos}
-              </span>{" "}
-              y todos sus datos asociados (métricas, citas, planes).
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-full">Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              className="rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Doble confirmación: papelera o eliminación definitiva */}
+      <DeletePatientDialog
+        patient={patientToDelete}
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setPatientToDelete(null);
+            setPermanentDeleteOpen(false);
+          }
+        }}
+        permanent={permanentDeleteOpen}
+        onSuccess={() => fetchPatients(showTrash)}
+      />
+
+      <TransferPatientDialog
+        open={transferOpen}
+        onOpenChange={(open) => {
+          setTransferOpen(open);
+          if (!open) setTransferPatients([]);
+        }}
+        patients={transferPatients}
+        onSuccess={() => {
+          setSelectedIds([]);
+          fetchPatients(showTrash);
+        }}
+      />
     </AdminLayout>
   );
 };

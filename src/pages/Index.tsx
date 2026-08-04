@@ -1,10 +1,12 @@
 import { AdminLayout } from "@/layouts/AdminLayout";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { LoadingGate } from "@/components/LoadingGate";
 import { StatsCard } from "@/components/admin/StatsCard";
 import { useAuth } from "@/hooks/useAuth";
 import { RecentPatients } from "@/components/admin/RecentPatients";
 import { UpcomingAppointments } from "@/components/admin/UpcomingAppointments";
 import { NutritionChart } from "@/components/admin/NutritionChart";
+import { WorkQueuePanel, type WorkQueueData } from "@/components/admin/WorkQueuePanel";
+import { AtRiskPatientsWidget } from "@/components/admin/AtRiskPatientsWidget";
 import { Users, Calendar, TrendingUp, CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -69,25 +71,37 @@ const Index = () => {
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
   const [topPatients, setTopPatients] = useState<any[]>([]);
+  const [workQueue, setWorkQueue] = useState<WorkQueueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        console.log('🔄 Iniciando fetch de datos del dashboard...');
         const token = localStorage.getItem("userToken");
         const headers = {
           "Content-Type": "application/json",
           ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         };
 
+        const permsRes = await fetch(`${API_URL}/admin/me/permissions`, { headers });
+        if (permsRes.ok) {
+          const perms = await permsRes.json();
+          if (perms.staff_role === "org_admin") {
+            navigate("/eps", { replace: true });
+            return;
+          }
+        }
+
+        console.log('🔄 Iniciando fetch de datos del dashboard...');
+
         // Fetch stats, pacientes, citas y top progress en paralelo
-        const [statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse] = await Promise.all([
+        const [statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse, workQueueResponse] = await Promise.all([
           fetch(`${API_URL}/dashboard/stats`, { headers }),
           fetch(`${API_URL}/dashboard/recent-patients?limit=5`, { headers }),
           fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`, { headers }),
-          fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`, { headers })
+          fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`, { headers }),
+          fetch(`${API_URL}/nutritionist/work-queue`, { headers }),
         ]);
 
         console.log('📊 Stats response status:', statsResponse.status);
@@ -108,11 +122,12 @@ const Index = () => {
           throw new Error(`Error al cargar top pacientes: ${topPatientsResponse.status}`);
         }
 
-        const [statsData, patientsData, appointmentsData, topPatientsData] = await Promise.all([
+        const [statsData, patientsData, appointmentsData, topPatientsData, workQueueData] = await Promise.all([
           statsResponse.json(),
           patientsResponse.json(),
           appointmentsResponse.json(),
-          topPatientsResponse.json()
+          topPatientsResponse.json(),
+          workQueueResponse.ok ? workQueueResponse.json() : null,
         ]);
 
         console.log('✅ Stats data:', statsData);
@@ -124,6 +139,7 @@ const Index = () => {
         setRecentPatients(patientsData);
         setUpcomingAppointments(appointmentsData);
         setTopPatients(topPatientsData);
+        setWorkQueue(workQueueData);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Error desconocido";
         console.error('❌ Error fetching dashboard data:', errorMessage);
@@ -150,21 +166,24 @@ const Index = () => {
       fetch(`${API_URL}/dashboard/recent-patients?limit=5`, { headers }),
       fetch(`${API_URL}/dashboard/upcoming-appointments?limit=5`, { headers }),
       fetch(`${API_URL}/dashboard/top-patients-progress?limit=3`, { headers }),
+      fetch(`${API_URL}/nutritionist/work-queue`, { headers }),
     ])
-      .then(async ([statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse]) => {
+      .then(async ([statsResponse, patientsResponse, appointmentsResponse, topPatientsResponse, workQueueResponse]) => {
         if (!statsResponse.ok || !patientsResponse.ok || !appointmentsResponse.ok || !topPatientsResponse.ok) {
           throw new Error("Error al refrescar el dashboard");
         }
-        const [statsData, patientsData, appointmentsData, topPatientsData] = await Promise.all([
+        const [statsData, patientsData, appointmentsData, topPatientsData, workQueueData] = await Promise.all([
           statsResponse.json(),
           patientsResponse.json(),
           appointmentsResponse.json(),
           topPatientsResponse.json(),
+          workQueueResponse.ok ? workQueueResponse.json() : null,
         ]);
         setStats(statsData);
         setRecentPatients(patientsData);
         setUpcomingAppointments(appointmentsData);
         setTopPatients(topPatientsData);
+        setWorkQueue(workQueueData);
       })
       .catch((err) => {
         const errorMessage = err instanceof Error ? err.message : "Error desconocido";
@@ -183,43 +202,28 @@ const Index = () => {
     console.log('  - Top patients count:', topPatients.length);
   }, [loading, error, stats, recentPatients, upcomingAppointments, topPatients]);
 
-  // Mostrar estado de carga
-  if (loading) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <LoadingScreen message="Cargando dashboard" />
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  // Mostrar error si existe
-  if (error) {
-    return (
-      <AdminLayout>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="max-w-md w-full rounded-2xl border border-destructive/20 bg-card p-8 text-center shadow-card">
-            <p className="text-destructive font-semibold mb-2">Error al cargar el dashboard</p>
-            <p className="text-sm text-muted-foreground mb-5">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="rounded-full px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-            >
-              Reintentar
-            </button>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
+  // Mostrar error si existe (después de la animación de carga)
   const firstName =
     (user?.name || user?.email || "Nutricionista").split(" ")[0] || "Nutricionista";
   const todayLabel = todayLabelColombia();
 
   return (
     <AdminLayout>
+      <LoadingGate loading={loading} message="Cargando dashboard" className="min-h-[50vh]">
+        {error ? (
+          <div className="flex items-center justify-center min-h-[50vh]">
+            <div className="max-w-md w-full rounded-2xl border border-destructive/20 bg-card p-8 text-center shadow-card">
+              <p className="text-destructive font-semibold mb-2">Error al cargar el dashboard</p>
+              <p className="text-sm text-muted-foreground mb-5">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="rounded-full px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        ) : (
       <div className="space-y-7">
         {/* Hero header */}
         <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.07] p-6 shadow-card animate-fade-in">
@@ -251,6 +255,14 @@ const Index = () => {
                   {stats?.progress.average ?? 0}%
                 </p>
               </div>
+              {(workQueue?.summary.patients_at_risk ?? 0) > 0 && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[10px] uppercase tracking-wide text-destructive/80">En riesgo</p>
+                  <p className="text-lg font-bold tabular-nums text-destructive">
+                    {workQueue?.summary.patients_at_risk}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -300,6 +312,12 @@ const Index = () => {
             style={{ animationDelay: "160ms" }}
             onClick={() => navigate("/progress")}
           />
+        </div>
+
+        {/* Cola de trabajo + pacientes en riesgo */}
+        <div className="grid gap-6 lg:grid-cols-2 animate-fade-in" style={{ animationDelay: "200ms" }}>
+          <WorkQueuePanel data={workQueue} compact maxItems={6} />
+          <AtRiskPatientsWidget data={workQueue} limit={5} />
         </div>
 
         {/* Main content grid */}
@@ -437,6 +455,8 @@ const Index = () => {
           <RecentPatients patients={recentPatients} loading={false} onRefresh={refreshDashboard} />
         </div>
       </div>
+        )}
+      </LoadingGate>
     </AdminLayout>
   );
 };

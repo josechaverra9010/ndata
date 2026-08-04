@@ -1,11 +1,15 @@
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AddMeetingLinkDialog } from "@/components/admin/AddMeetingLinkDialog";
-import { Video, AlertCircle, X } from "lucide-react";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_URL } from "@/config/api";
-import axios from "axios";
+import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
+import { usePlatformAnalytics } from "@/hooks/usePlatformAnalytics";
+import { useOrgBranding } from "@/hooks/useOrgBranding";
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -22,9 +26,28 @@ interface UpcomingAppointment {
 }
 
 export function AdminLayout({ children }: AdminLayoutProps) {
+  const location = useLocation();
+  const prevPathRef = useRef(location.pathname);
+  const isFirstRouteRef = useRef(true);
+  const [routeTransition, setRouteTransition] = useState(false);
   const [promptAppointment, setPromptAppointment] = useState<UpcomingAppointment | null>(null);
   const [showBanner, setShowBanner] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  usePlatformAnalytics(true);
+  useOrgBranding();
+
+  useEffect(() => {
+    if (isFirstRouteRef.current) {
+      isFirstRouteRef.current = false;
+      prevPathRef.current = location.pathname;
+      return;
+    }
+    if (location.pathname !== prevPathRef.current) {
+      prevPathRef.current = location.pathname;
+      setRouteTransition(true);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     checkUpcomingAppointments();
@@ -36,10 +59,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const checkUpcomingAppointments = async () => {
     try {
       const token = localStorage.getItem("userToken");
-      const response = await axios.get(`${API_URL}/dashboard/upcoming-appointments`, {
+      const response = await fetch(`${API_URL}/dashboard/upcoming-appointments`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const appointments: UpcomingAppointment[] = response.data;
+      if (!response.ok) return;
+      const appointments: UpcomingAppointment[] = await response.json();
 
       const now = new Date();
 
@@ -67,13 +91,21 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       } else {
         setShowBanner(false);
       }
-    } catch (error) {
-      console.error("Error checking appointments for meeting link:", error);
+    } catch {
+      // Backend offline or network error — ignore silently
     }
   };
 
   return (
     <div className="min-h-screen bg-background">
+      <ImpersonationBanner />
+      {routeTransition && (
+        <LoadingScreen
+          fullscreen
+          message="Cargando módulo"
+          onAnimationComplete={() => setRouteTransition(false)}
+        />
+      )}
       <AdminSidebar />
       <div className="lg:ml-64">
         <AdminHeader />

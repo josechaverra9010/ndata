@@ -26,6 +26,7 @@ import { formatInColombia } from "@/lib/timezone";
 
 interface ArticleCard {
   id: number;
+  slug?: string | null;
   title: string;
   excerpt: string;
   category: string;
@@ -35,9 +36,21 @@ interface ArticleCard {
   published_at?: string | null;
 }
 
+interface ArticleCategory {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+function articlePath(article: ArticleCard): string {
+  if (article.slug) return `/article/${article.slug}`;
+  return `/article/${article.id}`;
+}
+
 export default function Articles() {
   const { theme, setTheme } = useTheme();
   const [articles, setArticles] = useState<ArticleCard[]>([]);
+  const [apiCategories, setApiCategories] = useState<ArticleCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("Todas");
@@ -47,10 +60,17 @@ export default function Articles() {
     const load = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_URL}/articles?limit=100`);
-        if (!res.ok) throw new Error("Error cargando artículos");
-        const data = await res.json();
+        const [articlesRes, catsRes] = await Promise.all([
+          fetch(`${API_URL}/articles?limit=100`),
+          fetch(`${API_URL}/articles/categories`),
+        ]);
+        if (!articlesRes.ok) throw new Error("Error cargando artículos");
+        const data = await articlesRes.json();
         if (!cancelled) setArticles(Array.isArray(data) ? data : []);
+        if (catsRes.ok) {
+          const cats = await catsRes.json();
+          if (!cancelled) setApiCategories(Array.isArray(cats) ? cats : []);
+        }
       } catch (err) {
         console.error(err);
         if (!cancelled) setArticles([]);
@@ -65,9 +85,12 @@ export default function Articles() {
   }, []);
 
   const categories = useMemo(() => {
+    if (apiCategories.length) {
+      return ["Todas", ...apiCategories.map((c) => c.name)];
+    }
     const set = new Set(articles.map((a) => a.category).filter(Boolean));
     return ["Todas", ...Array.from(set).sort((a, b) => a.localeCompare(b, "es"))];
-  }, [articles]);
+  }, [articles, apiCategories]);
 
   const filteredArticles = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -245,7 +268,7 @@ export default function Articles() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
               {filteredArticles.map((article) => (
-                <Link key={article.id} to={`/article/${article.id}`}>
+                <Link key={article.id} to={articlePath(article)}>
                   <Card className="group overflow-hidden border-border/60 hover:border-primary/25 transition-all hover:shadow-xl h-full cursor-pointer rounded-2xl">
                     <div className="aspect-video overflow-hidden relative">
                       <img

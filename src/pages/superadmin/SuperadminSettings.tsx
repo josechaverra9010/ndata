@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { API_URL } from "@/config/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SuperadminConfigTabs } from "@/components/superadmin/SuperadminConfigTabs";
 
 const DEFAULT_HERO =
   "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=2000&q=80";
@@ -77,7 +78,10 @@ export default function SuperadminSettings() {
 
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/superadmin/settings/${userId}`);
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/superadmin/settings/${userId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
       if (!response.ok) {
         throw new Error("Error al cargar configuraci?n");
@@ -227,8 +231,13 @@ export default function SuperadminSettings() {
       setSaving(true);
       const response = await fetch(`${API_URL}/superadmin/settings/${userId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings)
+        headers: {
+          "Content-Type": "application/json",
+          ...(localStorage.getItem("userToken")
+            ? { Authorization: `Bearer ${localStorage.getItem("userToken")}` }
+            : {}),
+        },
+        body: JSON.stringify(settings),
       });
 
       const data = await response.json();
@@ -258,12 +267,14 @@ export default function SuperadminSettings() {
 
   return (
     <SuperadminLayout>
-      <div className="space-y-6 max-w-4xl">
+      <div className="space-y-6 max-w-5xl">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Configuraci?n del Sistema</h1>
-          <p className="text-muted-foreground">Ajustes globales de la plataforma</p>
+          <h1 className="text-3xl font-bold text-foreground">Configuración del Sistema</h1>
+          <p className="text-muted-foreground">Feature flags, variables, mantenimiento y ajustes globales</p>
         </div>
+
+        <SuperadminConfigTabs />
 
         {/* Profile Photo */}
         <Card className="border-border bg-card">
@@ -480,7 +491,9 @@ export default function SuperadminSettings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-foreground">Modo Mantenimiento</p>
-                <p className="text-sm text-muted-foreground">Bloquear acceso excepto a superadmins</p>
+                <p className="text-sm text-muted-foreground">
+                  También configurable en la pestaña Mantenimiento (con mensaje personalizado)
+                </p>
               </div>
               <Switch
                 checked={settings.maintenanceMode}
@@ -529,22 +542,18 @@ export default function SuperadminSettings() {
           </CardContent>
         </Card>
 
-        {/* Danger Zone */}
-        <Card className="border-destructive/50 bg-card">
+        {/* Danger Zone — backup en pestaña Backup */}
+        <Card className="border-muted bg-card">
           <CardHeader>
-            <CardTitle className="text-destructive flex items-center gap-2">
+            <CardTitle className="text-muted-foreground flex items-center gap-2 text-base">
               <Lock className="h-5 w-5" />
-              Zona de Peligro
+              Respaldo
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-4 rounded-lg bg-destructive/10">
-              <div>
-                <p className="font-medium text-foreground">Restablecer Sistema</p>
-                <p className="text-sm text-muted-foreground">Eliminar todos los datos y configuraciones</p>
-              </div>
-              <Button variant="destructive">Restablecer</Button>
-            </div>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Usa la pestaña <strong>Backup</strong> arriba para exportar o restaurar la configuración completa.
+            </p>
           </CardContent>
         </Card>
 

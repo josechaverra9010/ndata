@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { API_URL } from "@/config/api";
 import { MEAL_SCHEDULE } from "@/config/mealSchedule";
 import { AdminLayout } from "@/layouts/AdminLayout";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { LoadingGate } from "@/components/LoadingGate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -579,17 +579,10 @@ const AdminWeeklyMenus = () => {
     // Calcular totales en tiempo real
     const currentTotals = calculateWeekTotals(currentWeek);
 
-    if (loading) {
-        return (
-            <AdminLayout>
-                <LoadingScreen message="Cargando menús semanales" />
-            </AdminLayout>
-        );
-    }
-
     if (error) {
         return (
             <AdminLayout>
+                <LoadingGate loading={loading} message="Cargando menús semanales">
                 <Card className="rounded-2xl border-destructive/30 shadow-sm overflow-hidden max-w-lg mx-auto mt-8">
                     <div className="h-1.5 w-full bg-destructive/80" />
                     <CardContent className="p-6 text-center space-y-4">
@@ -619,12 +612,14 @@ const AdminWeeklyMenus = () => {
                         </Button>
                     </CardContent>
                 </Card>
+                </LoadingGate>
             </AdminLayout>
         );
     }
 
     return (
         <AdminLayout>
+            <LoadingGate loading={loading} message="Cargando menús semanales">
             <div className="space-y-6">
                 {/* Header */}
                 <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-violet-500/5 p-5 sm:p-6">
@@ -918,7 +913,7 @@ const AdminWeeklyMenus = () => {
                                                             }}
                                                         >
                                                             <Users className="h-4 w-4 mr-2" />
-                                                            Asignar a pacientes
+                                                            Asignación masiva (cohorte)
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             className="text-destructive focus:text-destructive"
@@ -1743,6 +1738,7 @@ const AdminWeeklyMenus = () => {
                     onSuccess={() => fetchWeeklyMenus()}
                 />
             </div>
+            </LoadingGate>
         </AdminLayout>
     );
 };

@@ -27,22 +27,71 @@ import {
 } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, CheckCircle2, Calculator, ClipboardList, FileText, Utensils, Flame, Clock, AlertCircle, PieChart } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  Calculator,
+  ClipboardList,
+  FileText,
+  Utensils,
+  Flame,
+  AlertCircle,
+  PieChart,
+  Activity,
+  Plus,
+  Trash2,
+  User,
+  Baby,
+  Heart,
+  Users,
+  Hospital,
+  Accessibility,
+  Dumbbell,
+  Sparkles,
+  ArrowRight,
+  type LucideIcon,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEMENTOS_GRUPO, getCompositionRowForIngredient, getFoodNutrientsForGroup, getPediatriaRienTargets, getAtalahClass, getTrimestreFromSemana, getGestanteExtraKcal, getGestanteExpectedGainKg, getGestanteDebioGanar, getGestanteRienTargets, getGestAdolesZClass, getGestAdolesExpectedGainKg, getGestAdolesExtraKcal, getGestAdolesDailyGainG, getGestAdolesBaseReq } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEMENTOS_GRUPO, SUPLEMENTO_EXTRA_PREFIX, makeSuplementoExtraKey, isSuplementoGrupoKey, listSuplementoKeys, getCompositionRowForIngredient, getFoodNutrientsForGroup, getPediatriaRienTargets, getAtalahClass, getTrimestreFromSemana, getGestanteExtraKcal, getGestanteExpectedGainKg, getGestanteDebioGanar, getGestanteRienTargets, getGestAdolesZClass, getGestAdolesExpectedGainKg, getGestAdolesExtraKcal, getGestAdolesDailyGainG, getGestAdolesBaseReq } from "@/lib/foodNutrients";
+import {
+  MIPRESS_CATEGORIAS,
+  MIPRESS_SUPLEMENTOS,
+  getMipressSuplementoById,
+} from "@/lib/mipressSuplementos";
 import { todayInColombiaISO, addDaysColombiaISO } from "@/lib/timezone";
+import { PediatricGrowthPanel } from "@/components/pediatria/PediatricGrowthPanel";
 
 const isGestanteTipo = (tipo?: string) => tipo === "gestante" || tipo === "gestante_adolescente";
 const isGestAdoles = (tipo?: string) => tipo === "gestante_adolescente";
 const isHospitalizado = (tipo?: string) => tipo === "hospitalizado";
+const isGeriatrico = (tipo?: string) => tipo === "geriatrico";
 
 /** Factores de actividad hospitalaria (EVANUT Hospitalizado) */
 const HOSP_ACTIVIDAD_PRESETS: { value: string; label: string; factor: string }[] = [
   { value: "coma", label: "Inconsciente / Coma (1.0)", factor: "1.0" },
   { value: "cama", label: "En cama (1.15 mid 1.1–1.2)", factor: "1.15" },
   { value: "ambulatorio", label: "Ambulatorio (1.3)", factor: "1.3" },
+];
+
+/** Factores de actividad física para adulto mayor (PAL FAO/OMS geriátrico) */
+const GER_ACTIVIDAD_PRESETS: { value: string; label: string; factor: string }[] = [
+  { value: "reposo", label: "Reposo / encamado (1.2)", factor: "1.2" },
+  { value: "sedentario", label: "Sedentario (1.4)", factor: "1.4" },
+  { value: "ligera", label: "Actividad ligera (1.5)", factor: "1.5" },
+  { value: "moderada", label: "Moderadamente activo (1.7)", factor: "1.7" },
+];
+
+/** Factores de estrés frecuentes en el adulto mayor */
+const GER_ESTRES_PRESETS: { value: string; label: string; factor: string }[] = [
+  { value: "ninguno", label: "Ninguno / basal (1.0)", factor: "1.0" },
+  { value: "infeccion_leve", label: "Infección / enfermedad leve (1.2)", factor: "1.2" },
+  { value: "ulcera_presion", label: "Úlceras por presión (1.2)", factor: "1.2" },
+  { value: "fractura", label: "Fractura (1.2)", factor: "1.2" },
+  { value: "repleccion", label: "Repleción / sarcopenia (1.3)", factor: "1.3" },
 ];
 
 /** Factores de estrés (EVANUT Hospitalizado) */
@@ -75,18 +124,20 @@ const PHASES = [
   {
     id: 1,
     title: "REQUERIMIENTO ENERGÉTICO Y PESO SALUDABLE",
-    titleDeportista: "SOMATOTIPO Y COMPOSICIÓN CORPORAL",
+    titleDeportista: "SOMATOTIPO · COMPOSICIÓN CORPORAL",
     titlePediatria: "EVALUACIÓN Y REQUERIMIENTO PEDIÁTRICO",
     titleGestante: "EVALUACIÓN Y REQUERIMIENTO GESTANTE",
     titleGestAdoles: "EVALUACIÓN GESTANTE ADOLESCENTE",
     titleHospitalizado: "REQUERIMIENTO ENERGÉTICO HOSPITALIZADO",
+    titleGeriatrico: "EVALUACIÓN Y REQUERIMIENTO GERIÁTRICO",
     icon: Calculator,
     description: "Calcula las necesidades energéticas, peso saludable y peso ajustado",
-    descriptionDeportista: "Somatotipo Heath-Carter, % grasa Yuhasz, AKS y calorías del plan (EVANUT Deportista)",
+    descriptionDeportista: "Somatotipo Heath-Carter separado de composición corporal (% grasa, 5 componentes, AKS) y kcal",
     descriptionPediatria: "GER FAO/OMS 2005, crecimiento, actividad y catch-up (EVANUT Pediatría)",
     descriptionGestante: "IMC Atalah, ganancia gestacional, TMR × PAL + calorías por trimestre (EVANUT Gestante)",
     descriptionGestAdoles: "Puntaje Z, GET FAO + crecimiento adolescente + extras por trimestre (EVANUT Ges Adoles)",
     descriptionHospitalizado: "TMB × actividad hospitalaria × factor de estrés, Ireton-Jones o kcal/kg + líquidos (EVANUT Hospitalizado)",
+    descriptionGeriatrico: "TMB × factor de actividad × factor de estrés + estimación Chumlea, IMC geriátrico y riesgo de sarcopenia",
   },
   {
     id: 2,
@@ -109,6 +160,7 @@ const PHASES = [
     descriptionGestante: "Grupos EVANUT adultos para gestante",
     descriptionGestAdoles: "Grupos EVANUT adultos para gestante adolescente",
     descriptionHospitalizado: "Grupos EVANUT adultos para paciente hospitalizado",
+    descriptionGeriatrico: "Grupos EVANUT adultos para adulto mayor",
   },
   {
     id: 4,
@@ -120,6 +172,7 @@ const PHASES = [
     descriptionGestante: "Minuta patrón gestante",
     descriptionGestAdoles: "Minuta patrón gestante adolescente",
     descriptionHospitalizado: "Minuta patrón hospitalizado",
+    descriptionGeriatrico: "Minuta patrón para adulto mayor",
   }
 ];
 
@@ -555,11 +608,147 @@ function calculateHospitalizadoEnergia(fd: Record<string, any>) {
   };
 }
 
+/**
+ * Energía y valoración del adulto mayor (geriátrico):
+ * Harris-Benedict / Mifflin / FAO-Schofield → TMB × FA × FE
+ * rango_calorico → peso × kcal/kg (sin factores)
+ * Incluye estimación Chumlea (talla/peso), IMC con puntos de corte
+ * geriátricos (OPS/SENPE) y riesgo de sarcopenia por perímetro de pantorrilla.
+ */
+function calculateGeriatricoEnergia(fd: Record<string, any>) {
+  const formula = fd.formula_requerimiento || "harris_benedict";
+  const genero = String(fd.genero || "").toLowerCase();
+  const edad = parseFloat(fd.edad) || 0;
+  let alturaCm = parseFloat(fd.altura) || 0;
+  const talonRodilla = parseFloat(fd.ger_talon_rodilla_cm) || 0;
+  const perimBrazo = parseFloat(fd.ger_perim_brazo_cm) || 0;
+  const perimPantorrilla = parseFloat(fd.ger_perim_pantorrilla_cm) || 0;
+  const pliegueSub = parseFloat(fd.ger_pliegue_subescapular_mm) || 0;
+  const tallaEstimada = calcChumleaTallaCm(talonRodilla, edad, genero);
+  const pesoEstimado = calcChumleaPesoKg(
+    perimBrazo,
+    perimPantorrilla,
+    talonRodilla,
+    pliegueSub,
+    genero
+  );
+  if (!(alturaCm > 0) && tallaEstimada > 0) alturaCm = tallaEstimada;
+
+  const pesoActual =
+    parseFloat(fd.peso_actual) || (pesoEstimado > 0 ? pesoEstimado : 0);
+  const alturaM = alturaCm > 0 ? alturaCm / 100 : 0;
+  const imc = pesoActual > 0 && alturaM > 0 ? pesoActual / (alturaM * alturaM) : 0;
+
+  // Punto medio del rango normal geriátrico (22–27) → IMC objetivo 24.5
+  const imcObjetivo = 24.5;
+  const pesoSaludable =
+    parseFloat(fd.peso_saludable) || (alturaM > 0 ? imcObjetivo * alturaM * alturaM : 0);
+  const pesoAjustado =
+    parseFloat(fd.peso_ajustado) ||
+    (pesoActual > 0 && pesoSaludable > 0
+      ? (pesoActual - pesoSaludable) * 0.25 + pesoSaludable
+      : 0);
+
+  // Clasificación IMC adulto mayor (OPS/SENPE)
+  let clasificacionImc = "";
+  if (imc > 0) {
+    if (imc < 22) clasificacionImc = "Bajo peso · riesgo de desnutrición";
+    else if (imc <= 27) clasificacionImc = "Adecuado para adulto mayor";
+    else clasificacionImc = "Sobrepeso / obesidad";
+  }
+
+  // Riesgo de sarcopenia por perímetro de pantorrilla (< 31 cm)
+  let riesgoSarcopenia = "";
+  if (perimPantorrilla > 0) {
+    riesgoSarcopenia =
+      perimPantorrilla < 31
+        ? "Riesgo de sarcopenia (pantorrilla < 31 cm)"
+        : "Sin riesgo por perímetro de pantorrilla";
+  }
+
+  // Peso de referencia: bajo peso → actual (repleción); sobrepeso → ajustado
+  let reglaPeso = "";
+  let pesoRefSugerido = 0;
+  if (imc > 0 && imc < 22 && pesoActual > 0) {
+    pesoRefSugerido = pesoActual;
+    reglaPeso = "Bajo peso → peso actual (repleción)";
+  } else if (imc > 27 && pesoAjustado > 0) {
+    pesoRefSugerido = pesoAjustado;
+    reglaPeso = "Sobrepeso → peso ajustado";
+  } else if (pesoActual > 0) {
+    pesoRefSugerido = pesoActual;
+    reglaPeso = "Peso actual";
+  } else if (pesoSaludable > 0) {
+    pesoRefSugerido = pesoSaludable;
+    reglaPeso = "Peso saludable";
+  }
+
+  const pesoRef =
+    parseFloat(fd.peso_referencia_f2) ||
+    parseFloat(fd.peso_objetivo) ||
+    pesoRefSugerido ||
+    pesoActual;
+
+  const fa = parseFloat(fd.ger_factor_actividad) || parseFloat(fd.factor_actividad) || 1.3;
+  const fe = parseFloat(fd.ger_factor_estres) || 1.0;
+  const kcalKg = parseFloat(fd.rango_kcal_kg) || 0;
+  const liquidosCcKg = parseFloat(fd.ger_liquidos_cc_kg) || 30;
+  const liquidosMl = pesoRef > 0 && liquidosCcKg > 0 ? pesoRef * liquidosCcKg : 0;
+
+  let tmb = 0;
+  let reqBase = 0;
+  let metodoLabel = "Harris-Benedict × FA × FE";
+  let usesFactors = true;
+
+  if (formula === "rango_calorico") {
+    metodoLabel = "Método del pulgar (kcal/kg)";
+    reqBase = pesoRef > 0 && kcalKg > 0 ? pesoRef * kcalKg : 0;
+    usesFactors = false;
+  } else if (formula === "mifflin") {
+    metodoLabel = "Mifflin-St Jeor × FA × FE";
+    tmb = calcTmbMifflin(pesoRef, alturaCm, edad, genero);
+    reqBase = tmb > 0 ? tmb * fa * fe : 0;
+  } else if (formula === "schofield") {
+    metodoLabel = "FAO/Schofield × FA × FE";
+    tmb = calcTmbSchofield(pesoRef, edad, genero);
+    reqBase = tmb > 0 ? tmb * fa * fe : 0;
+  } else {
+    metodoLabel = "Harris-Benedict × FA × FE";
+    tmb = calcTmbHarrisBenedict(pesoRef, alturaCm, edad, genero);
+    reqBase = tmb > 0 ? tmb * fa * fe : 0;
+  }
+
+  const requerimientoFinal = applyAjusteCalorias(reqBase, fd);
+
+  return {
+    formula,
+    metodoLabel,
+    pesoRef,
+    pesoSaludable,
+    pesoAjustado,
+    imc,
+    clasificacionImc,
+    riesgoSarcopenia,
+    alturaCm,
+    tallaEstimada,
+    pesoEstimado,
+    reglaPeso,
+    tmb,
+    fa,
+    fe,
+    reqBase,
+    requerimientoFinal,
+    liquidosCcKg,
+    liquidosMl,
+    usesFactors,
+  };
+}
+
 function buildGruposAlimentos(tipoPlan: string) {
   return getEvanutGruposForTipo(tipoPlan).reduce((acc, grupo) => {
     acc[grupo] = {
       ...emptyGrupoNutrients(),
-      manual: grupo === SUPLEMENTOS_GRUPO,
+      manual: isSuplementoGrupoKey(grupo),
     };
     return acc;
   }, {} as Record<string, any>);
@@ -567,14 +756,73 @@ function buildGruposAlimentos(tipoPlan: string) {
 
 const PLAN_WIZARD_DRAFT_KEY = "ndata_plan_wizard_draft";
 
-export const PLAN_TYPES = [
-  { value: "adulto", label: "Adulto" },
-  { value: "pediatria", label: "Pediatría" },
-  { value: "gestante", label: "Gestante" },
-  { value: "gestante_adolescente", label: "Gestante adolescente" },
-  { value: "hospitalizado", label: "Hospitalizado" },
-  { value: "deportista", label: "Deportista" },
-] as const;
+type PlanTypeOption = {
+  value: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  iconClass: string;
+  cardHoverClass: string;
+};
+
+export const PLAN_TYPES: PlanTypeOption[] = [
+  {
+    value: "adulto",
+    label: "Adulto",
+    description: "Evaluación nutricional estándar y plan personalizado",
+    icon: User,
+    iconClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    cardHoverClass: "hover:border-emerald-400/60 hover:bg-emerald-500/[0.04]",
+  },
+  {
+    value: "pediatria",
+    label: "Pediatría",
+    description: "Crecimiento, curvas OMS y requerimientos por edad",
+    icon: Baby,
+    iconClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+    cardHoverClass: "hover:border-sky-400/60 hover:bg-sky-500/[0.04]",
+  },
+  {
+    value: "gestante",
+    label: "Gestante",
+    description: "Ganancia ponderal, trimestres y RIEN gestacional",
+    icon: Heart,
+    iconClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+    cardHoverClass: "hover:border-rose-400/60 hover:bg-rose-500/[0.04]",
+  },
+  {
+    value: "gestante_adolescente",
+    label: "Gestante adolescente",
+    description: "Embarazo en adolescentes con curvas y metas específicas",
+    icon: Users,
+    iconClass: "bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400",
+    cardHoverClass: "hover:border-fuchsia-400/60 hover:bg-fuchsia-500/[0.04]",
+  },
+  {
+    value: "hospitalizado",
+    label: "Hospitalizado",
+    description: "Requerimientos clínicos, estrés y soporte enteral",
+    icon: Hospital,
+    iconClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    cardHoverClass: "hover:border-indigo-400/60 hover:bg-indigo-500/[0.04]",
+  },
+  {
+    value: "geriatrico",
+    label: "Geriátrico",
+    description: "Adulto mayor, fragilidad y ajuste de requerimientos",
+    icon: Accessibility,
+    iconClass: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+    cardHoverClass: "hover:border-amber-400/60 hover:bg-amber-500/[0.04]",
+  },
+  {
+    value: "deportista",
+    label: "Deportista",
+    description: "Composición corporal, AMDR y minuta de alto rendimiento",
+    icon: Dumbbell,
+    iconClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    cardHoverClass: "hover:border-orange-400/60 hover:bg-orange-500/[0.04]",
+  },
+];
 
 function getDefaultFormData() {
   return {
@@ -612,6 +860,16 @@ function getDefaultFormData() {
     hosp_obesidad: "no",
     hosp_trauma: "no",
     hosp_quemadura: "no",
+    // Fase 1 Geriátrico (adulto mayor)
+    ger_factor_actividad: "1.3",
+    ger_actividad_preset: "sedentario",
+    ger_factor_estres: "1.0",
+    ger_estres_preset: "ninguno",
+    ger_liquidos_cc_kg: "30",
+    ger_talon_rodilla_cm: "",
+    ger_perim_brazo_cm: "",
+    ger_perim_pantorrilla_cm: "",
+    ger_pliegue_subescapular_mm: "",
     // Nutrición parenteral hospitalizado (EVANUT)
     pn_peso_kg: "",
     pn_calorias: "",
@@ -693,6 +951,14 @@ function getDefaultFormData() {
     deportista_yuhasz_abdominal: "",
     deportista_yuhasz_muslo_medio: "",
     deportista_pct_grasa_esperado: "",
+    // Ampliación: medidas / métodos de composición
+    deportista_metodo_grasa: "yuhasz",
+    deportista_talla_sentado: "",
+    deportista_altura_rodilla: "",
+    deportista_perim_brazo_relajado: "",
+    deportista_biceps: "",
+    deportista_pecho: "",
+    deportista_edad_composicion: "",
     // Fase 1 Pediatría (EVANUT)
     pediatria_sexo: "femenino",
     pediatria_edad_anos: "",
@@ -709,6 +975,8 @@ function getDefaultFormData() {
     pediatria_perim_brazo_mm: "",
     pediatria_pliegue_tricipital_mm: "",
     pediatria_pliegue_subescapular_mm: "",
+    pediatria_perimetro_cefalico: "",
+    pediatria_fecha_nacimiento: "",
     // Fase 1 Gestante (EVANUT)
     gestante_edad: "",
     gestante_peso_preg: "",
@@ -1022,7 +1290,7 @@ function calculatePediatriaEnergia(fd: Record<string, any>) {
   };
 }
 
-/** Cálculos Fase 1 Deportista según EVANUT 4.1 (hoja Deportista) */
+/** Cálculos Fase 1 Deportista según EVANUT 4.1 (hoja Deportista) + ampliaciones */
 function calculateDeportistaMetrics(fd: Record<string, any>) {
   const triceps = parseFloat(fd.deportista_triceps) || 0;
   const subescapular = parseFloat(fd.deportista_subescapular) || 0;
@@ -1038,6 +1306,17 @@ function calculateDeportistaMetrics(fd: Record<string, any>) {
   const musloMedio = parseFloat(fd.deportista_yuhasz_muslo_medio) || 0;
   const pctEsperado = parseFloat(fd.deportista_pct_grasa_esperado) || 0;
   const isHombre = fd.deportista_yuhasz_sexo !== "femenino";
+  const metodoGrasa = String(fd.deportista_metodo_grasa || "yuhasz");
+  const tallaSentado = parseFloat(fd.deportista_talla_sentado) || 0;
+  const alturaRodilla = parseFloat(fd.deportista_altura_rodilla) || 0;
+  const perimBrazoRelajado = parseFloat(fd.deportista_perim_brazo_relajado) || perimBrazo;
+  const biceps = parseFloat(fd.deportista_biceps) || 0;
+  const pecho = parseFloat(fd.deportista_pecho) || 0;
+  const edadComp =
+    parseFloat(fd.deportista_edad_composicion) ||
+    parseFloat(fd.edad) ||
+    parseFloat(fd.pediatria_edad_anos) ||
+    25;
 
   // Excel: C9 = SUM(C6:C8)
   const sumatoria = triceps + subescapular + supraespinal;
@@ -1080,6 +1359,42 @@ function calculateDeportistaMetrics(fd: Record<string, any>) {
   const coordX = ectomorfia - endomorfia;
   const coordY = 2 * mesomorfia - (ectomorfia + endomorfia);
 
+  // --- Índice córmico ---
+  const indiceCormico = est > 0 && tallaSentado > 0 ? (tallaSentado / est) * 100 : 0;
+  let clasificacionCormico = "";
+  if (indiceCormico > 0) {
+    if (indiceCormico < 51) clasificacionCormico = "Braquicórmico";
+    else if (indiceCormico <= 53) clasificacionCormico = "Metricórmico";
+    else clasificacionCormico = "Longicórmico";
+  }
+
+  // --- Estimación de talla (Chumlea, altura de rodilla cm) ---
+  let tallaEstimada = 0;
+  if (alturaRodilla > 0) {
+    tallaEstimada = isHombre
+      ? 64.19 - 0.04 * edadComp + 2.02 * alturaRodilla
+      : 84.88 - 0.24 * edadComp + 1.83 * alturaRodilla;
+  }
+
+  // --- AB / AMB / AGM (área braquial, muscular y grasa) ---
+  // CB en cm, PCT en mm → Frisancho
+  const cb = perimBrazoRelajado; // cm
+  const pctMm = triceps;
+  let areaBraquial = 0; // AB cm²
+  let areaMuscularBrazo = 0; // AMB cm²
+  let areaGrasaBrazo = 0; // AGM/AGB cm²
+  let perimetroMuscularBrazo = 0;
+  if (cb > 0) {
+    areaBraquial = (cb * cb) / (4 * Math.PI);
+    if (pctMm > 0) {
+      perimetroMuscularBrazo = cb - Math.PI * (pctMm / 10);
+      // Corrección ósea aproximada: −10 ♂ / −6.5 ♀
+      const boneCorr = isHombre ? 10 : 6.5;
+      areaMuscularBrazo = Math.max(0, (perimetroMuscularBrazo * perimetroMuscularBrazo) / (4 * Math.PI) - boneCorr);
+      areaGrasaBrazo = Math.max(0, areaBraquial - areaMuscularBrazo);
+    }
+  }
+
   // Excel: R5 = SUM(C30:C35) pliegues Yuhasz
   const sumYuhasz = triceps + subescapular + supraespinal + plieguePant + abdominal + musloMedio;
   // Excel: C36 hombre (0.1051*R5)+2.585 ; mujer (0.1548*R5)+3.588
@@ -1089,10 +1404,88 @@ function calculateDeportistaMetrics(fd: Record<string, any>) {
         ? 0.1051 * sumYuhasz + 2.585
         : 0.1548 * sumYuhasz + 3.588
       : 0;
-  const pesoGraso = peso > 0 ? (peso * pctGrasaYuhasz) / 100 : 0;
-  const masaLibreGrasa = peso - pesoGraso;
+
+  // --- Durnin & Womersley (4 pliegues) → densidad → Brozek / Siri ---
+  const sumDurnin = triceps + biceps + subescapular + supraespinal;
+  const logDurnin = sumDurnin > 0 ? Math.log10(sumDurnin) : 0;
+  let densidadDurnin = 0;
+  if (logDurnin > 0) {
+    if (isHombre) {
+      if (edadComp < 20) densidadDurnin = 1.1620 - 0.0630 * logDurnin;
+      else if (edadComp < 30) densidadDurnin = 1.1631 - 0.0632 * logDurnin;
+      else if (edadComp < 40) densidadDurnin = 1.1422 - 0.0544 * logDurnin;
+      else if (edadComp < 50) densidadDurnin = 1.1620 - 0.0700 * logDurnin;
+      else densidadDurnin = 1.1715 - 0.0779 * logDurnin;
+    } else {
+      if (edadComp < 20) densidadDurnin = 1.1549 - 0.0678 * logDurnin;
+      else if (edadComp < 30) densidadDurnin = 1.1599 - 0.0717 * logDurnin;
+      else if (edadComp < 40) densidadDurnin = 1.1423 - 0.0632 * logDurnin;
+      else if (edadComp < 50) densidadDurnin = 1.1333 - 0.0612 * logDurnin;
+      else densidadDurnin = 1.1339 - 0.0645 * logDurnin;
+    }
+  }
+  const pctGrasaSiriFromDurnin =
+    densidadDurnin > 0 ? (4.95 / densidadDurnin - 4.5) * 100 : 0;
+  const pctGrasaBrozekFromDurnin =
+    densidadDurnin > 0 ? (4.57 / densidadDurnin - 4.142) * 100 : 0;
+
+  // --- Jackson & Pollock 3 sitios ---
+  // Hombre: pecho + abdominal + muslo | Mujer: tríceps + supraespinal + muslo
+  const sumJackson = isHombre
+    ? pecho + abdominal + musloMedio
+    : triceps + supraespinal + musloMedio;
+  let densidadJackson = 0;
+  if (sumJackson > 0) {
+    if (isHombre) {
+      densidadJackson =
+        1.10938 -
+        0.0008267 * sumJackson +
+        0.0000016 * Math.pow(sumJackson, 2) -
+        0.0002574 * edadComp;
+    } else {
+      densidadJackson =
+        1.0994921 -
+        0.0009929 * sumJackson +
+        0.0000023 * Math.pow(sumJackson, 2) -
+        0.0001392 * edadComp;
+    }
+  }
+  const pctGrasaJackson =
+    densidadJackson > 0 ? (4.95 / densidadJackson - 4.5) * 100 : 0;
+  const pctGrasaJacksonBrozek =
+    densidadJackson > 0 ? (4.57 / densidadJackson - 4.142) * 100 : 0;
+
+  // Método seleccionado
+  let pctGrasaSeleccionado = 0;
+  let densidadSeleccionada = 0;
+  let metodoGrasaLabel = "Yuhasz";
+  if (metodoGrasa === "durnin") {
+    pctGrasaSeleccionado = pctGrasaSiriFromDurnin;
+    densidadSeleccionada = densidadDurnin;
+    metodoGrasaLabel = "Durnin & Womersley";
+  } else if (metodoGrasa === "jackson_pollock") {
+    pctGrasaSeleccionado = pctGrasaJackson;
+    densidadSeleccionada = densidadJackson;
+    metodoGrasaLabel = "Jackson & Pollock";
+  } else if (metodoGrasa === "brozek") {
+    // Brozek: usa densidad Durnin (si hay) o Jackson
+    if (densidadDurnin > 0) {
+      pctGrasaSeleccionado = pctGrasaBrozekFromDurnin;
+      densidadSeleccionada = densidadDurnin;
+    } else {
+      pctGrasaSeleccionado = pctGrasaJacksonBrozek;
+      densidadSeleccionada = densidadJackson;
+    }
+    metodoGrasaLabel = "Brozek";
+  } else {
+    pctGrasaSeleccionado = pctGrasaYuhasz;
+    metodoGrasaLabel = "Yuhasz";
+  }
+
+  const pesoGraso = peso > 0 && pctGrasaSeleccionado > 0 ? (peso * pctGrasaSeleccionado) / 100 : 0;
+  const masaLibreGrasa = peso > 0 ? peso - pesoGraso : 0;
   // Excel: C39 = (C38*100000)/(C11^3)
-  const aks = est > 0 ? (masaLibreGrasa * 100000) / Math.pow(est, 3) : 0;
+  const aks = est > 0 && masaLibreGrasa > 0 ? (masaLibreGrasa * 100000) / Math.pow(est, 3) : 0;
   let clasificacionAks = "";
   if (aks > 0) {
     if (aks < 0.99) clasificacionAks = "Deficiente masa muscular";
@@ -1102,6 +1495,20 @@ function calculateDeportistaMetrics(fd: Record<string, any>) {
   // Excel: C43 = C38/(1-(C42/100))
   const pesoOptimo =
     masaLibreGrasa > 0 && pctEsperado < 100 ? masaLibreGrasa / (1 - pctEsperado / 100) : 0;
+
+  // --- Modelo de 5 componentes (aproximación von Döbeln / Würch) ---
+  const estM = est / 100;
+  const humM = diamHum / 100;
+  const femM = diamFem / 100;
+  let masaOsea = 0;
+  if (estM > 0 && humM > 0 && femM > 0) {
+    // von Döbeln: 3.02 × (H² × T × F × 400)^0.712
+    masaOsea = 3.02 * Math.pow(estM * estM * humM * femM * 400, 0.712);
+  }
+  const masaResidual = peso > 0 ? peso * (isHombre ? 0.241 : 0.209) : 0;
+  const masaMuscular =
+    peso > 0 ? Math.max(0, peso - pesoGraso - masaOsea - masaResidual) : 0;
+  const suma5Componentes = pesoGraso + masaOsea + masaResidual + masaMuscular;
 
   return {
     sumatoria,
@@ -1116,11 +1523,31 @@ function calculateDeportistaMetrics(fd: Record<string, any>) {
     coordY,
     sumYuhasz,
     pctGrasaYuhasz,
+    // retrocompat: pct usado como "principal"
+    pctGrasaSeleccionado,
+    metodoGrasaLabel,
+    densidadSeleccionada,
+    pctGrasaDurnin: pctGrasaSiriFromDurnin,
+    pctGrasaBrozek: pctGrasaBrozekFromDurnin,
+    pctGrasaJackson,
+    sumDurnin,
+    sumJackson,
+    indiceCormico,
+    clasificacionCormico,
+    tallaEstimada,
+    areaBraquial,
+    areaMuscularBrazo,
+    areaGrasaBrazo,
+    perimetroMuscularBrazo,
     pesoGraso,
     masaLibreGrasa,
     aks,
     clasificacionAks,
     pesoOptimo,
+    masaOsea,
+    masaResidual,
+    masaMuscular,
+    suma5Componentes,
   };
 }
 
@@ -1143,6 +1570,10 @@ function mergeFormDataWithDefaults(saved: any): any {
   }
   if (saved.tipo_plan === "hospitalizado") {
     defaultData.grupos_alimentos_f3 = buildGruposAlimentos("hospitalizado");
+    defaultData.formula_requerimiento = "harris_benedict";
+  }
+  if (saved.tipo_plan === "geriatrico") {
+    defaultData.grupos_alimentos_f3 = buildGruposAlimentos("geriatrico");
     defaultData.formula_requerimiento = "harris_benedict";
   }
   const merged = { ...defaultData };
@@ -1198,6 +1629,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         ? (currentPhaseData as any).titleGestante
       : isHospitalizado(formData.tipo_plan) && (currentPhaseData as any).titleHospitalizado
         ? (currentPhaseData as any).titleHospitalizado
+      : isGeriatrico(formData.tipo_plan) && (currentPhaseData as any).titleGeriatrico
+        ? (currentPhaseData as any).titleGeriatrico
       : currentPhaseData.title;
   const phaseDescription = formData.tipo_plan === "deportista" && (currentPhaseData as any).descriptionDeportista
     ? (currentPhaseData as any).descriptionDeportista
@@ -1209,8 +1642,22 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         ? (currentPhaseData as any).descriptionGestante
       : isHospitalizado(formData.tipo_plan) && (currentPhaseData as any).descriptionHospitalizado
         ? (currentPhaseData as any).descriptionHospitalizado
+      : isGeriatrico(formData.tipo_plan) && (currentPhaseData as any).descriptionGeriatrico
+        ? (currentPhaseData as any).descriptionGeriatrico
       : currentPhaseData.description;
-  const gruposFase3 = getEvanutGruposForTipo(formData.tipo_plan);
+  const gruposFase3 = (() => {
+    const base = getEvanutGruposForTipo(formData.tipo_plan);
+    const extras = Object.keys(formData.grupos_alimentos_f3 || {})
+      .filter((k) => k.startsWith(SUPLEMENTO_EXTRA_PREFIX))
+      .sort();
+    if (!extras.length) return base;
+    const out: string[] = [];
+    for (const g of base) {
+      out.push(g);
+      if (g === SUPLEMENTOS_GRUPO) out.push(...extras);
+    }
+    return out;
+  })();
 
   const computeTmbValue = (pesoValue: string, edadValue: string, generoValue: string, alturaValue?: string, formula?: string) => {
     const formulaSel = formula || formData.formula_requerimiento || "schofield";
@@ -1263,6 +1710,34 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         if (overrides.formula_requerimiento == null) merged.formula_requerimiento = "harris_benedict";
       }
       const calc = calculateHospitalizadoEnergia(merged);
+      const adj = withAjusteCaloriasFields(calc.reqBase, merged);
+      const isRango = (merged.formula_requerimiento || "harris_benedict") === "rango_calorico";
+      return {
+        ...merged,
+        ...adj,
+        imc: calc.imc > 0 ? calc.imc.toFixed(2) : merged.imc,
+        peso_saludable: calc.pesoSaludable > 0 ? calc.pesoSaludable.toFixed(2) : merged.peso_saludable,
+        peso_ajustado: calc.pesoAjustado > 0 ? calc.pesoAjustado.toFixed(2) : merged.peso_ajustado,
+        peso_referencia_f2: String(
+          overrides.peso_referencia_f2 ??
+            merged.peso_referencia_f2 ??
+            (calc.pesoRef > 0 ? calc.pesoRef.toFixed(2) : "")
+        ),
+        factor_actividad: String(calc.fa),
+        tmb: calc.tmb > 0 ? calc.tmb.toFixed(2) : isRango ? "" : (adj.requerimiento_base_f1 ? prev.tmb : ""),
+      };
+    });
+  };
+
+  const recalculateGeriatricoRequirement = (overrides: Record<string, any> = {}) => {
+    setFormData((prev: any) => {
+      const merged = { ...prev, ...overrides };
+      if (!merged.formula_requerimiento || merged.formula_requerimiento === "schofield") {
+        if (overrides.formula_requerimiento == null && !merged.formula_requerimiento) {
+          merged.formula_requerimiento = "harris_benedict";
+        }
+      }
+      const calc = calculateGeriatricoEnergia(merged);
       const adj = withAjusteCaloriasFields(calc.reqBase, merged);
       const isRango = (merged.formula_requerimiento || "harris_benedict") === "rango_calorico";
       return {
@@ -1504,6 +1979,97 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     }
   };
 
+  const fetchPatientAndPrefillGeriatrico = async (pid: number) => {
+    setLoadingPatient(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const response = await fetch(`${API_URL}/patients/${pid}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData?.detail || "No se pudo cargar el paciente");
+      }
+      const patient = await response.json();
+
+      const pesoActual = patient?.peso_actual != null ? String(patient.peso_actual) : "";
+      const altura = patient?.altura != null ? String(patient.altura) : "";
+      const genero = patient?.genero ? String(patient.genero).toLowerCase() : "";
+      const edad = computeAgeYears(patient?.fecha_nacimiento);
+      const pesoObjetivo = patient?.peso_objetivo != null ? String(patient.peso_objetivo) : "";
+
+      let imc = "";
+      let pesoSaludable = "";
+      let pesoAjustado = "";
+      const pesoNum = parseFloat(pesoActual);
+      const alturaNum = parseFloat(altura);
+      if (!isNaN(pesoNum) && !isNaN(alturaNum) && alturaNum > 0) {
+        const alturaMetros = alturaNum / 100;
+        const imcVal = pesoNum / (alturaMetros * alturaMetros);
+        imc = imcVal.toFixed(2);
+        // IMC objetivo geriátrico 24.5 (punto medio 22–27)
+        pesoSaludable = (24.5 * alturaMetros * alturaMetros).toFixed(2);
+        pesoAjustado = (
+          (pesoNum - 24.5 * alturaMetros * alturaMetros) * 0.25 +
+          24.5 * alturaMetros * alturaMetros
+        ).toFixed(2);
+      }
+
+      setFormData((prev: any) => {
+        const draft = {
+          ...prev,
+          patient_id: pid,
+          tipo_plan: "geriatrico",
+          peso_actual: pesoActual,
+          altura,
+          genero,
+          edad,
+          peso_objetivo: pesoObjetivo,
+          peso_referencia_f2: pesoObjetivo || pesoActual,
+          imc: imc || prev.imc,
+          peso_saludable: pesoSaludable || prev.peso_saludable,
+          peso_ajustado: pesoAjustado || prev.peso_ajustado,
+          formula_requerimiento:
+            prev.formula_requerimiento && prev.formula_requerimiento !== "schofield"
+              ? prev.formula_requerimiento
+              : "harris_benedict",
+          rango_kcal_kg: prev.rango_kcal_kg || "25",
+          rango_objetivo: prev.rango_objetivo || "mantenimiento",
+          ger_factor_actividad: prev.ger_factor_actividad || "1.3",
+          ger_actividad_preset: prev.ger_actividad_preset || "sedentario",
+          ger_factor_estres: prev.ger_factor_estres || "1.0",
+          ger_estres_preset: prev.ger_estres_preset || "ninguno",
+          ger_liquidos_cc_kg: prev.ger_liquidos_cc_kg || "30",
+          grupos_alimentos_f3: buildGruposAlimentos("geriatrico"),
+        };
+        const calc = calculateGeriatricoEnergia(draft);
+        const adj = withAjusteCaloriasFields(calc.reqBase, draft);
+        return {
+          ...draft,
+          ...adj,
+          factor_actividad: String(calc.fa),
+          tmb: calc.tmb > 0 ? calc.tmb.toFixed(2) : "",
+        };
+      });
+
+      toast({
+        title: "Datos cargados",
+        description: `Se cargaron los datos de ${patient?.nombres || "el paciente"} (geriátrico)`,
+      });
+    } catch (error: any) {
+      console.error("Error prefill geriátrico:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo cargar los datos del paciente",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPatient(false);
+    }
+  };
+
   /** Carga datos del paciente desde la API y rellena la fase 1 deportista (peso, estatura, sexo) */
   const fetchPatientAndPrefillDeportista = async (pid: number) => {
     setLoadingPatient(true);
@@ -1597,13 +2163,21 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       if (nivel.includes("sed")) actividad = "Sedentario";
       else if (nivel.includes("vig") || nivel.includes("activo") || nivel.includes("alto")) actividad = "Activo";
 
+      const dc = patient?.datos_clinicos || {};
+      const perimetroCefalico =
+        dc.perimetro_cefalico != null && dc.perimetro_cefalico !== ""
+          ? String(dc.perimetro_cefalico)
+          : "";
+
       const draft = {
         pediatria_sexo: sexo,
         pediatria_edad_anos: age.years,
         pediatria_edad_meses: age.months,
+        pediatria_fecha_nacimiento: patient?.fecha_nacimiento || "",
         pediatria_peso: peso,
         pediatria_talla_cm: talla,
         pediatria_peso_referencia: peso,
+        pediatria_perimetro_cefalico: perimetroCefalico,
         pediatria_actividad: actividad,
         pediatria_kcal_por_gramo: "5",
         pediatria_deficit: "Ninguno",
@@ -1743,7 +2317,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       .catch(() => null);
   };
 
-  // Cargar lista de pacientes para el selector de Fase 1 (cuando se abre el wizard)
+  // Cargar lista de pacientes para el selector (fase 1)
   useEffect(() => {
     if (!open || currentPhase !== 1) return;
     setLoadingPatientsList(true);
@@ -1803,6 +2377,15 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             grupos_alimentos_f3: buildGruposAlimentos("hospitalizado"),
           }
         : {}),
+      ...(tipoInit === "geriatrico"
+        ? {
+            formula_requerimiento: "harris_benedict",
+            ger_factor_actividad: "1.3",
+            ger_factor_estres: "1.0",
+            ger_liquidos_cc_kg: "30",
+            grupos_alimentos_f3: buildGruposAlimentos("geriatrico"),
+          }
+        : {}),
     });
     setCurrentPhase(initialTipoPlan ? 1 : 0);
     setCompletedPhases([]);
@@ -1816,6 +2399,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         fetchPatientAndPrefillGestante(patientId, tipo);
       } else if (tipo === "hospitalizado") {
         fetchPatientAndPrefillHospitalizado(patientId);
+      } else if (tipo === "geriatrico") {
+        fetchPatientAndPrefillGeriatrico(patientId);
       } else {
         fetchPatientAndPrefill(patientId);
       }
@@ -2326,7 +2911,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     const prevGrupo = formData.grupos_alimentos_f3[nombre] || emptyGrupoNutrients();
 
     let updatedGrupo: Record<string, any>;
-    if (nombre === SUPLEMENTOS_GRUPO || prevGrupo.manual || !nutrients) {
+    if (isSuplementoGrupoKey(nombre) || prevGrupo.manual || !nutrients) {
       updatedGrupo = applyManualGrupoTotals(nombre, { ...prevGrupo, porciones: value });
     } else {
       updatedGrupo = {
@@ -2361,18 +2946,120 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
     calculateFase3Totals(newGrupos);
   };
 
-  const handleSuplementoNutrientChange = (field: string, value: string) => {
-    const prevGrupo = formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO] || {
+  const handleSuplementoNutrientChange = (grupoKey: string, field: string, value: string) => {
+    const prevGrupo = formData.grupos_alimentos_f3[grupoKey] || {
       ...emptyGrupoNutrients(),
       manual: true,
     };
-    const updated = applyManualGrupoTotals(SUPLEMENTOS_GRUPO, { ...prevGrupo, [field]: value });
+    const updated = applyManualGrupoTotals(grupoKey, { ...prevGrupo, [field]: value });
     const newGrupos = {
       ...formData.grupos_alimentos_f3,
-      [SUPLEMENTOS_GRUPO]: updated,
+      [grupoKey]: updated,
     };
     handleChange("grupos_alimentos_f3", newGrupos);
     calculateFase3Totals(newGrupos);
+  };
+
+  const handleMipressSuplementoSelect = (grupoKey: string, suplementoId: string) => {
+    if (suplementoId === "__manual__") {
+      const prevGrupo = formData.grupos_alimentos_f3[grupoKey] || {
+        ...emptyGrupoNutrients(),
+        manual: true,
+      };
+      const updated = applyManualGrupoTotals(grupoKey, {
+        ...prevGrupo,
+        manual: true,
+        mipress_id: "",
+        mipress_nombre: "",
+        mipress_categoria: "",
+        mipress_porcion: "",
+      });
+      const newGrupos = {
+        ...formData.grupos_alimentos_f3,
+        [grupoKey]: updated,
+      };
+      handleChange("grupos_alimentos_f3", newGrupos);
+      calculateFase3Totals(newGrupos);
+      return;
+    }
+
+    const supp = getMipressSuplementoById(suplementoId);
+    if (!supp) return;
+    const prevGrupo = formData.grupos_alimentos_f3[grupoKey] || {
+      ...emptyGrupoNutrients(),
+      manual: true,
+    };
+    const updated = applyManualGrupoTotals(grupoKey, {
+      ...prevGrupo,
+      manual: true,
+      mipress_id: supp.id,
+      mipress_nombre: supp.nombre,
+      mipress_categoria: supp.categoria,
+      mipress_porcion: supp.porcion,
+      per_kcal: String(supp.kcal),
+      per_prot: String(supp.prot),
+      per_grasa: String(supp.grasa),
+      per_gs: String(supp.gs),
+      per_gm: String(supp.gm),
+      per_gp: String(supp.gp),
+      per_col: prevGrupo.per_col || "0",
+      per_chos: String(supp.chos),
+      per_fd: String(supp.fd),
+      porciones: prevGrupo.porciones || "1",
+    });
+    const newGrupos = {
+      ...formData.grupos_alimentos_f3,
+      [grupoKey]: updated,
+    };
+    handleChange("grupos_alimentos_f3", newGrupos);
+    calculateFase3Totals(newGrupos);
+  };
+
+  const handleAddSuplemento = () => {
+    const key = makeSuplementoExtraKey();
+    const newGrupos = {
+      ...ensureSuplementosGrupoF3(),
+      [key]: { ...emptyGrupoNutrients(), manual: true, porciones: "1" },
+    };
+    handleChange("grupos_alimentos_f3", newGrupos);
+    calculateFase3Totals(newGrupos);
+  };
+
+  const handleRemoveSuplemento = (grupoKey: string) => {
+    if (grupoKey === SUPLEMENTOS_GRUPO) {
+      // El principal no se elimina: se limpia
+      const cleared = applyManualGrupoTotals(SUPLEMENTOS_GRUPO, {
+        ...emptyGrupoNutrients(),
+        manual: true,
+        mipress_id: "",
+        mipress_nombre: "",
+        mipress_categoria: "",
+        mipress_porcion: "",
+        mipress_categoria_filtro: formData.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO]?.mipress_categoria_filtro,
+      });
+      const newGrupos = {
+        ...formData.grupos_alimentos_f3,
+        [SUPLEMENTOS_GRUPO]: cleared,
+      };
+      handleChange("grupos_alimentos_f3", newGrupos);
+      calculateFase3Totals(newGrupos);
+      return;
+    }
+    if (!grupoKey.startsWith(SUPLEMENTO_EXTRA_PREFIX)) return;
+    const newGrupos = { ...formData.grupos_alimentos_f3 };
+    delete newGrupos[grupoKey];
+    handleChange("grupos_alimentos_f3", newGrupos);
+    calculateFase3Totals(newGrupos);
+  };
+
+  const ensureSuplementosGrupoF3 = (grupos?: Record<string, any>) => {
+    const base = grupos || formData.grupos_alimentos_f3 || {};
+    if (base[SUPLEMENTOS_GRUPO]) return base;
+    return {
+      ...buildGruposAlimentos(formData.tipo_plan),
+      ...base,
+      [SUPLEMENTOS_GRUPO]: { ...emptyGrupoNutrients(), manual: true },
+    };
   };
 
   const ensureDeportistaDefaultsForFase2 = () => {
@@ -2392,6 +3079,30 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         updates.peso_referencia_f2 = ref;
         updates.peso_objetivo = ref;
       }
+    }
+    if (Object.keys(updates).length) {
+      setFormData((prev: any) => ({ ...prev, ...updates }));
+    }
+  };
+
+  const ensureGeriatricoDefaultsForFase2 = () => {
+    const calc = calculateGeriatricoEnergia(formData);
+    const updates: Record<string, string> = {};
+    if (!formData.proteinas_kg_peso) updates.proteinas_kg_peso = "1.1";
+    if (!formData.grasas_amdr_f2) updates.grasas_amdr_f2 = "30";
+    if (!formData.proteinas_avb_porcentaje) updates.proteinas_avb_porcentaje = "70";
+    if (!formData.grasas_gs_amdr) updates.grasas_gs_amdr = "10";
+    if (!formData.grasas_gp_amdr) updates.grasas_gp_amdr = "8";
+    if (!formData.cho_concent_amdr) updates.cho_concent_amdr = "10";
+    if (!formData.total_fibra) updates.total_fibra = "25";
+    const ref = String(calc.pesoRef || formData.peso_actual || "");
+    if (!formData.peso_referencia_f2 && ref) {
+      updates.peso_referencia_f2 = ref;
+      updates.peso_objetivo = ref;
+    }
+    if (calc.requerimientoFinal > 0) {
+      Object.assign(updates, withAjusteCaloriasFields(calc.requerimientoFinal, { ...formData, ...updates }));
+      if (calc.tmb > 0) updates.tmb = calc.tmb.toFixed(1);
     }
     if (Object.keys(updates).length) {
       setFormData((prev: any) => ({ ...prev, ...updates }));
@@ -2478,11 +3189,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         ensureDeportistaDefaultsForFase2();
         // Asegurar grupo suplementos en Fase 3
         if (!formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO]) {
-          handleChange("grupos_alimentos_f3", {
-            ...buildGruposAlimentos("deportista"),
-            ...formData.grupos_alimentos_f3,
-            [SUPLEMENTOS_GRUPO]: { ...emptyGrupoNutrients(), manual: true },
-          });
+          handleChange("grupos_alimentos_f3", ensureSuplementosGrupoF3());
         }
       } else if (formData.tipo_plan === "pediatria") {
         if (!(parseFloat(formData.pediatria_peso) > 0) || !(parseFloat(formData.pediatria_talla_cm) > 0)) {
@@ -2584,6 +3291,37 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
           ...buildGruposAlimentos("hospitalizado"),
           ...formData.grupos_alimentos_f3,
         });
+      } else if (isGeriatrico(formData.tipo_plan)) {
+        if (!(parseFloat(formData.peso_actual) > 0) || !(parseFloat(formData.altura) > 0 || parseFloat(formData.ger_talon_rodilla_cm) > 0)) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa peso y altura (o talón-rodilla para estimar talla Chumlea)",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (!(parseFloat(formData.edad) > 0) || !formData.genero) {
+          toast({
+            title: "Datos incompletos",
+            description: "Ingresa edad y sexo del adulto mayor",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const calc = calculateGeriatricoEnergia(formData);
+        if (!(calc.requerimientoFinal > 0) && !(parseFloat(formData.requerimiento_energetico) > 0)) {
+          toast({
+            title: "Requerimiento energético",
+            description: "Completa fórmula, factor de actividad y estrés para calcular las calorías",
+            variant: "destructive",
+          });
+          return false;
+        }
+        ensureGeriatricoDefaultsForFase2();
+        handleChange("grupos_alimentos_f3", {
+          ...buildGruposAlimentos("geriatrico"),
+          ...formData.grupos_alimentos_f3,
+        });
       } else {
         if (!(parseFloat(formData.requerimiento_energetico) > 0)) {
           toast({
@@ -2609,10 +3347,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               ? "Indica proteína g/kg RIEN y % grasa AMDR para calcular los macros"
             : isGestanteTipo(formData.tipo_plan)
               ? "Indica proteína g/kg (1.53–1.7) y % grasa AMDR para calcular los macros"
+            : isGeriatrico(formData.tipo_plan)
+              ? "Indica proteína g/kg (1.0–1.2, hasta 1.5 en sarcopenia) y % grasa AMDR para calcular los macros"
             : "Completa proteína g/kg y % grasa AMDR para calcular los macros",
           variant: "destructive",
         });
         return false;
+      }
+      // Al pasar a fórmula desarrollada, asegurar fila de suplementos MIPRESS
+      if (!formData.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO]) {
+        handleChange("grupos_alimentos_f3", ensureSuplementosGrupoF3());
       }
       return true;
     }
@@ -2714,7 +3458,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       carbs_target: Math.round(carbsG),
       fat_target: Math.round(fatG),
 
-      // Datos de las 4 fases
+      // Datos de las fases
       fase_1: formData.tipo_plan === "deportista"
         ? (() => {
           const m = calculateDeportistaMetrics(formData);
@@ -2734,6 +3478,13 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             deportista_yuhasz_abdominal: formData.deportista_yuhasz_abdominal,
             deportista_yuhasz_muslo_medio: formData.deportista_yuhasz_muslo_medio,
             deportista_pct_grasa_esperado: formData.deportista_pct_grasa_esperado,
+            deportista_metodo_grasa: formData.deportista_metodo_grasa,
+            deportista_talla_sentado: formData.deportista_talla_sentado,
+            deportista_altura_rodilla: formData.deportista_altura_rodilla,
+            deportista_perim_brazo_relajado: formData.deportista_perim_brazo_relajado,
+            deportista_biceps: formData.deportista_biceps,
+            deportista_pecho: formData.deportista_pecho,
+            deportista_edad_composicion: formData.deportista_edad_composicion || formData.edad,
             requerimiento_energetico: formData.requerimiento_energetico,
             requerimiento_antes_ajuste: formData.requerimiento_base_f1,
             ajuste_calorias_modo: formData.ajuste_calorias_modo,
@@ -2750,11 +3501,28 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             coordenada_x: m.coordX,
             coordenada_y: m.coordY,
             pct_grasa_yuhasz: m.pctGrasaYuhasz,
+            pct_grasa_seleccionado: m.pctGrasaSeleccionado,
+            metodo_grasa: m.metodoGrasaLabel,
+            pct_grasa_durnin: m.pctGrasaDurnin,
+            pct_grasa_jackson: m.pctGrasaJackson,
+            pct_grasa_brozek: m.pctGrasaBrozek,
+            densidad_corporal: m.densidadSeleccionada,
+            indice_cormico: m.indiceCormico,
+            clasificacion_cormico: m.clasificacionCormico,
+            talla_estimada: m.tallaEstimada,
+            area_braquial: m.areaBraquial,
+            area_muscular_brazo: m.areaMuscularBrazo,
+            area_grasa_brazo: m.areaGrasaBrazo,
+            perimetro_muscular_brazo: m.perimetroMuscularBrazo,
             peso_graso: m.pesoGraso,
             masa_libre_grasa: m.masaLibreGrasa,
             aks: m.aks,
             clasificacion_aks: m.clasificacionAks,
             peso_optimo: m.pesoOptimo,
+            masa_osea: m.masaOsea,
+            masa_residual: m.masaResidual,
+            masa_muscular: m.masaMuscular,
+            suma_5_componentes: m.suma5Componentes,
           };
         })()
         : formData.tipo_plan === "pediatria"
@@ -2948,6 +3716,48 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             factor_actividad: formData.hosp_factor_actividad || h.fa,
           };
         })()
+        : isGeriatrico(formData.tipo_plan)
+        ? (() => {
+          const g = calculateGeriatricoEnergia(formData);
+          return {
+            tipo_fase: "geriatrico",
+            peso_actual: formData.peso_actual,
+            altura: formData.altura || (g.alturaCm > 0 ? g.alturaCm.toFixed(1) : ""),
+            edad: formData.edad,
+            genero: formData.genero,
+            peso_saludable: formData.peso_saludable || (g.pesoSaludable > 0 ? g.pesoSaludable.toFixed(2) : ""),
+            peso_ajustado: formData.peso_ajustado || (g.pesoAjustado > 0 ? g.pesoAjustado.toFixed(2) : ""),
+            peso_objetivo: formData.peso_objetivo,
+            imc: formData.imc || (g.imc > 0 ? g.imc.toFixed(2) : ""),
+            clasificacion_imc: g.clasificacionImc,
+            riesgo_sarcopenia: g.riesgoSarcopenia,
+            tmb: formData.tmb || (g.tmb > 0 ? g.tmb.toFixed(2) : ""),
+            formula_requerimiento: formData.formula_requerimiento || "harris_benedict",
+            rango_kcal_kg: formData.rango_kcal_kg,
+            rango_objetivo: formData.rango_objetivo,
+            metodo_energia: g.metodoLabel,
+            ger_factor_actividad: formData.ger_factor_actividad || g.fa,
+            ger_actividad_preset: formData.ger_actividad_preset,
+            ger_factor_estres: formData.ger_factor_estres || g.fe,
+            ger_estres_preset: formData.ger_estres_preset,
+            ger_liquidos_cc_kg: formData.ger_liquidos_cc_kg || g.liquidosCcKg,
+            liquidos_ml: Math.round(g.liquidosMl),
+            ger_talon_rodilla_cm: formData.ger_talon_rodilla_cm,
+            ger_perim_brazo_cm: formData.ger_perim_brazo_cm,
+            ger_perim_pantorrilla_cm: formData.ger_perim_pantorrilla_cm,
+            ger_pliegue_subescapular_mm: formData.ger_pliegue_subescapular_mm,
+            talla_estimada_chumlea: g.tallaEstimada > 0 ? Number(g.tallaEstimada.toFixed(1)) : null,
+            peso_estimado_chumlea: g.pesoEstimado > 0 ? Number(g.pesoEstimado.toFixed(1)) : null,
+            regla_peso: g.reglaPeso,
+            requerimiento_base: g.reqBase,
+            requerimiento_energetico: formData.requerimiento_energetico || Math.round(g.requerimientoFinal),
+            requerimiento_antes_ajuste: formData.requerimiento_base_f1 || Math.round(g.requerimientoFinal),
+            ajuste_calorias_modo: formData.ajuste_calorias_modo,
+            ajuste_calorias_valor: formData.ajuste_calorias_valor,
+            peso_referencia: formData.peso_referencia_f2 || g.pesoRef,
+            factor_actividad: formData.ger_factor_actividad || g.fa,
+          };
+        })()
         : {
           peso_actual: formData.peso_actual,
           altura: formData.altura,
@@ -3116,7 +3926,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         // Limpiar borrador de este paciente y reset form
         localStorage.removeItem(getDraftKey(patientId ?? formData.patient_id));
         setFormData(getDefaultFormData());
-        setCurrentPhase(1);
+        setCurrentPhase(0);
         setCompletedPhases([]);
         onOpenChange(false);
       } else {
@@ -3151,15 +3961,31 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
 
         {/* Paso 0: Selección de tipo de plan */}
         {currentPhase === 0 && (
-          <div className="space-y-6 py-4">
-            <p className="text-sm font-medium text-foreground">Selecciona el tipo de plan nutricional</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {PLAN_TYPES.map(({ value, label }) => (
-                <Button
+          <div className="space-y-5 py-2">
+            <div className="rounded-xl border border-primary/15 bg-gradient-to-br from-primary/[0.07] via-background to-background px-4 py-4 sm:px-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Selecciona el tipo de plan nutricional</p>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    Cada modalidad activa fórmulas, grupos de alimentos y flujos clínicos según EVANUT.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {PLAN_TYPES.map(({ value, label, description, icon: Icon, iconClass, cardHoverClass }) => (
+                <button
                   key={value}
                   type="button"
-                  variant="outline"
-                  className="h-auto py-5 flex flex-col items-center justify-center gap-1 font-medium text-base hover:border-primary hover:bg-primary/5"
+                  className={cn(
+                    "group relative flex w-full flex-col items-start gap-3 rounded-xl border border-border/70 bg-card p-4 text-left shadow-sm transition-all duration-200",
+                    "hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                    cardHoverClass,
+                  )}
                   onClick={async () => {
                     handleChange("tipo_plan", value);
                     if (value === "deportista") {
@@ -3192,19 +4018,36 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       const id = await getPatientIdToLoad();
                       if (id != null) await fetchPatientAndPrefillHospitalizado(id);
                       else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
+                    } else if (value === "geriatrico") {
+                      handleChange("formula_requerimiento", "harris_benedict");
+                      handleChange("ger_factor_actividad", "1.3");
+                      handleChange("ger_factor_estres", "1.0");
+                      handleChange("ger_liquidos_cc_kg", "30");
+                      const id = await getPatientIdToLoad();
+                      if (id != null) await fetchPatientAndPrefillGeriatrico(id);
+                      else toast({ title: "Sin pacientes", description: "No hay pacientes registrados. Crea uno primero para cargar sus datos.", variant: "destructive" });
                     }
                   }}
                 >
-                  {label}
-                </Button>
+                  <div className="flex w-full items-start justify-between gap-2">
+                    <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-105", iconClass)}>
+                      <Icon className="h-5 w-5" aria-hidden />
+                    </div>
+                    <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/40 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden />
+                  </div>
+                  <div className="space-y-1 pr-2">
+                    <p className="text-sm font-semibold leading-tight text-foreground">{label}</p>
+                    <p className="text-xs leading-snug text-muted-foreground">{description}</p>
+                  </div>
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {currentPhase >= 1 && (
+        {currentPhase >= 1 ? (
           <>
-            {/* Tipo de plan (visible en fases 1-4 para poder cambiarlo) */}
+            {/* Tipo de plan (visible en fases clínicas para poder cambiarlo) */}
             <div className="space-y-2">
               <Label className="text-base font-semibold text-primary">Tipo de plan</Label>
               <Select
@@ -3229,6 +4072,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     if (!formData.hosp_factor_actividad) handleChange("hosp_factor_actividad", "1.15");
                     if (!formData.hosp_factor_estres) handleChange("hosp_factor_estres", "1.0");
                     if (!formData.hosp_liquidos_cc_kg) handleChange("hosp_liquidos_cc_kg", "35");
+                  }
+                  if (value === "geriatrico") {
+                    if (!formData.formula_requerimiento || formData.formula_requerimiento === "schofield") {
+                      handleChange("formula_requerimiento", "harris_benedict");
+                    }
+                    if (!formData.ger_factor_actividad) handleChange("ger_factor_actividad", "1.3");
+                    if (!formData.ger_factor_estres) handleChange("ger_factor_estres", "1.0");
+                    if (!formData.ger_liquidos_cc_kg) handleChange("ger_liquidos_cc_kg", "30");
                   }
                 }}
               >
@@ -3285,110 +4136,218 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               })}
             </div>
           </>
-        )}
+        ) : null}
 
         <div>
-          {/* Phase 1 Deportista: Somatotipo y composición corporal (EVANUT 4.1) */}
+          {/* Phase 1 Deportista: Somatotipo + composición corporal (EVANUT 4.1) */}
           {currentPhase === 1 && formData.tipo_plan === "deportista" && (() => {
             const m = calculateDeportistaMetrics(formData);
             return (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <PieChart className="h-5 w-5 text-primary" />
-                    Somatotipo y composición corporal (Deportista)
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Mediciones según EVANUT 4.1 — hoja Deportista (Heath-Carter / Yuhasz)
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
-                    <div className="space-y-1 min-w-[200px]">
-                      <Label>Paciente (cargar desde BD)</Label>
-                      <Select
-                        value={formData.patient_id ? String(formData.patient_id) : undefined}
-                        onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
-                        disabled={loadingPatientsList}
-                      >
-                        <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
-                        <SelectContent>
-                          {patientsList.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={loadingPatient || !formData.patient_id}
-                      onClick={() => formData.patient_id && fetchPatientAndPrefillDeportista(Number(formData.patient_id))}
+              <div className="space-y-6">
+                <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                  <div className="space-y-1 min-w-[200px]">
+                    <Label>Paciente (cargar desde BD)</Label>
+                    <Select
+                      value={formData.patient_id ? String(formData.patient_id) : undefined}
+                      onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
+                      disabled={loadingPatientsList}
                     >
-                      {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
-                    </Button>
+                      <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
+                      <SelectContent>
+                        {patientsList.map((p) => (
+                          <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.deportista_peso} onChange={(e) => handleChange("deportista_peso", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Tríceps (mm)</Label><Input type="number" step="0.1" value={formData.deportista_triceps} onChange={(e) => handleChange("deportista_triceps", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Subescapular (mm)</Label><Input type="number" step="0.1" value={formData.deportista_subescapular} onChange={(e) => handleChange("deportista_subescapular", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Supraespinal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_supraespinal} onChange={(e) => handleChange("deportista_supraespinal", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Estatura (cm)</Label><Input type="number" step="0.1" value={formData.deportista_estatura} onChange={(e) => handleChange("deportista_estatura", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Diám. húmero (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_humero} onChange={(e) => handleChange("deportista_diametro_humero", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Diám. fémur (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_femur} onChange={(e) => handleChange("deportista_diametro_femur", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Perím. brazo tenso (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_brazo_tenso} onChange={(e) => handleChange("deportista_perim_brazo_tenso", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Perím. pantorrilla (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_pantorrilla} onChange={(e) => handleChange("deportista_perim_pantorrilla", e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Pliegue pantorrilla (mm)</Label><Input type="number" step="0.1" value={formData.deportista_pliegue_pantorrilla} onChange={(e) => handleChange("deportista_pliegue_pantorrilla", e.target.value)} /></div>
-                  </div>
-                  <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    <div><span className="text-muted-foreground">Sumatoria</span><p className="font-medium">{m.sumatoria > 0 ? m.sumatoria.toFixed(2) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">Corrección prop.</span><p className="font-medium">{m.correccionProp > 0 ? m.correccionProp.toFixed(4) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">Perím. brazo corregido</span><p className="font-medium">{formData.deportista_perim_brazo_tenso ? m.perimBrazoCorr.toFixed(2) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">Perím. pant. corregido</span><p className="font-medium">{formData.deportista_perim_pantorrilla ? m.perimPantCorr.toFixed(2) : "—"}</p></div>
-                    <div><span className="text-muted-foreground">HWR</span><p className="font-medium">{m.hwr > 0 ? m.hwr.toFixed(2) : "—"}</p></div>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold mb-2">Componentes del somatotipo</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Endomorfia</span><p className="font-bold">{m.endomorfia ? m.endomorfia.toFixed(2) : "—"}</p></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Mesomorfia</span><p className="font-bold">{m.mesomorfia ? m.mesomorfia.toFixed(2) : "—"}</p></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Ectomorfia</span><p className="font-bold">{m.ectomorfia ? m.ectomorfia.toFixed(2) : "—"}</p></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">X</span><p className="font-bold">{m.endomorfia || m.ectomorfia ? m.coordX.toFixed(2) : "—"}</p></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block">Y</span><p className="font-bold">{m.mesomorfia ? m.coordY.toFixed(2) : "—"}</p></div>
-                    </div>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold mb-2">% Grasa Yuhasz</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="space-y-1"><Label>Sexo</Label>
-                        <Select value={formData.deportista_yuhasz_sexo || "masculino"} onValueChange={(v) => handleChange("deportista_yuhasz_sexo", v)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent><SelectItem value="masculino">Hombre</SelectItem><SelectItem value="femenino">Mujer</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1"><Label>Abdominal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_abdominal} onChange={(e) => handleChange("deportista_yuhasz_abdominal", e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Muslo medio (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_muslo_medio} onChange={(e) => handleChange("deportista_yuhasz_muslo_medio", e.target.value)} /></div>
-                    </div>
-                    <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                      <div><span className="text-muted-foreground">% Grasa</span><p className="font-bold">{m.pctGrasaYuhasz > 0 ? m.pctGrasaYuhasz.toFixed(2) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">Peso graso (kg)</span><p className="font-medium">{m.pesoGraso > 0 ? m.pesoGraso.toFixed(2) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">Masa libre grasa (kg)</span><p className="font-medium">{m.masaLibreGrasa > 0 ? m.masaLibreGrasa.toFixed(2) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">Índice AKS</span><p className="font-medium">{m.aks > 0 ? m.aks.toFixed(3) : "—"}</p></div>
-                      <div className="sm:col-span-2"><span className="text-muted-foreground">Clasificación AKS</span><p className="font-medium">{m.clasificacionAks || "—"}</p></div>
-                    </div>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold mb-2">Peso óptimo</h4>
-                    <div className="flex flex-wrap gap-3 items-end">
-                      <div className="space-y-1"><Label>% grasa esperado</Label><Input type="number" step="0.1" value={formData.deportista_pct_grasa_esperado} onChange={(e) => handleChange("deportista_pct_grasa_esperado", e.target.value)} placeholder="Ej. 15" className="w-24" /></div>
-                      <div className="rounded border p-2"><span className="text-muted-foreground block text-sm">Peso óptimo (kg)</span><p className="font-bold text-lg">{m.pesoOptimo > 0 ? m.pesoOptimo.toFixed(2) : "—"}</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={loadingPatient || !formData.patient_id}
+                    onClick={() => formData.patient_id && fetchPatientAndPrefillDeportista(Number(formData.patient_id))}
+                  >
+                    {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
+                  </Button>
+                </div>
+
+                {/* ——— 1. SOMATOTIPO ——— */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-primary" />
+                      1. Somatotipo (Heath-Carter)
+                    </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      <strong>Nota EVANUT:</strong> para definir las calorías totales utilice las fórmulas de requerimientos generales o el cálculo de METs.
+                      Endomorfia, mesomorfia y ectomorfia a partir de pliegues, diámetros y perímetros (EVANUT 4.1)
                     </p>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="rounded-lg border bg-slate-100/80 dark:bg-slate-900/40 p-3">
+                      <p className="text-xs font-bold uppercase tracking-wide mb-2 text-foreground">
+                        Medidas para somatotipo
+                      </p>
+                      <ul className="text-sm text-muted-foreground space-y-1">
+                        <li>• Endomorfia → pliegues (tríceps, subescapular, supraespinal) + estatura</li>
+                        <li>• Mesomorfia → diámetros (húmero, fémur), perímetros corregidos, estatura</li>
+                        <li>• Ectomorfia → peso y estatura (HWR)</li>
+                      </ul>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.deportista_peso} onChange={(e) => handleChange("deportista_peso", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Estatura (cm)</Label><Input type="number" step="0.1" value={formData.deportista_estatura} onChange={(e) => handleChange("deportista_estatura", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Tríceps (mm)</Label><Input type="number" step="0.1" value={formData.deportista_triceps} onChange={(e) => handleChange("deportista_triceps", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Subescapular (mm)</Label><Input type="number" step="0.1" value={formData.deportista_subescapular} onChange={(e) => handleChange("deportista_subescapular", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Supraespinal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_supraespinal} onChange={(e) => handleChange("deportista_supraespinal", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Diám. húmero (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_humero} onChange={(e) => handleChange("deportista_diametro_humero", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Diám. fémur (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_femur} onChange={(e) => handleChange("deportista_diametro_femur", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Perím. brazo tenso (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_brazo_tenso} onChange={(e) => handleChange("deportista_perim_brazo_tenso", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Perím. pantorrilla (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_pantorrilla} onChange={(e) => handleChange("deportista_perim_pantorrilla", e.target.value)} /></div>
+                      <div className="space-y-1"><Label>Pliegue pantorrilla (mm)</Label><Input type="number" step="0.1" value={formData.deportista_pliegue_pantorrilla} onChange={(e) => handleChange("deportista_pliegue_pantorrilla", e.target.value)} /></div>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
+                      <div><span className="text-muted-foreground">Sumatoria</span><p className="font-medium">{m.sumatoria > 0 ? m.sumatoria.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Corrección prop.</span><p className="font-medium">{m.correccionProp > 0 ? m.correccionProp.toFixed(4) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Perím. brazo corregido</span><p className="font-medium">{formData.deportista_perim_brazo_tenso ? m.perimBrazoCorr.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Perím. pant. corregido</span><p className="font-medium">{formData.deportista_perim_pantorrilla ? m.perimPantCorr.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">HWR</span><p className="font-medium">{m.hwr > 0 ? m.hwr.toFixed(2) : "—"}</p></div>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold mb-2">Componentes del somatotipo</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">Endomorfia</span><p className="font-bold">{m.endomorfia ? m.endomorfia.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">Mesomorfia</span><p className="font-bold">{m.mesomorfia ? m.mesomorfia.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">Ectomorfia</span><p className="font-bold">{m.ectomorfia ? m.ectomorfia.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">X</span><p className="font-bold">{m.endomorfia || m.ectomorfia ? m.coordX.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">Y</span><p className="font-bold">{m.mesomorfia ? m.coordY.toFixed(2) : "—"}</p></div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ——— 2. COMPOSICIÓN CORPORAL ——— */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <PieChart className="h-5 w-5 text-primary" />
+                      2. Composición corporal
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Índice córmico, estimación de talla, AB/AMB/AGM, % grasa (Yuhasz / Durnin / Jackson-Pollock / Brozek), 5 componentes y peso óptimo
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="rounded-lg border bg-slate-100/80 dark:bg-slate-900/40 p-3">
+                      <p className="text-xs font-bold uppercase tracking-wide mb-2 text-foreground">
+                        Medidas para composición
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        <ul className="space-y-1 text-muted-foreground">
+                          <li>• Índice córmico → talla sentado + estatura</li>
+                          <li>• Estimación de talla → altura de rodilla + edad</li>
+                          <li>• AB / AMB / AGM → perímetro brazo relajado + pliegue tríceps</li>
+                          <li>• 5 componentes → peso, % grasa, diámetros, estatura</li>
+                        </ul>
+                        <ul className="space-y-1 text-muted-foreground">
+                          <li className="font-medium text-foreground">% Grasa corporal</li>
+                          <li>• Yuhasz → 6 pliegues</li>
+                          <li>• Durnin & Womersley → 4 pliegues (+ bíceps)</li>
+                          <li>• Jackson & Pollock → 3 sitios</li>
+                          <li>• Brozek → densidad (Durnin/Jackson)</li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1"><Label>Perím. brazo relajado (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_brazo_relajado} onChange={(e) => handleChange("deportista_perim_brazo_relajado", e.target.value)} placeholder="Para AB/AMB/AGM" /></div>
+                      <div className="space-y-1"><Label>Talla sentado (cm)</Label><Input type="number" step="0.1" value={formData.deportista_talla_sentado} onChange={(e) => handleChange("deportista_talla_sentado", e.target.value)} placeholder="Índice córmico" /></div>
+                      <div className="space-y-1"><Label>Altura de rodilla (cm)</Label><Input type="number" step="0.1" value={formData.deportista_altura_rodilla} onChange={(e) => handleChange("deportista_altura_rodilla", e.target.value)} placeholder="Estimación talla" /></div>
+                      <div className="space-y-1"><Label>Bíceps (mm)</Label><Input type="number" step="0.1" value={formData.deportista_biceps} onChange={(e) => handleChange("deportista_biceps", e.target.value)} placeholder="Durnin" /></div>
+                      <div className="space-y-1"><Label>Pecho (mm)</Label><Input type="number" step="0.1" value={formData.deportista_pecho} onChange={(e) => handleChange("deportista_pecho", e.target.value)} placeholder="Jackson ♂" /></div>
+                      <div className="space-y-1"><Label>Edad (compos./Chumlea)</Label><Input type="number" step="1" value={formData.deportista_edad_composicion || formData.edad} onChange={(e) => { handleChange("deportista_edad_composicion", e.target.value); handleChange("edad", e.target.value); }} /></div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-semibold mb-2">Índice córmico · Estimación de talla · AB/AMB/AGM</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">Índice córmico</span><p className="font-bold">{m.indiceCormico > 0 ? m.indiceCormico.toFixed(2) : "—"}</p><p className="text-xs text-muted-foreground">{m.clasificacionCormico || ""}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">Talla estimada (cm)</span><p className="font-bold">{m.tallaEstimada > 0 ? m.tallaEstimada.toFixed(1) : "—"}</p><p className="text-xs text-muted-foreground">Chumlea</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">AB (cm²)</span><p className="font-bold">{m.areaBraquial > 0 ? m.areaBraquial.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">AMB (cm²)</span><p className="font-bold">{m.areaMuscularBrazo > 0 ? m.areaMuscularBrazo.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">AGM (cm²)</span><p className="font-bold">{m.areaGrasaBrazo > 0 ? m.areaGrasaBrazo.toFixed(2) : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">PMB (cm)</span><p className="font-bold">{m.perimetroMuscularBrazo > 0 ? m.perimetroMuscularBrazo.toFixed(2) : "—"}</p></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-semibold mb-2">% Grasa corporal</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="space-y-1"><Label>Método</Label>
+                          <Select value={formData.deportista_metodo_grasa || "yuhasz"} onValueChange={(v) => handleChange("deportista_metodo_grasa", v)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="yuhasz">Yuhasz</SelectItem>
+                              <SelectItem value="durnin">Durnin & Womersley</SelectItem>
+                              <SelectItem value="jackson_pollock">Jackson & Pollock</SelectItem>
+                              <SelectItem value="brozek">Brozek</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1"><Label>Sexo</Label>
+                          <Select value={formData.deportista_yuhasz_sexo || "masculino"} onValueChange={(v) => handleChange("deportista_yuhasz_sexo", v)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent><SelectItem value="masculino">Hombre</SelectItem><SelectItem value="femenino">Mujer</SelectItem></SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1"><Label>Abdominal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_abdominal} onChange={(e) => handleChange("deportista_yuhasz_abdominal", e.target.value)} /></div>
+                        <div className="space-y-1"><Label>Muslo medio (mm)</Label><Input type="number" step="0.1" value={formData.deportista_yuhasz_muslo_medio} onChange={(e) => handleChange("deportista_yuhasz_muslo_medio", e.target.value)} /></div>
+                      </div>
+                      <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-muted-foreground">% Grasa ({m.metodoGrasaLabel})</span><p className="font-bold text-primary">{m.pctGrasaSeleccionado > 0 ? m.pctGrasaSeleccionado.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Yuhasz</span><p className="font-medium">{m.pctGrasaYuhasz > 0 ? m.pctGrasaYuhasz.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Durnin (Siri)</span><p className="font-medium">{m.pctGrasaDurnin > 0 ? m.pctGrasaDurnin.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Jackson & Pollock</span><p className="font-medium">{m.pctGrasaJackson > 0 ? m.pctGrasaJackson.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Brozek (densidad)</span><p className="font-medium">{m.pctGrasaBrozek > 0 ? m.pctGrasaBrozek.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Densidad (g/ml)</span><p className="font-medium">{m.densidadSeleccionada > 0 ? m.densidadSeleccionada.toFixed(4) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Peso graso (kg)</span><p className="font-medium">{m.pesoGraso > 0 ? m.pesoGraso.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Masa libre grasa (kg)</span><p className="font-medium">{m.masaLibreGrasa > 0 ? m.masaLibreGrasa.toFixed(2) : "—"}</p></div>
+                        <div><span className="text-muted-foreground">Índice AKS</span><p className="font-medium">{m.aks > 0 ? m.aks.toFixed(3) : "—"}</p></div>
+                        <div className="sm:col-span-2"><span className="text-muted-foreground">Clasificación AKS</span><p className="font-medium">{m.clasificacionAks || "—"}</p></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-semibold mb-2">5 componentes corporales</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">1. Masa grasa</span><p className="font-bold">{m.pesoGraso > 0 ? `${m.pesoGraso.toFixed(2)} kg` : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">2. Masa ósea</span><p className="font-bold">{m.masaOsea > 0 ? `${m.masaOsea.toFixed(2)} kg` : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">3. Masa residual</span><p className="font-bold">{m.masaResidual > 0 ? `${m.masaResidual.toFixed(2)} kg` : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">4. Masa muscular</span><p className="font-bold">{m.masaMuscular > 0 ? `${m.masaMuscular.toFixed(2)} kg` : "—"}</p></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block">5. Suma / peso</span><p className="font-bold">{m.suma5Componentes > 0 ? `${m.suma5Componentes.toFixed(2)} kg` : "—"}</p><p className="text-xs text-muted-foreground">MLG {m.masaLibreGrasa > 0 ? m.masaLibreGrasa.toFixed(2) : "—"} kg</p></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-semibold mb-2">Peso óptimo</h4>
+                      <div className="flex flex-wrap gap-3 items-end">
+                        <div className="space-y-1"><Label>% grasa esperado</Label><Input type="number" step="0.1" value={formData.deportista_pct_grasa_esperado} onChange={(e) => handleChange("deportista_pct_grasa_esperado", e.target.value)} placeholder="Ej. 15" className="w-24" /></div>
+                        <div className="rounded border p-2"><span className="text-muted-foreground block text-sm">Peso óptimo (kg)</span><p className="font-bold text-lg">{m.pesoOptimo > 0 ? m.pesoOptimo.toFixed(2) : "—"}</p></div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ——— 3. REQUERIMIENTO ENERGÉTICO ——— */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Flame className="h-5 w-5 text-primary" />
+                      3. Requerimiento energético
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Para definir las calorías totales utilice las fórmulas de requerimientos generales (TMR × PAL) o el cálculo de METs
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="space-y-1">
                         <Label>Edad (años)</Label>
@@ -3493,9 +4452,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         )}
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
             );
           })()}
 
@@ -3569,6 +4528,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     <div className="space-y-1"><Label>Edad (meses)</Label><Input type="number" min="0" max="11" value={formData.pediatria_edad_meses} onChange={(e) => syncReq({ pediatria_edad_meses: e.target.value })} /></div>
                     <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.pediatria_peso} onChange={(e) => syncReq({ pediatria_peso: e.target.value, pediatria_peso_referencia: formData.pediatria_peso_referencia || e.target.value })} /></div>
                     <div className="space-y-1"><Label>Talla/Longitud (cm)</Label><Input type="number" step="0.1" value={formData.pediatria_talla_cm} onChange={(e) => syncReq({ pediatria_talla_cm: e.target.value })} /></div>
+                    <div className="space-y-1"><Label>Perímetro cefálico (cm)</Label><Input type="number" step="0.1" value={formData.pediatria_perimetro_cefalico} onChange={(e) => syncReq({ pediatria_perimetro_cefalico: e.target.value })} placeholder="Opcional" /></div>
                     <div className="space-y-1"><Label>Peso referencia (kg)</Label><Input type="number" step="0.1" value={formData.pediatria_peso_referencia} onChange={(e) => syncReq({ pediatria_peso_referencia: e.target.value })} /></div>
                     <div className="space-y-1"><Label>IMC deseado (opc.)</Label><Input type="number" step="0.1" value={formData.pediatria_imc_deseado} onChange={(e) => syncReq({ pediatria_imc_deseado: e.target.value })} placeholder="Ej. 17" /></div>
                     <div className="space-y-1">
@@ -3634,6 +4594,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       <p className="font-bold text-lg text-primary">{Math.round(p.requerimientoFinal)} kcal</p>
                     </div>
                   </div>
+
+                  <PediatricGrowthPanel
+                    gender={formData.pediatria_sexo}
+                    birthDate={formData.pediatria_fecha_nacimiento}
+                    ageYears={formData.pediatria_edad_anos}
+                    ageMonths={formData.pediatria_edad_meses}
+                    weightKg={formData.pediatria_peso}
+                    heightCm={formData.pediatria_talla_cm}
+                    headCircumferenceCm={formData.pediatria_perimetro_cefalico}
+                  />
 
                   <div>
                     <h4 className="font-semibold mb-2">Antropometría braquial (opcional)</h4>
@@ -4473,8 +5443,334 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             );
           })()}
 
+          {/* Phase 1 Geriátrico: evaluación y requerimiento del adulto mayor */}
+          {currentPhase === 1 && isGeriatrico(formData.tipo_plan) && (() => {
+            const g = calculateGeriatricoEnergia(formData);
+            const formula = formData.formula_requerimiento || "harris_benedict";
+            const isRango = formula === "rango_calorico";
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5 text-primary" />
+                    Evaluación y requerimiento geriátrico
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    TMB × factor de actividad × factor de estrés + estimación Chumlea, IMC del adulto mayor y riesgo de sarcopenia
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg bg-muted/40 border border-border">
+                    <div className="space-y-1 min-w-[200px]">
+                      <Label>Paciente (cargar desde BD)</Label>
+                      <Select
+                        value={formData.patient_id ? String(formData.patient_id) : undefined}
+                        onValueChange={(v) => handleChange("patient_id", v === "" ? "" : Number(v))}
+                        disabled={loadingPatientsList}
+                      >
+                        <SelectTrigger><SelectValue placeholder={loadingPatientsList ? "Cargando..." : "Selecciona un paciente"} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" disabled>Selecciona un paciente</SelectItem>
+                          {patientsList.map((pat) => (
+                            <SelectItem key={pat.id} value={String(pat.id)}>{pat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={loadingPatient || !formData.patient_id}
+                      onClick={() => formData.patient_id && fetchPatientAndPrefillGeriatrico(Number(formData.patient_id))}
+                    >
+                      {loadingPatient ? "Cargando..." : "Cargar datos del paciente"}
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label>Peso actual (kg)</Label>
+                      <Input type="number" step="0.1" value={formData.peso_actual}
+                        onChange={(e) => recalculateGeriatricoRequirement({ peso_actual: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Altura (cm)</Label>
+                      <Input type="number" step="0.1" value={formData.altura}
+                        onChange={(e) => recalculateGeriatricoRequirement({ altura: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Edad (años)</Label>
+                      <Input type="number" value={formData.edad}
+                        onChange={(e) => recalculateGeriatricoRequirement({ edad: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Sexo</Label>
+                      <Select value={formData.genero || undefined}
+                        onValueChange={(v) => recalculateGeriatricoRequirement({ genero: v })}>
+                        <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="masculino">Masculino</SelectItem>
+                          <SelectItem value="femenino">Femenino</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Peso ref (kg)</Label>
+                      <Input type="number" step="0.1" value={formData.peso_referencia_f2}
+                        onChange={(e) => recalculateGeriatricoRequirement({ peso_referencia_f2: e.target.value })} />
+                      {g.reglaPeso && (
+                        <p className="text-xs text-muted-foreground">{g.reglaPeso}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Líquidos (cc/kg/día)</Label>
+                      <Input type="number" step="1" min="20" max="45" value={formData.ger_liquidos_cc_kg}
+                        onChange={(e) => recalculateGeriatricoRequirement({ ger_liquidos_cc_kg: e.target.value })} />
+                      <p className="text-xs text-muted-foreground">Adulto mayor ~30 cc/kg</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 p-3 rounded-lg border border-dashed">
+                    <div>
+                      <h4 className="font-semibold text-sm">Estimación antropométrica Chumlea (opcional)</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Útil cuando el adulto mayor no puede pararse o pesarse. Talla (1985) y peso no ambulante (1988).
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <Label>Talón-rodilla (cm)</Label>
+                        <Input type="number" step="0.1" value={formData.ger_talon_rodilla_cm}
+                          onChange={(e) => recalculateGeriatricoRequirement({ ger_talon_rodilla_cm: e.target.value })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Perímetro brazo (cm)</Label>
+                        <Input type="number" step="0.1" value={formData.ger_perim_brazo_cm}
+                          onChange={(e) => recalculateGeriatricoRequirement({ ger_perim_brazo_cm: e.target.value })} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Perímetro pantorrilla (cm)</Label>
+                        <Input type="number" step="0.1" value={formData.ger_perim_pantorrilla_cm}
+                          onChange={(e) => recalculateGeriatricoRequirement({ ger_perim_pantorrilla_cm: e.target.value })} />
+                        <p className="text-xs text-muted-foreground">Sarcopenia si &lt; 31 cm</p>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Pliegue subescapular (mm)</Label>
+                        <Input type="number" step="0.1" value={formData.ger_pliegue_subescapular_mm}
+                          onChange={(e) => recalculateGeriatricoRequirement({ ger_pliegue_subescapular_mm: e.target.value })} />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <span>Talla est.: <strong>{g.tallaEstimada > 0 ? `${g.tallaEstimada.toFixed(1)} cm` : "—"}</strong></span>
+                      <span>Peso est.: <strong>{g.pesoEstimado > 0 ? `${g.pesoEstimado.toFixed(1)} kg` : "—"}</strong></span>
+                      {g.pesoEstimado > 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() =>
+                            recalculateGeriatricoRequirement({
+                              peso_actual: g.pesoEstimado.toFixed(1),
+                              peso_referencia_f2: g.pesoEstimado.toFixed(1),
+                              ...(g.tallaEstimada > 0 && !(parseFloat(formData.altura) > 0)
+                                ? { altura: g.tallaEstimada.toFixed(1) }
+                                : {}),
+                            })
+                          }
+                        >
+                          Usar peso/talla estimados
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    <div><span className="text-muted-foreground">IMC</span><p className="font-medium">{g.imc > 0 ? g.imc.toFixed(2) : "—"}</p></div>
+                    <div><span className="text-muted-foreground">Peso saludable (IMC 24.5)</span><p className="font-medium">{g.pesoSaludable > 0 ? g.pesoSaludable.toFixed(1) : "—"} kg</p></div>
+                    <div><span className="text-muted-foreground">Peso ajustado</span><p className="font-medium">{g.pesoAjustado > 0 ? g.pesoAjustado.toFixed(1) : "—"} kg</p></div>
+                    <div><span className="text-muted-foreground">Peso Chumlea</span><p className="font-medium">{g.pesoEstimado > 0 ? g.pesoEstimado.toFixed(1) : "—"} kg</p></div>
+                    {g.clasificacionImc && (
+                      <div className="sm:col-span-2"><span className="text-muted-foreground">Clasificación IMC</span><p className="font-medium">{g.clasificacionImc}</p></div>
+                    )}
+                    {g.riesgoSarcopenia && (
+                      <div className="sm:col-span-2"><span className="text-muted-foreground">Sarcopenia</span><p className="font-medium">{g.riesgoSarcopenia}</p></div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Fórmula de requerimiento energético</Label>
+                      <Select
+                        value={formula}
+                        onValueChange={(value) => {
+                          const presets: Record<string, string> = {
+                            perdida: "22",
+                            mantenimiento: "27",
+                            ganancia: "32",
+                          };
+                          const nextRango =
+                            value === "rango_calorico"
+                              ? (formData.rango_kcal_kg || presets[formData.rango_objetivo || "mantenimiento"] || "27")
+                              : formData.rango_kcal_kg;
+                          recalculateGeriatricoRequirement({
+                            formula_requerimiento: value,
+                            rango_kcal_kg: nextRango,
+                          });
+                        }}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="harris_benedict">Harris-Benedict</SelectItem>
+                          <SelectItem value="mifflin">Mifflin-St Jeor</SelectItem>
+                          <SelectItem value="schofield">FAO / Schofield</SelectItem>
+                          <SelectItem value="rango_calorico">Método del pulgar (kcal/kg)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {isRango
+                          ? "Método del pulgar: peso de referencia × kcal/kg/día"
+                          : "TMB × factor de actividad × factor de estrés"}
+                      </p>
+                    </div>
+
+                    {isRango ? (
+                      <>
+                        <div className="space-y-1">
+                          <Label>Objetivo (preset kcal/kg)</Label>
+                          <Select
+                            value={formData.rango_objetivo || "mantenimiento"}
+                            onValueChange={(value) => {
+                              const map: Record<string, string> = {
+                                perdida: "22",
+                                mantenimiento: "27",
+                                ganancia: "32",
+                              };
+                              recalculateGeriatricoRequirement({
+                                rango_objetivo: value,
+                                rango_kcal_kg: map[value] || "27",
+                              });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="perdida">Pérdida (~20–25)</SelectItem>
+                              <SelectItem value="mantenimiento">Mantenimiento (~25–30)</SelectItem>
+                              <SelectItem value="ganancia">Ganancia (~30–35)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>kcal / kg</Label>
+                          <Input type="number" step="0.5" value={formData.rango_kcal_kg}
+                            onChange={(e) => recalculateGeriatricoRequirement({ rango_kcal_kg: e.target.value })} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1">
+                          <Label>Factor de actividad</Label>
+                          <Select
+                            value={formData.ger_actividad_preset || "sedentario"}
+                            onValueChange={(value) => {
+                              const preset = GER_ACTIVIDAD_PRESETS.find((p) => p.value === value);
+                              recalculateGeriatricoRequirement({
+                                ger_actividad_preset: value,
+                                ger_factor_actividad: preset?.factor || "1.3",
+                              });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {GER_ACTIVIDAD_PRESETS.map((p) => (
+                                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input type="number" step="0.01" className="mt-1" value={formData.ger_factor_actividad}
+                            onChange={(e) => recalculateGeriatricoRequirement({ ger_factor_actividad: e.target.value })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Factor de estrés</Label>
+                          <Select
+                            value={formData.ger_estres_preset || "ninguno"}
+                            onValueChange={(value) => {
+                              const preset = GER_ESTRES_PRESETS.find((p) => p.value === value);
+                              recalculateGeriatricoRequirement({
+                                ger_estres_preset: value,
+                                ger_factor_estres: preset?.factor || "1.0",
+                              });
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {GER_ESTRES_PRESETS.map((p) => (
+                                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input type="number" step="0.01" className="mt-1" value={formData.ger_factor_estres}
+                            onChange={(e) => recalculateGeriatricoRequirement({ ger_factor_estres: e.target.value })} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    {!isRango && (
+                      <div>
+                        <span className="text-muted-foreground">TMB</span>
+                        <p className="font-medium">{g.tmb > 0 ? Math.round(g.tmb) : "—"} kcal</p>
+                      </div>
+                    )}
+                    {!isRango && (
+                      <div>
+                        <span className="text-muted-foreground">× FA × FE</span>
+                        <p className="font-medium">{g.fa} × {g.fe}</p>
+                      </div>
+                    )}
+                    {isRango && (
+                      <div>
+                        <span className="text-muted-foreground">Peso × kcal/kg</span>
+                        <p className="font-medium">{g.reqBase > 0 ? Math.round(g.reqBase) : "—"} kcal</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-muted-foreground">Base</span>
+                      <p className="font-medium">{g.reqBase > 0 ? Math.round(g.reqBase) : "—"} kcal</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total</span>
+                      <p className="font-bold text-lg text-primary">{Math.round(g.requerimientoFinal)} kcal</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-muted-foreground">Método · Líquidos</span>
+                      <p className="font-medium">{g.metodoLabel} · {Math.round(g.liquidosMl)} ml/día</p>
+                    </div>
+                  </div>
+
+                  {renderAjusteCaloriasUI()}
+                  <div className="space-y-1 max-w-xs">
+                    <Label>Calorías del plan (editables)</Label>
+                    <Input
+                      type="number"
+                      value={formData.requerimiento_energetico}
+                      onChange={(e) => {
+                        handleChange("requerimiento_energetico", e.target.value);
+                        handleChange("total_calorias_f2", e.target.value);
+                      }}
+                    />
+                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => recalculateGeriatricoRequirement({})}>
+                      Recalcular según fórmula geriátrica + FA × FE
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* Phase 1: Requerimiento Energético y Peso Saludable (adulto y otros) */}
-          {currentPhase === 1 && formData.tipo_plan !== "deportista" && formData.tipo_plan !== "pediatria" && !isGestanteTipo(formData.tipo_plan) && !isHospitalizado(formData.tipo_plan) && (
+          {currentPhase === 1 && formData.tipo_plan !== "deportista" && formData.tipo_plan !== "pediatria" && !isGestanteTipo(formData.tipo_plan) && !isHospitalizado(formData.tipo_plan) && !isGeriatrico(formData.tipo_plan) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -5151,47 +6447,159 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                 <p className="text-sm text-muted-foreground">{phaseDescription}</p>
               </CardHeader>
               <CardContent className="space-y-4">
-                {formData.tipo_plan === "deportista" && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 p-4 space-y-3">
-                    <div>
-                      <h4 className="font-semibold text-sm">Suplementos (por porción)</h4>
-                      <p className="text-xs text-muted-foreground">
-                        Según EVANUT: introduce manualmente los nutrientes de 1 porción del suplemento que use o recomiende el deportista. Luego asigna las porciones en la tabla.
-                      </p>
-                    </div>
-                    {(() => {
-                      const s = formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO] || {};
-                      const fields = [
-                        ["per_kcal", "Kcal"],
-                        ["per_prot", "Prot"],
-                        ["per_grasa", "Grasa"],
-                        ["per_gs", "GS"],
-                        ["per_gm", "GM"],
-                        ["per_gp", "GP"],
-                        ["per_col", "COL"],
-                        ["per_chos", "CHOS"],
-                        ["per_fd", "FD"],
-                      ] as const;
-                      return (
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                          {fields.map(([key, label]) => (
-                            <div key={key} className="space-y-1">
-                              <Label className="text-xs">{label}/porción</Label>
-                              <Input
-                                type="number"
-                                step="0.1"
-                                value={s[key] || ""}
-                                onChange={(e) => handleSuplementoNutrientChange(key, e.target.value)}
-                                className="h-8 text-xs"
-                                placeholder="0"
-                              />
-                            </div>
-                          ))}
+                {(() => {
+                  const suplementoKeys = listSuplementoKeys(formData.grupos_alimentos_f3);
+                  const fields = [
+                    ["per_kcal", "Kcal"],
+                    ["per_prot", "Prot"],
+                    ["per_grasa", "Grasa"],
+                    ["per_gs", "GS"],
+                    ["per_gm", "GM"],
+                    ["per_gp", "GP"],
+                    ["per_col", "COL"],
+                    ["per_chos", "CHOS"],
+                    ["per_fd", "FD"],
+                  ] as const;
+                  return (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 p-4 space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="font-semibold text-sm">Suplementos MIPRESS (por porción)</h4>
+                          <p className="text-xs text-muted-foreground">
+                            Agrega uno o más suplementos del catálogo MIPRESS. Cada uno aparece como fila en la fórmula desarrollada.
+                          </p>
                         </div>
-                      );
-                    })()}
-                  </div>
-                )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 border-amber-300 bg-white hover:bg-amber-100"
+                          onClick={handleAddSuplemento}
+                        >
+                          <Plus className="h-4 w-4 mr-1.5" />
+                          Agregar suplemento
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {suplementoKeys.map((grupoKey, idx) => {
+                          const s = formData.grupos_alimentos_f3[grupoKey] || {};
+                          const categoriaFiltro = s.mipress_categoria_filtro || "__all__";
+                          const suplementosFiltrados =
+                            categoriaFiltro === "__all__"
+                              ? MIPRESS_SUPLEMENTOS
+                              : MIPRESS_SUPLEMENTOS.filter((x) => x.categoria === categoriaFiltro);
+                          const canRemove =
+                            grupoKey !== SUPLEMENTOS_GRUPO ||
+                            Boolean(s.mipress_id || s.mipress_nombre || parseFloat(s.porciones) > 0 || parseFloat(s.per_kcal) > 0);
+
+                          return (
+                            <div
+                              key={grupoKey}
+                              className="rounded-xl border border-amber-200/80 bg-white/80 dark:bg-background/60 p-3 sm:p-4 space-y-3 shadow-sm"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold text-amber-900/90">
+                                  Suplemento {idx + 1}
+                                  {s.mipress_nombre ? (
+                                    <span className="font-normal text-muted-foreground"> · {s.mipress_nombre}</span>
+                                  ) : null}
+                                </p>
+                                {canRemove ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => handleRemoveSuplemento(grupoKey)}
+                                    title={grupoKey === SUPLEMENTOS_GRUPO ? "Limpiar suplemento" : "Eliminar suplemento"}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-1" />
+                                    {grupoKey === SUPLEMENTOS_GRUPO ? "Limpiar" : "Quitar"}
+                                  </Button>
+                                ) : null}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Categoría MIPRESS</Label>
+                                  <Select
+                                    value={categoriaFiltro}
+                                    onValueChange={(v) => {
+                                      const prev = formData.grupos_alimentos_f3[grupoKey] || {
+                                        ...emptyGrupoNutrients(),
+                                        manual: true,
+                                      };
+                                      handleChange("grupos_alimentos_f3", {
+                                        ...formData.grupos_alimentos_f3,
+                                        [grupoKey]: { ...prev, mipress_categoria_filtro: v },
+                                      });
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-9 text-xs bg-white">
+                                      <SelectValue placeholder="Todas las categorías" />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-72">
+                                      <SelectItem value="__all__">Todas las categorías</SelectItem>
+                                      {MIPRESS_CATEGORIAS.map((cat) => (
+                                        <SelectItem key={cat} value={cat}>
+                                          {cat}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Suplemento</Label>
+                                  <Select
+                                    value={s.mipress_id || "__manual__"}
+                                    onValueChange={(id) => handleMipressSuplementoSelect(grupoKey, id)}
+                                  >
+                                    <SelectTrigger className="h-9 text-xs bg-white">
+                                      <SelectValue placeholder="Elegir suplemento…" />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-72">
+                                      <SelectItem value="__manual__">Entrada manual (sin catálogo)</SelectItem>
+                                      {suplementosFiltrados.map((supp) => (
+                                        <SelectItem key={supp.id} value={supp.id}>
+                                          {supp.nombre} — {supp.porcion}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+
+                              {s.mipress_nombre && (
+                                <p className="text-xs text-amber-900/80">
+                                  <span className="font-medium">{s.mipress_nombre}</span>
+                                  {s.mipress_porcion ? ` · Porción: ${s.mipress_porcion}` : ""}
+                                  {s.mipress_categoria ? ` · ${s.mipress_categoria}` : ""}
+                                </p>
+                              )}
+
+                              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                                {fields.map(([key, label]) => (
+                                  <div key={key} className="space-y-1">
+                                    <Label className="text-xs">{label}/porción</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      value={s[key] || ""}
+                                      onChange={(e) => handleSuplementoNutrientChange(grupoKey, key, e.target.value)}
+                                      className="h-8 text-xs bg-white"
+                                      placeholder="0"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
                   <table className="w-full border-collapse text-sm">
                     <thead>
@@ -5218,11 +6626,18 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                       {gruposFase3.map((grupo, index) => {
                         const grupoData = formData.grupos_alimentos_f3[grupo] || {};
                         const isEven = index % 2 === 0;
+                        const suplementoLabel = isSuplementoGrupoKey(grupo)
+                          ? (grupoData.mipress_nombre
+                              ? `Suplemento: ${grupoData.mipress_nombre}`
+                              : grupo === SUPLEMENTOS_GRUPO
+                                ? "Suplementos MIPRESS"
+                                : "Suplemento adicional")
+                          : grupo;
 
                         return (
-                          <tr key={grupo} className={`transition-colors hover:bg-gray-100 ${isEven ? "bg-gray-50" : "bg-white"} ${grupo === SUPLEMENTOS_GRUPO ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
+                          <tr key={grupo} className={`transition-colors hover:bg-gray-100 ${isEven ? "bg-gray-50" : "bg-white"} ${isSuplementoGrupoKey(grupo) ? "bg-amber-50 hover:bg-amber-100" : ""}`}>
                             <td className="border border-gray-300 p-2 font-medium text-gray-800 sticky left-0 z-10 bg-inherit shadow-sm min-w-[250px] text-xs">
-                              {grupo === SUPLEMENTOS_GRUPO ? "Suplementos (manual)" : grupo}
+                              {suplementoLabel}
                             </td>
                             <td className="border border-gray-200 p-1">
                               <Input
@@ -5356,9 +6771,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                             {gruposFase3.map(grupo => {
                               const porciones = parseFloat(formData.grupos_alimentos_f3[grupo]?.porciones) || 0;
                               if (porciones <= 0) return null;
+                              const label = isSuplementoGrupoKey(grupo)
+                                ? (formData.grupos_alimentos_f3[grupo]?.mipress_nombre
+                                    ? `Suplemento: ${formData.grupos_alimentos_f3[grupo].mipress_nombre}`
+                                    : "Suplemento MIPRESS")
+                                : grupo;
                               return (
                                 <tr key={grupo} className="flex justify-between items-center py-1 border-b border-primary/5 last:border-0">
-                                  <td className="text-muted-foreground truncate mr-2">{grupo}</td>
+                                  <td className="text-muted-foreground truncate mr-2">{label}</td>
                                   <td className="font-bold text-primary tabular-nums">{porciones}</td>
                                 </tr>
                               );
@@ -5629,7 +7049,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             </Card>
           )}
 
-          {currentPhase >= 1 && (
+          {currentPhase >= 1 ? (
             <DialogFooter className="mt-6">
               <div className="flex justify-between w-full">
                 <Button
@@ -5655,7 +7075,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                 </div>
               </div>
             </DialogFooter>
-          )}
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

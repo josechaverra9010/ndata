@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Calendar, TrendingUp, Utensils, Plus, Pause, Play, Trash2, ClipboardList } from "lucide-react";
+import { Loader2, Calendar, TrendingUp, Utensils, Plus, Pause, Play, Trash2, ClipboardList, GitCompare } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { PlanPhasesSummaryDialog } from "./PlanPhasesSummaryDialog";
+import { PlanComparatorDialog } from "./PlanComparatorDialog";
 import { formatInColombia } from "@/lib/timezone";
 
 interface Patient {
@@ -64,6 +65,7 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [planToDelete, setPlanToDelete] = useState<PatientPlanAssignment | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [selectedSummaryPlan, setSelectedSummaryPlan] = useState<any>(null);
 
   useEffect(() => {
@@ -238,10 +240,20 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-3xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Planes Nutricionales</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              {patient.nombres} {patient.apellidos}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <DialogTitle>Planes Nutricionales</DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                  {patient.nombres} {patient.apellidos}
+                </p>
+              </div>
+              {assignments.length >= 2 && (
+                <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
+                  <GitCompare className="h-4 w-4 mr-1" />
+                  Comparar
+                </Button>
+              )}
+            </div>
           </DialogHeader>
 
           {loading ? (
@@ -397,6 +409,13 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
         plan={selectedSummaryPlan}
         open={summaryOpen}
         onOpenChange={setSummaryOpen}
+      />
+
+      <PlanComparatorDialog
+        patientId={patient.id}
+        patientName={`${patient.nombres} ${patient.apellidos}`}
+        open={compareOpen}
+        onOpenChange={setCompareOpen}
       />
 
       {/* Delete Confirmation Dialog */}

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "@/config/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,17 +9,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { useToast } from "@/hooks/use-toast";
-import {
   MoreVertical,
   Eye,
   Trash2,
@@ -29,6 +17,7 @@ import {
   Users,
   MessageSquare,
 } from "lucide-react";
+import { DeletePatientDialog } from "@/components/admin/DeletePatientDialog";
 
 interface Patient {
   id: number;
@@ -50,51 +39,8 @@ export function PatientActionsDropdown({
   onViewDetails,
   onUpdate,
 }: PatientActionsDropdownProps) {
-  const { toast } = useToast();
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const displayName =
-    patient.name ||
-    [patient.nombres, patient.apellidos].filter(Boolean).join(" ") ||
-    patient.email;
-
-  const handleDelete = async () => {
-    try {
-      setDeleting(true);
-      const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patients/${patient.id}`, {
-        method: "DELETE",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        const detail = typeof err.detail === "string" ? err.detail : "Error al eliminar paciente";
-        throw new Error(detail);
-      }
-
-      toast({
-        title: "Paciente eliminado",
-        description: `${displayName} ha sido eliminado`,
-      });
-
-      setDeleteDialogOpen(false);
-      onUpdate?.();
-    } catch (error: any) {
-      console.error("Error deleting patient:", error);
-      toast({
-        title: "Error",
-        description: error?.message || "No se pudo eliminar el paciente. Intenta nuevamente.",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   return (
     <>
@@ -136,32 +82,17 @@ export function PatientActionsDropdown({
             className="text-destructive focus:text-destructive"
           >
             <Trash2 className="mr-2 h-4 w-4" />
-            Eliminar
+            Mover a papelera
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar paciente?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción eliminará permanentemente a{" "}
-              <strong>{displayName}</strong> y sus datos asociados. No se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleting ? "Eliminando..." : "Sí, eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeletePatientDialog
+        patient={patient}
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onSuccess={onUpdate}
+      />
     </>
   );
 }

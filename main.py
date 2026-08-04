@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Form, Body
+from fastapi import FastAPI, HTTPException, Depends, status, Form, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Date, Text, Float, JSON, ForeignKey, Enum, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -30,7 +30,7 @@ from timezone_co import now_co, today_co, now_co_str, today_co_str, TZ_LABEL
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy import func, and_, or_
 import io
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
@@ -47,26 +47,75 @@ if not DATABASE_URL:
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL)
+# Evitar que el arranque cuelgue indefinidamente si la DB no responde (Cloud Run)
+_engine_kwargs = {
+    "pool_pre_ping": True,
+    "pool_recycle": 300,
+}
+if DATABASE_URL.startswith("mysql"):
+    _engine_kwargs["connect_args"] = {"connect_timeout": 8}
+elif DATABASE_URL.startswith("postgresql"):
+    _engine_kwargs["connect_args"] = {"connect_timeout": 8}
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 class Base(DeclarativeBase):
     pass
 
+def safe_create_all():
+    """Crea tablas sin tumbar el arranque si la DB no está lista."""
+    global _DB_AVAILABLE
+    if _DB_AVAILABLE is False:
+        return
+    try:
+        Base.metadata.create_all(bind=engine)
+        _DB_AVAILABLE = True
+    except Exception as e:
+        _DB_AVAILABLE = False
+        print(f"[DB] create_all skipped: {e}")
+
+_DB_AVAILABLE = None  # None=unknown, True=ok, False=unreachable
+
 def ensure_schema_migrations():
-    inspector = inspect(engine)
+    global _DB_AVAILABLE
+    if _DB_AVAILABLE is False:
+        return
+    try:
+        inspector = inspect(engine)
 
-    if "users" in inspector.get_table_names():
-        cols = {c["name"] for c in inspector.get_columns("users")}
-        if "nutritionist_id" not in cols:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE users ADD COLUMN nutritionist_id INTEGER NULL"))
-    if "meal_plans" in inspector.get_table_names():
-        cols = {c["name"] for c in inspector.get_columns("meal_plans")}
-        if "tipo" not in cols:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE meal_plans ADD COLUMN tipo VARCHAR(50) DEFAULT 'adulto'"))
+        if "users" in inspector.get_table_names():
+            cols = {c["name"] for c in inspector.get_columns("users")}
+            if "nutritionist_id" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN nutritionist_id INTEGER NULL"))
+            for col_name, col_sql in [
+                ("acompanante_nombre", "VARCHAR(150) NULL"),
+                ("acompanante_parentesco", "VARCHAR(80) NULL"),
+                ("acompanante_telefono", "VARCHAR(30) NULL"),
+                ("acompanante_email", "VARCHAR(100) NULL"),
+                ("acompanante_documento", "VARCHAR(50) NULL"),
+                ("acompanante_observaciones", "TEXT NULL"),
+                ("examenes_bioquimicos", "JSON NULL"),
+                ("programa_eps", "TEXT NULL"),
+                ("datos_clinicos", "JSON NULL"),
+                ("deleted_at", "VARCHAR(50) NULL"),
+            ]:
+                if col_name not in cols:
+                    with engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_sql}"))
+                    cols.add(col_name)
+        if "meal_plans" in inspector.get_table_names():
+            cols = {c["name"] for c in inspector.get_columns("meal_plans")}
+            if "tipo" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE meal_plans ADD COLUMN tipo VARCHAR(50) DEFAULT 'adulto'"))
+        _DB_AVAILABLE = True
+    except Exception as e:
+        # En Cloud Run sin Cloud SQL / DATABASE_URL correcta, no bloquear el puerto
+        _DB_AVAILABLE = False
+        print(f"[MIGRATE] Schema migration skipped at import: {e}")
 
-ensure_schema_migrations()
+# Las migraciones se ejecutan en @app.on_event("startup") para no bloquear el puerto en Cloud Run.
 
 # Seguridad
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -91,12 +140,13 @@ app = FastAPI(docs_url=None, redoc_url=None)
 
 @app.on_event("startup")
 def set_colombia_timezone_context():
-    """Documenta y valida que la app opera en zona Colombia."""
+    """Documenta timezone y ejecuta bootstrap de DB tras abrir el puerto."""
     print(f"[TZ] NutriData timezone: America/Bogota (COT) | now={now_co_str()}")
+    _run_database_bootstrap()
 
 
 # URL base para las fotos (usar variable de entorno o localhost por defecto)
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8001")
 
 # Define los orígenes permitidos explícitamente
 origins = [
@@ -267,10 +317,15 @@ async def validate_upload_file(file: UploadFile, allowed_extensions: set = ALLOW
     
     # Leer contenido para validar tamaño
     contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE:
+    try:
+        from config_module import get_max_upload_bytes
+        max_size = get_max_upload_bytes()
+    except Exception:
+        max_size = MAX_FILE_SIZE
+    if len(contents) > max_size:
         raise HTTPException(
             status_code=400,
-            detail=f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE / 1024 / 1024}MB"
+            detail=f"Archivo demasiado grande. Máximo: {max_size / 1024 / 1024:.1f}MB"
         )
     
     # Volver al inicio del archivo para que pueda ser leído nuevamente
@@ -353,16 +408,33 @@ def _email_layout(inner_body: str, title: str, frontend_url: str):
 </html>"""
 
 
+def _smtp_settings() -> dict:
+    try:
+        from config_module import get_email_config
+        return get_email_config()
+    except Exception:
+        return {
+            "smtp_host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
+            "smtp_port": int(os.getenv("SMTP_PORT", "587") or 587),
+            "smtp_user": os.getenv("SMTP_USER", ""),
+            "smtp_password": os.getenv("SMTP_PASSWORD", ""),
+            "from_email": os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com"),
+            "frontend_url": os.getenv("FRONTEND_URL", "http://localhost:8080"),
+            "base_url": os.getenv("BASE_URL", "http://localhost:8001"),
+        }
+
+
 def send_reset_email(to_email: str, reset_token: str, user_name: str):
     """
     Enviar email de recuperación de contraseña (estilo NutriData).
     """
     try:
-        smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
-        sender_password = os.getenv("SMTP_PASSWORD", "")
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080").rstrip("/")
+        cfg = _smtp_settings()
+        smtp_server = cfg["smtp_host"]
+        smtp_port = int(cfg["smtp_port"])
+        sender_email = cfg["from_email"]
+        sender_password = cfg["smtp_password"]
+        frontend_url = str(cfg["frontend_url"]).rstrip("/")
         reset_link = f"{frontend_url}/reset-password?token={quote(reset_token, safe='')}"
 
         message = MIMEMultipart("alternative")
@@ -399,17 +471,39 @@ def send_reset_email(to_email: str, reset_token: str, user_name: str):
         return False
 
 
+def send_generic_email(to_email: str, subject: str, body: str) -> bool:
+    """Email genérico para comunicaciones masivas y reportes programados."""
+    try:
+        cfg = _smtp_settings()
+        message = MIMEMultipart("alternative")
+        message["Subject"] = subject
+        message["From"] = f"NutriData <{cfg['from_email']}>"
+        message["To"] = to_email
+        frontend_url = str(cfg.get("frontend_url", "http://localhost:8080")).rstrip("/")
+        html = _email_layout(f"<p style='white-space:pre-wrap'>{body}</p>", subject, frontend_url)
+        message.attach(MIMEText(html, "html"))
+        with smtplib.SMTP(cfg["smtp_host"], int(cfg["smtp_port"])) as server:
+            server.starttls()
+            server.login(cfg["from_email"], cfg["smtp_password"])
+            server.sendmail(cfg["from_email"], to_email, message.as_string())
+        return True
+    except Exception as e:
+        print(f"❌ send_generic_email: {e}")
+        return False
+
+
 def send_plan_assignment_email(to_email: str, patient_name: str, plan_name: str, start_date: str):
     """
     Enviar email al paciente cuando se le asigna un plan nutricional (estilo NutriData).
     """
     try:
-        smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
-        sender_password = os.getenv("SMTP_PASSWORD", "")
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-        plan_link = f"{frontend_url.rstrip('/')}/patient/my-plan"
+        cfg = _smtp_settings()
+        smtp_server = cfg["smtp_host"]
+        smtp_port = int(cfg["smtp_port"])
+        sender_email = cfg["from_email"]
+        sender_password = cfg["smtp_password"]
+        frontend_url = cfg["frontend_url"]
+        plan_link = f"{str(frontend_url).rstrip('/')}/patient/my-plan"
 
         message = MIMEMultipart("alternative")
         message["Subject"] = "Te han asignado un plan nutricional - NutriData"
@@ -447,11 +541,12 @@ def send_nutritionist_invite_email(to_email: str, name: str, registration_link: 
     Enviar email al nutricionista con el enlace para completar su registro (estilo NutriData).
     """
     try:
-        smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        sender_email = os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER", "tu-email@gmail.com")
-        sender_password = os.getenv("SMTP_PASSWORD", "")
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+        cfg = _smtp_settings()
+        smtp_server = cfg["smtp_host"]
+        smtp_port = int(cfg["smtp_port"])
+        sender_email = cfg["from_email"]
+        sender_password = cfg["smtp_password"]
+        frontend_url = cfg["frontend_url"]
 
         message = MIMEMultipart("alternative")
         message["Subject"] = "Completa tu registro en NutriData"
@@ -489,10 +584,20 @@ def send_nutritionist_invite_email(to_email: str, name: str, registration_link: 
 
 # ==================== FUNCIÓN DE ENVÍO DE WHATSAPP ====================
 
-def send_whatsapp_notification(phone: str, message: str):
+def send_whatsapp_notification(phone: str, message: str, db: Session = None, organization_id: int = None):
     """
-    Enviar notificación vía WhatsApp Cloud API
+    Enviar notificación vía WhatsApp Cloud API.
+    Prioriza conexión de integrations_module (por org) y cae a variables de entorno.
     """
+    if db is not None:
+        try:
+            from integrations_module import send_whatsapp_message
+            sent = send_whatsapp_message(phone, message, db, organization_id)
+            if sent:
+                return True
+        except Exception as exc:
+            print(f"[WhatsApp] integrations_module: {exc}")
+
     try:
         access_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
         phone_id = os.getenv("WHATSAPP_PHONE_ID")
@@ -509,19 +614,12 @@ def send_whatsapp_notification(phone: str, message: str):
             print(f"{'='*60}\n")
             return False
 
-        # Limpiar número de teléfono (solo dígitos)
         clean_phone = "".join(filter(str.isdigit, phone))
-        
-        # URL de la API de Meta
         url = f"https://graph.facebook.com/v18.0/{phone_id}/messages"
-        
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
-        
-        # Enviar mensaje de texto simple (o usar plantillas si es producción)
-        # Nota: Meta requiere plantillas para iniciar conversaciones, pero enviaremos como texto para desarrollo
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -586,7 +684,19 @@ class UserDB(Base):
     evaluacion_nutricional = Column(Text, nullable=True)
     frecuencia_consumo = Column(JSON, nullable=True)
 
+    # Acompañante / cuidador (opcional)
+    acompanante_nombre = Column(String(150), nullable=True)
+    acompanante_parentesco = Column(String(80), nullable=True)
+    acompanante_telefono = Column(String(30), nullable=True)
+    acompanante_email = Column(String(100), nullable=True)
+    acompanante_documento = Column(String(50), nullable=True)
+    acompanante_observaciones = Column(Text, nullable=True)
+    examenes_bioquimicos = Column(JSON, nullable=True)
+    programa_eps = Column(Text, nullable=True)
+    datos_clinicos = Column(JSON, nullable=True)
+
     nutritionist_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    deleted_at = Column(String(50), nullable=True, index=True)
 
     nutritionist = relationship("UserDB", foreign_keys=[nutritionist_id], remote_side=[id])
     
@@ -631,6 +741,23 @@ class RecipeDB(Base):
     isFavorite = Column(Integer, default=0)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_public = Column(Integer, default=0)  # 0=privada, 1=pública. Solo superadmin puede cambiar.
+    approval_status = Column(String(20), default="draft")  # draft | pending | approved | rejected
+    is_system = Column(Integer, default=0)  # 1 = biblioteca global del sistema
+    source_recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(String(50), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    submitted_at = Column(String(50), nullable=True)
+    created_at = Column(String(50), nullable=True)
+    updated_at = Column(String(50), nullable=True)
+
+
+class RecipeShareDB(Base):
+    """Recetas privadas compartidas con nutricionistas específicos."""
+    __tablename__ = "recipe_shares"
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), primary_key=True)
+    nutritionist_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    created_at = Column(String(50), nullable=True)
 
 # NUEVOS MODELOS PARA MEAL PLANS
 
@@ -696,7 +823,7 @@ class PatientMealPlanDB(Base):
     patient = relationship("UserDB", back_populates="assigned_plans")
     meal_plan = relationship("MealPlanDB", back_populates="assigned_patients")
 
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 class DailyMealAssignmentDB(Base):
     __tablename__ = "daily_meal_assignments"
@@ -716,10 +843,12 @@ class DailyMealAssignmentDB(Base):
 
 
 # Actualizar tablas
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 # Migración: añadir created_by_id a recipes y weekly_menus_complete si no existe
 def _add_created_by_columns():
+    if _DB_AVAILABLE is False:
+        return
     from sqlalchemy import text
     for table, col in [("recipes", "created_by_id"), ("weekly_menus_complete", "created_by_id")]:
         try:
@@ -730,6 +859,8 @@ def _add_created_by_columns():
             pass  # Columna ya existe
 
 def _add_recipe_is_public():
+    if _DB_AVAILABLE is False:
+        return
     from sqlalchemy import text
     try:
         with engine.connect() as conn:
@@ -740,6 +871,50 @@ def _add_recipe_is_public():
 
 _add_created_by_columns()
 _add_recipe_is_public()
+
+
+def _add_recipe_moderation_columns():
+    if _DB_AVAILABLE is False:
+        return
+    from sqlalchemy import text, inspect as sa_inspect
+    try:
+        insp = sa_inspect(engine)
+        if "recipes" not in insp.get_table_names():
+            return
+        cols = {c["name"] for c in insp.get_columns("recipes")}
+        migrations = [
+            ("approval_status", "VARCHAR(20) DEFAULT 'draft'"),
+            ("is_system", "INTEGER DEFAULT 0"),
+            ("source_recipe_id", "INTEGER NULL"),
+            ("reviewed_by_id", "INTEGER NULL"),
+            ("reviewed_at", "VARCHAR(50) NULL"),
+            ("rejection_reason", "TEXT NULL"),
+            ("submitted_at", "VARCHAR(50) NULL"),
+            ("created_at", "VARCHAR(50) NULL"),
+            ("updated_at", "VARCHAR(50) NULL"),
+        ]
+        for col, sql in migrations:
+            if col not in cols:
+                with engine.connect() as conn:
+                    conn.execute(text(f"ALTER TABLE recipes ADD COLUMN {col} {sql}"))
+                    conn.commit()
+        if "recipe_shares" not in insp.get_table_names():
+            RecipeShareDB.__table__.create(bind=engine, checkfirst=True)
+        # Backfill estados de moderación para recetas existentes
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE recipes SET approval_status = 'approved' "
+                "WHERE is_public = 1 AND (approval_status IS NULL OR approval_status = '' OR approval_status = 'draft')"
+            ))
+            conn.execute(text(
+                "UPDATE recipes SET approval_status = 'draft' "
+                "WHERE (is_public IS NULL OR is_public = 0) AND (approval_status IS NULL OR approval_status = '')"
+            ))
+    except Exception as e:
+        print(f"[MIGRATE] recipe moderation: {e}")
+
+
+_add_recipe_moderation_columns()
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -777,6 +952,14 @@ class PatientCreateSchema(BaseModel):
     evaluacion_nutricional: Optional[str] = None
     frecuencia_consumo: Optional[List[dict]] = None
     status: Optional[str] = "activo"
+    # Acompañante (opcional)
+    acompanante_nombre: Optional[str] = None
+    acompanante_parentesco: Optional[str] = None
+    acompanante_telefono: Optional[str] = None
+    acompanante_email: Optional[str] = None
+    acompanante_documento: Optional[str] = None
+    acompanante_observaciones: Optional[str] = None
+    examenes_bioquimicos: Optional[dict] = None
 
     nutritionist_id: Optional[int] = None
 
@@ -810,6 +993,13 @@ class ProfileUpdateSchema(BaseModel):
     antecedentes_familiares: Optional[str] = None
     evaluacion_nutricional: Optional[str] = None
     frecuencia_consumo: Optional[List[dict]] = None
+    acompanante_nombre: Optional[str] = None
+    acompanante_parentesco: Optional[str] = None
+    acompanante_telefono: Optional[str] = None
+    acompanante_email: Optional[str] = None
+    acompanante_documento: Optional[str] = None
+    acompanante_observaciones: Optional[str] = None
+    examenes_bioquimicos: Optional[dict] = None
 
 class PatientResponse(BaseModel):
     id: int
@@ -841,10 +1031,17 @@ class PatientResponse(BaseModel):
     edad_formateada: Optional[str] = None
     evaluacion_nutricional: Optional[str] = None
     frecuencia_consumo: Optional[List[dict]] = None
-
     nutritionist_id: Optional[int] = None
-    tiene_plan_activo: bool = False
+    tiene_plan_activo: Optional[bool] = None
     plan_activo: Optional[str] = None
+    acompanante_nombre: Optional[str] = None
+    acompanante_parentesco: Optional[str] = None
+    acompanante_telefono: Optional[str] = None
+    acompanante_email: Optional[str] = None
+    acompanante_documento: Optional[str] = None
+    acompanante_observaciones: Optional[str] = None
+    examenes_bioquimicos: Optional[dict] = None
+    deleted_at: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1160,6 +1357,19 @@ def require_superadmin(current_user: UserDB = Depends(get_current_user)):
 
 
 def authorize_patient_access(patient_id: int, current_user: UserDB, db: Session):
+    if current_user.role == "admin":
+        role = get_staff_role(db, current_user, AdminProfileDB)
+        if role == "clinical_assistant":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Los asistentes clínicos solo gestionan citas")
+        if role == "org_admin":
+            from platform_module import get_user_organization_id, patient_in_organization
+            org_id = get_user_organization_id(db, current_user.id)
+            if not org_id:
+                raise HTTPException(status_code=403, detail="Admin org sin organización asignada")
+            if not patient_in_organization(db, patient_id, org_id):
+                raise HTTPException(status_code=403, detail="Paciente fuera de su organización EPS")
+            return
+
     if current_user.role == "patient":
         if current_user.id != patient_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
@@ -1365,6 +1575,21 @@ def login(request: LoginSchema, db: Session = Depends(get_db)):
     
     if not verify_password(request.password, user.password):
         raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+
+    if user.role == "superadmin" and superadmin_requires_2fa(db, user.id):
+        temp_token = jwt.encode({
+            "sub": user.email,
+            "id": user.id,
+            "role": user.role,
+            "pending_2fa": True,
+            "exp": datetime.utcnow() + timedelta(minutes=10),
+        }, SECRET_KEY, algorithm="HS256")
+        return {
+            "success": True,
+            "requires_2fa": True,
+            "temp_token": temp_token,
+            "user": {"id": user.id, "name": f"{user.nombres} {user.apellidos}", "role": user.role, "email": user.email},
+        }
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -1627,7 +1852,13 @@ class AdminProfileDB(Base):
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
     specialty = Column(String(100), nullable=True)
     license = Column(String(50), nullable=True)
+    license_expiry = Column(String(20), nullable=True)
     bio = Column(Text, nullable=True)
+    staff_role = Column(String(50), default="nutritionist")
+    organization_id = Column(Integer, nullable=True)
+    site_id = Column(Integer, nullable=True)
+    invited_at = Column(String(50), nullable=True)
+    invite_expires_at = Column(String(50), nullable=True)
     
     # Relación con usuario
     user = relationship("UserDB", foreign_keys=[user_id])
@@ -1659,7 +1890,7 @@ class AdminAppearanceSettingsDB(Base):
     user = relationship("UserDB", foreign_keys=[user_id])
 
 # Crear las tablas
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 # ==================== ESQUEMAS PYDANTIC PARA CONFIGURACIÓN ====================
 
@@ -1723,7 +1954,7 @@ class PasswordChangeSchema(BaseModel):
     confirm_password: str
 
 # Crear las tablas
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -1777,7 +2008,7 @@ class CustomFoodDB(Base):
     patient = relationship("UserDB", foreign_keys=[patient_id])
 
 # Crear las tablas
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -1868,6 +2099,12 @@ class SupportTicketDB(Base):
     priority = Column(String(20), default="normal")  # low, normal, high
     admin_response = Column(Text, nullable=True)
     admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # quien respondió
+    assigned_agent_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    escalated = Column(Integer, default=0)
+    escalated_at = Column(String(50), nullable=True)
+    sla_due_at = Column(String(50), nullable=True)
+    first_response_at = Column(String(50), nullable=True)
+    ticket_level = Column(String(10), default="L1")
     created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
     updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
     resolved_at = Column(String(50), nullable=True)
@@ -1891,19 +2128,193 @@ class ArticleDB(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
+    slug = Column(String(280), unique=True, nullable=True, index=True)
     excerpt = Column(Text, nullable=True)
     content = Column(Text, nullable=False)
     category = Column(String(80), default="Nutrición")
     author = Column(String(150), nullable=True)
     image = Column(String(500), nullable=True)
+    meta_description = Column(String(320), nullable=True)
+    og_image = Column(String(500), nullable=True)
     is_published = Column(Boolean, default=False)
     published_at = Column(String(50), nullable=True)
+    scheduled_publish_at = Column(String(50), nullable=True)
+    view_count = Column(Integer, default=0)
+    clinical_conditions = Column(JSON, nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
     updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
 
 
-Base.metadata.create_all(bind=engine)
+class ArticleCategoryDB(Base):
+    """Categorías gestionables para el CMS de artículos."""
+    __tablename__ = "article_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(80), unique=True, nullable=False)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(String(255), nullable=True)
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+    updated_at = Column(String(50), default=lambda: now_co().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+from platform_module import (
+    register_platform_models,
+    register_platform_routes,
+    ensure_platform_schema,
+    log_audit,
+    get_staff_role,
+    staff_has_permission,
+    enhanced_authorize_patient_access,
+)
+
+from nutritionist_module import (
+    register_nutritionist_models,
+    ensure_nutritionist_schema,
+    register_nutritionist_routes,
+)
+from phase4_module import register_phase4_models, register_phase4_routes
+from patient_phase1_module import register_patient_phase1_routes
+from patient_phase2_module import (
+    register_patient_phase2_models,
+    ensure_patient_phase2_schema,
+    register_patient_phase2_routes,
+)
+from patient_phase3_module import (
+    register_patient_phase3_models,
+    ensure_patient_phase3_schema,
+    register_patient_phase3_routes,
+)
+from patient_phase4_module import (
+    register_patient_phase4_models,
+    ensure_patient_phase4_schema,
+    register_patient_phase4_routes,
+)
+from billing_module import (
+    register_billing_models,
+    migrate_billing_schema,
+    register_billing_routes,
+    enforce_org_quota,
+    enforce_nutritionist_quota,
+)
+from ops_module import (
+    register_ops_models,
+    migrate_ops_schema,
+    register_ops_routes,
+    create_ops_metrics_middleware,
+    enqueue_ops_job,
+)
+from compliance_module import (
+    register_compliance_models,
+    migrate_compliance_schema,
+    register_compliance_routes,
+    log_clinical_access,
+)
+from integrations_module import (
+    register_integrations_models,
+    migrate_integrations_schema,
+    register_integrations_routes,
+    dispatch_webhook_event,
+)
+from support_module import (
+    register_support_models,
+    migrate_support_schema,
+    register_support_routes,
+    on_ticket_created,
+)
+from platform_analytics_module import (
+    register_platform_analytics_models,
+    migrate_platform_analytics_schema,
+    register_platform_analytics_routes,
+)
+from clinical_content_module import (
+    register_clinical_content_models,
+    migrate_clinical_content_schema,
+    register_clinical_content_routes,
+    seed_clinical_content_defaults,
+    load_challenge_defs,
+    load_prep_item_defs,
+    load_substitution_groups,
+)
+from crosscutting_module import (
+    register_crosscutting_models,
+    migrate_crosscutting_schema,
+    register_crosscutting_routes,
+    seed_crosscutting_defaults,
+    create_rate_limit_middleware,
+    superadmin_requires_2fa,
+    verify_totp_code,
+)
+
+OrganizationDB, OrganizationMemberDB, OrganizationSiteDB, AuditLogDB = register_platform_models(Base)
+InterventionTemplateDB = register_nutritionist_models(Base)
+FollowUpTaskDB = register_phase4_models(Base)
+PatientInterventionDB, AppointmentPrepChecklistDB = register_patient_phase2_models(Base)
+PatientChallengeClaimDB, PatientHabitLogDB, PatientReminderPrefsDB = register_patient_phase3_models(Base)
+MealPhotoDB, WearableSnapshotDB, OfflineSyncLogDB = register_patient_phase4_models(Base)
+BillingPlanDB, SubscriptionDB, InvoiceDB, PaymentWebhookDB = register_billing_models(Base)
+OpsJobDB = register_ops_models(Base)
+(
+    PrivacyConsentDB,
+    LegalDocumentDB,
+    ClinicalAccessLogDB,
+    DataDeletionRequestDB,
+    SecurityBreachReportDB,
+) = register_compliance_models(Base)
+IntegrationConnectionDB, OutgoingWebhookDB, WebhookDeliveryLogDB = register_integrations_models(Base)
+SupportMacroDB = register_support_models(Base)
+PlatformModuleUsageDB, PlatformAppSessionDB, NpsSurveyDB = register_platform_analytics_models(Base)
+ChallengeTemplateDB, FoodSubstitutionGroupDB, AppointmentPrepTemplateDB = register_clinical_content_models(Base)
+(
+    ImpersonationLogDB,
+    PartnerApiKeyDB,
+    MassCommunicationDB,
+    WorkflowRuleDB,
+    ScheduledReportDB,
+    ReleaseNoteDB,
+    SuperadminTotpDB,
+    SuperadminIpAllowlistDB,
+) = register_crosscutting_models(Base)
+
+
+def _run_database_bootstrap():
+    """Migraciones y seeds — diferido para arranque rápido en Cloud Run."""
+    global _DB_AVAILABLE
+    if os.getenv("K_SERVICE") and not os.getenv("DATABASE_URL"):
+        _DB_AVAILABLE = False
+        print("[DB] Cloud Run sin DATABASE_URL — bootstrap omitido")
+        return
+    try:
+        ensure_schema_migrations()
+        ensure_platform_schema(engine, inspect, text, None)
+        ensure_nutritionist_schema(engine, inspect, text)
+        ensure_patient_phase2_schema(engine, inspect, text)
+        ensure_patient_phase3_schema(engine, inspect, text)
+        ensure_patient_phase4_schema(engine, inspect, text)
+        migrate_billing_schema(engine, inspect, text, BillingPlanDB)
+        migrate_ops_schema(engine, inspect, text, OpsJobDB)
+        migrate_compliance_schema(engine, inspect, text, LegalDocumentDB)
+        migrate_integrations_schema(engine, inspect, text)
+        migrate_support_schema(engine, inspect, text)
+        migrate_platform_analytics_schema(engine, inspect, text)
+        migrate_clinical_content_schema(engine, inspect, text, InterventionTemplateDB)
+        migrate_crosscutting_schema(engine, inspect, text)
+        safe_create_all()
+        boot_db = SessionLocal()
+        try:
+            boot_settings = boot_db.query(SystemSettingsDB).first()
+            refresh_runtime_cache(boot_settings)
+            seed_clinical_content_defaults(boot_db, now_co, InterventionTemplateDB)
+            seed_crosscutting_defaults(boot_db, now_co)
+        finally:
+            boot_db.close()
+        print("[DB] Bootstrap completado")
+    except Exception as e:
+        _DB_AVAILABLE = False
+        print(f"[DB] Bootstrap falló (modo degradado): {e}")
+
 
 # ==================== ESQUEMAS PYDANTIC ====================
 
@@ -1984,9 +2395,11 @@ class SuperAdminUserResponse(BaseModel):
     email: str
     role: str
     status: str
-    avatar: Optional[str]
+    avatar: Optional[str] = None
     createdAt: str
-    lastLogin: Optional[str]
+    lastLogin: Optional[str] = None
+    nutritionist_name: Optional[str] = None
+    organization_name: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -2004,15 +2417,33 @@ class NutritionistResponse(BaseModel):
     id: int
     name: str
     email: str
-    specialty: Optional[str]
+    specialty: Optional[str] = None
     patients: int
     rating: float
     status: str
-    avatar: Optional[str]
+    avatar: Optional[str] = None
     joinedAt: str
-    organization: Optional[str]
+    organization: Optional[str] = None
+    organization_id: Optional[int] = None
+    staff_role: Optional[str] = None
+    license: Optional[str] = None
+    license_expiry: Optional[str] = None
+    license_alert: Optional[str] = None
+    invite_expires_at: Optional[str] = None
+    onboarding: Optional[dict] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class NutritionistProfileUpdate(BaseModel):
+    specialty: Optional[str] = None
+    license: Optional[str] = None
+    license_expiry: Optional[str] = None
+    bio: Optional[str] = None
+    phone: Optional[str] = None
+    organization_id: Optional[int] = None
+    site_id: Optional[int] = None
+    staff_role: Optional[str] = None
 
 # ==================== FUNCIONES AUXILIARES ====================
 
@@ -2123,14 +2554,16 @@ def calcular_progreso(peso_actual: Optional[float], peso_objetivo: Optional[floa
     return min(100, max(0, int(progreso)))
 
 
-def build_nutrition_report_bytes(patient_id: int, db: Session):
+def build_nutrition_report_bytes(patient_id: int, db: Session, current_user: UserDB = None):
     """Construye el PDF detallado del informe nutricional y devuelve (bytes, filename)."""
+    from pdf_utils import draw_pdf_signature_block, get_nutritionist_signatory, make_verification_code
+
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
-    nutritionist = None
-    if getattr(patient, 'nutritionist_id', None):
+    nutritionist = current_user if current_user and current_user.role in ("admin", "superadmin") else None
+    if nutritionist is None and getattr(patient, 'nutritionist_id', None):
         nutritionist = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id).first()
 
     recent_metrics = db.query(ProgressMetricDB).filter(ProgressMetricDB.patient_id == patient_id).order_by(ProgressMetricDB.date.desc()).limit(6).all()
@@ -2443,22 +2876,29 @@ def build_nutrition_report_bytes(patient_id: int, db: Session):
             p.drawString(50, notes_y, nutritionist_note[i:i+100])
             notes_y -= 14
 
-    footer_y = 60
-    p.setFont("Helvetica", 9)
-    p.setFillColor(colors.HexColor('#6b6159'))
-    generated_by = nutritionist.nombres + " " + nutritionist.apellidos if nutritionist else "Sistema NutriData"
-    license_to = None
-    if nutritionist:
-        admin_prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == nutritionist.id).first()
-        if admin_prof and admin_prof.license:
-            license_to = admin_prof.license
-    footer_left = f"Generado por: {generated_by}"
-    if license_to:
-        footer_left += f" — TO: {license_to}"
-    p.drawString(50, footer_y, footer_left)
-    p.drawRightString(width - 50, footer_y, "NutriData ©")
+    footer_y = 90
+    generated_at_dt = now_co()
+    generated_at = generated_at_dt.strftime("%Y-%m-%d %H:%M COT")
+    signatory_id = nutritionist.id if nutritionist else 0
+    verification_code = make_verification_code(signatory_id, "nutrition_report", generated_at_dt)
+    nutri_name, license_to, specialty = get_nutritionist_signatory(db, nutritionist, AdminProfileDB)
 
-    p.showPage()
+    if footer_y < 100:
+        p.showPage()
+        footer_y = height - 120
+    draw_pdf_signature_block(
+        p,
+        x=50,
+        y=footer_y,
+        width=width - 100,
+        nutritionist_name=nutri_name,
+        license_to=license_to,
+        specialty=specialty,
+        generated_at=generated_at,
+        verification_code=verification_code,
+        doc_label="Informe nutricional",
+    )
+
     p.save()
 
     buffer.seek(0)
@@ -2491,27 +2931,22 @@ def _pdf_wrap_lines(text: str, max_chars: int = 95):
 
 
 def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: UserDB, db: Session):
-    """PDF Historia Clínica Nutricional (formato EVANUT / Word) con pie del nutricionista + TO."""
+    """PDF Historia Clínica Nutricional (formato EVANUT / Word) con firma digital."""
+    from pdf_utils import draw_pdf_signature_block, get_nutritionist_signatory, make_verification_code
+
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
-    # Nutricionista firmante: preferir usuario actual (admin), luego nutritionist_id del paciente
     nutritionist = current_user if current_user and current_user.role in ("admin", "superadmin") else None
     if nutritionist is None and getattr(patient, "nutritionist_id", None):
         nutritionist = db.query(UserDB).filter(UserDB.id == patient.nutritionist_id).first()
 
-    license_to = None
-    if nutritionist:
-        admin_prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == nutritionist.id).first()
-        if admin_prof and admin_prof.license:
-            license_to = admin_prof.license
-
-    nutri_name = (
-        f"{(nutritionist.nombres or '').strip()} {(nutritionist.apellidos or '').strip()}".strip()
-        if nutritionist
-        else "Sistema NutriData"
-    )
+    nutri_name, license_to, specialty = get_nutritionist_signatory(db, nutritionist, AdminProfileDB)
+    generated_at_dt = now_co()
+    generated_at = generated_at_dt.strftime("%Y-%m-%d %H:%M COT")
+    signatory_id = nutritionist.id if nutritionist else 0
+    verification_code = make_verification_code(signatory_id, "clinical_history", generated_at_dt)
 
     buffer = io.BytesIO()
     width, height = A4
@@ -2526,10 +2961,11 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
     def draw_footer():
         p.setFont("Helvetica", 8)
         p.setFillColor(muted)
-        footer = f"Generado por: {nutri_name}"
+        footer = f"Firmado digitalmente por {nutri_name}"
         if license_to:
-            footer += f" — TO: {license_to}"
-        p.drawString(left, 28, footer)
+            footer += f" · TO: {license_to}"
+        footer += f" · {generated_at} · Verificación: {verification_code}"
+        p.drawString(left, 28, footer[:115])
         p.drawRightString(right, 28, "Historia Clínica Nutricional · NutriData")
         p.line(left, 38, right, 38)
 
@@ -2673,7 +3109,60 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
     block("Consumo actual", str(data.get("medicamentos") or "No reporta."))
 
     heading("Datos bioquímicos")
-    block("Resultados", str(data.get("bioquimicos") or ""))
+
+    def bio_section(title: str, items):
+        nonlocal y
+        ensure(50)
+        p.setFont("Helvetica-Bold", 10)
+        p.setFillColor(primary)
+        p.drawString(left, y, title)
+        y -= 14
+        p.setFillColor(text_color)
+        col_gap = 8
+        col_w = (right - left - col_gap) / 2
+        # pares de filas en 2 columnas visuales: label | valor
+        for label, key in items:
+            ensure(28)
+            val = str(data.get(key) or "").strip() or "—"
+            # caja-label
+            p.setStrokeColor(colors.HexColor("#d6d3d1"))
+            p.setLineWidth(0.5)
+            row_h = 16
+            p.rect(left, y - 4, col_w * 0.62, row_h, stroke=1, fill=0)
+            p.rect(left + col_w * 0.62, y - 4, col_w * 0.38, row_h, stroke=1, fill=0)
+            p.setFont("Helvetica", 8)
+            p.setFillColor(text_color)
+            p.drawString(left + 4, y + 1, label)
+            p.drawRightString(left + col_w - 4, y + 1, val)
+            y -= 18
+        y -= 6
+
+    bio_section("Hemograma y otros", [
+        ("Hb (g/dL)", "bio_hb"),
+        ("Hto (%)", "bio_hto"),
+        ("VCM (FL)", "bio_vcm"),
+        ("HCM (pcg)", "bio_hcm"),
+        ("Ferritina", "bio_ferritina"),
+    ])
+    bio_section("Otros", [
+        ("Glicemia (mg/dl)", "bio_glicemia"),
+        ("BUN", "bio_bun"),
+        ("Creatinina", "bio_creatinina"),
+        ("Nitrógeno ureico", "bio_nitrogeno_ureico"),
+        ("Albúmina", "bio_albumina"),
+        ("Proteínas totales", "bio_proteinas_totales"),
+        ("Leucocitos", "bio_leucocitos"),
+        ("Linfocitos", "bio_linfocitos"),
+    ])
+    bio_section("Perfil lipídico", [
+        ("HDL (mg/dL)", "bio_hdl"),
+        ("VLDL (mg/dL)", "bio_vldl"),
+        ("LDL (mg/dL)", "bio_ldl"),
+        ("TG (mg/dL)", "bio_tg"),
+        ("CT (mg/dL)", "bio_ct"),
+    ])
+    if str(data.get("bioquimicos") or "").strip():
+        block("Observaciones / otros resultados", str(data.get("bioquimicos") or ""))
 
     heading("Información antropométrica")
     label_value("Peso (kg)", str(data.get("peso") or ""))
@@ -2717,19 +3206,21 @@ def build_clinical_history_pdf_bytes(patient_id: int, data: dict, current_user: 
     block("Criterios a evaluar", str(data.get("criterios_seguimiento") or ""))
     block("Nota resumida", str(data.get("nota_resumida") or ""))
 
-    # Firma
-    ensure(100)
-    y -= 20
-    p.setStrokeColor(text_color)
-    p.line(left + 40, y, left + 220, y)
+    # Firma digital ampliada
+    ensure(120)
     y -= 12
-    p.setFont("Helvetica", 9)
-    p.setFillColor(text_color)
-    p.drawString(left + 40, y, nutri_name)
-    y -= 11
-    p.setFont("Helvetica", 8)
-    p.setFillColor(muted)
-    p.drawString(left + 40, y, f"Nutricionista{' · TO: ' + license_to if license_to else ''}")
+    draw_pdf_signature_block(
+        p,
+        x=left,
+        y=y,
+        width=right - left,
+        nutritionist_name=nutri_name,
+        license_to=license_to,
+        specialty=specialty,
+        generated_at=generated_at,
+        verification_code=verification_code,
+        doc_label="Historia clínica nutricional",
+    )
 
     draw_footer()
     p.save()
@@ -2806,11 +3297,92 @@ def _patient_to_response_dict(p: UserDB, db: Session) -> dict:
         "nutritionist_id": p.nutritionist_id,
         "tiene_plan_activo": bool(active_plan),
         "plan_activo": plan_name,
+        "acompanante_nombre": getattr(p, "acompanante_nombre", None),
+        "acompanante_parentesco": getattr(p, "acompanante_parentesco", None),
+        "acompanante_telefono": getattr(p, "acompanante_telefono", None),
+        "acompanante_email": getattr(p, "acompanante_email", None),
+        "acompanante_documento": getattr(p, "acompanante_documento", None),
+        "acompanante_observaciones": getattr(p, "acompanante_observaciones", None),
+        "examenes_bioquimicos": getattr(p, "examenes_bioquimicos", None) or {},
+        "deleted_at": getattr(p, "deleted_at", None),
     }
+
+
+def _patients_base_query(db: Session, current_user: UserDB, trash: bool = False):
+    query = db.query(UserDB).filter(UserDB.role == "patient")
+    if current_user.role == "admin":
+        query = query.filter(UserDB.nutritionist_id == current_user.id)
+    if trash:
+        query = query.filter(UserDB.deleted_at.isnot(None))
+    else:
+        query = query.filter(or_(UserDB.deleted_at.is_(None), UserDB.deleted_at == ""))
+    return query
+
+
+def _hard_delete_patient(db: Session, patient: UserDB, current_user: UserDB):
+    """Elimina definitivamente un paciente y sus dependencias."""
+    patient_id = patient.id
+    patient_name = f"{patient.nombres} {patient.apellidos}"
+    patient_snapshot = {
+        "id": patient.id,
+        "name": patient_name,
+        "email": patient.email,
+        "nutritionist_id": patient.nutritionist_id,
+    }
+    log_audit(
+        db,
+        actor=current_user,
+        action="delete",
+        entity_type="patient",
+        entity_id=patient_id,
+        patient_id=None,
+        summary=f"Paciente eliminado definitivamente: {patient_name}",
+        details={"before": patient_snapshot, "after": None},
+        now_co=now_co,
+    )
+    db.flush()
+    _delete_patient_related_data(db, patient_id)
+    _prepare_patient_user_deletion(db, patient_id)
+    db.delete(patient)
+
+
+def _safe_delete_rows(db: Session, model, column: str, value: int):
+    if model is None:
+        return
+    try:
+        db.query(model).filter(getattr(model, column) == value).delete(synchronize_session=False)
+    except Exception:
+        pass
 
 
 def _delete_patient_related_data(db: Session, patient_id: int):
     """Limpia dependencias antes de borrar el usuario paciente."""
+    _safe_delete_rows(db, AppointmentPrepChecklistDB, "patient_id", patient_id)
+    _safe_delete_rows(db, FollowUpTaskDB, "patient_id", patient_id)
+    _safe_delete_rows(db, PatientInterventionDB, "patient_id", patient_id)
+    _safe_delete_rows(db, PatientChallengeClaimDB, "patient_id", patient_id)
+    _safe_delete_rows(db, PatientHabitLogDB, "patient_id", patient_id)
+    _safe_delete_rows(db, PatientReminderPrefsDB, "patient_id", patient_id)
+    _safe_delete_rows(db, MealPhotoDB, "patient_id", patient_id)
+    _safe_delete_rows(db, WearableSnapshotDB, "patient_id", patient_id)
+    _safe_delete_rows(db, OfflineSyncLogDB, "patient_id", patient_id)
+    _safe_delete_rows(db, ClinicalAccessLogDB, "patient_id", patient_id)
+    _safe_delete_rows(db, DataDeletionRequestDB, "user_id", patient_id)
+    _safe_delete_rows(db, PrivacyConsentDB, "user_id", patient_id)
+    _safe_delete_rows(db, PlatformModuleUsageDB, "user_id", patient_id)
+    _safe_delete_rows(db, PlatformAppSessionDB, "user_id", patient_id)
+    _safe_delete_rows(db, NpsSurveyDB, "user_id", patient_id)
+    if ImpersonationLogDB is not None:
+        try:
+            db.query(ImpersonationLogDB).filter(
+                or_(
+                    ImpersonationLogDB.target_user_id == patient_id,
+                    ImpersonationLogDB.impersonator_id == patient_id,
+                )
+            ).delete(synchronize_session=False)
+        except Exception:
+            pass
+
     assignment_ids = [
         a.id
         for a in db.query(PatientMealPlanDB.id)
@@ -2875,28 +3447,41 @@ def _delete_patient_related_data(db: Session, patient_id: int):
         pass
     try:
         db.query(PatientNotificationSettingsDB).filter(
-            PatientNotificationSettingsDB.patient_id == patient_id
+            PatientNotificationSettingsDB.user_id == patient_id
         ).delete(synchronize_session=False)
     except Exception:
         pass
     try:
         db.query(PatientAppearanceSettingsDB).filter(
-            PatientAppearanceSettingsDB.patient_id == patient_id
+            PatientAppearanceSettingsDB.user_id == patient_id
         ).delete(synchronize_session=False)
     except Exception:
         pass
 
 
+def _prepare_patient_user_deletion(db: Session, patient_id: int):
+    """Desvincula audit_logs y aplica flush antes de DELETE en users."""
+    try:
+        db.execute(
+            text("UPDATE audit_logs SET patient_id = NULL WHERE patient_id = :pid"),
+            {"pid": patient_id},
+        )
+    except Exception:
+        if AuditLogDB is not None:
+            db.query(AuditLogDB).filter(AuditLogDB.patient_id == patient_id).update(
+                {AuditLogDB.patient_id: None},
+                synchronize_session=False,
+            )
+    db.flush()
+
 @app.get("/api/patients", response_model=List[PatientResponse])
 def get_patients(
+    trash: bool = False,
     db: Session = Depends(get_db),
     current_user: UserDB = Depends(require_admin_or_superadmin)
 ):
-    """Obtener todos los pacientes con información completa"""
-    query = db.query(UserDB).filter(UserDB.role == "patient")
-    if current_user.role == "admin":
-        query = query.filter(UserDB.nutritionist_id == current_user.id)
-    patients = query.all()
+    """Obtener pacientes activos o en papelera (?trash=true)."""
+    patients = _patients_base_query(db, current_user, trash=trash).all()
     return [_patient_to_response_dict(p, db) for p in patients]
 
 
@@ -2906,19 +3491,20 @@ def get_patient_stats(
     current_user: UserDB = Depends(require_admin_or_superadmin)
 ):
     """Estadísticas de pacientes (scoped). Debe ir antes de /{patient_id}."""
-    query = db.query(UserDB).filter(UserDB.role == "patient")
-    if current_user.role == "admin":
-        query = query.filter(UserDB.nutritionist_id == current_user.id)
+    active_query = _patients_base_query(db, current_user, trash=False)
+    trash_query = _patients_base_query(db, current_user, trash=True)
 
-    total = query.count()
-    activos = query.filter(UserDB.status == "activo").count()
-    pendientes = query.filter(UserDB.status == "pendiente").count()
-    inactivos = query.filter(UserDB.status == "inactivo").count()
+    total = active_query.count()
+    activos = active_query.filter(UserDB.status == "activo").count()
+    pendientes = active_query.filter(UserDB.status == "pendiente").count()
+    inactivos = active_query.filter(UserDB.status == "inactivo").count()
+    trash_count = trash_query.count()
     return {
         "total_patients": total,
         "active_now": activos,
         "pending": pendientes,
         "inactive": inactivos,
+        "trash": trash_count,
     }
 
 
@@ -3201,6 +3787,7 @@ def send_appointment_reminders_24h(
                     send_whatsapp_notification(
                         patient.telefono,
                         f"Hola {patient.nombres}, te recordamos tu cita mañana a las {apt.time} en NutriData.",
+                        db=db,
                     )
                 except Exception:
                     pass
@@ -3208,6 +3795,33 @@ def send_appointment_reminders_24h(
             skipped += 1
 
     db.commit()
+    try:
+        ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+        job_id = enqueue_ops_job(
+            db,
+            "appointment_reminders",
+            f"Recordatorios citas {tomorrow.strftime('%Y-%m-%d')}",
+            {"sent": sent, "skipped": skipped, "date": tomorrow.strftime("%Y-%m-%d")},
+            now_co=now_co,
+        )
+        if job_id and OpsJobDB is not None:
+            job_row = db.query(OpsJobDB).filter(OpsJobDB.id == job_id).first()
+            if job_row:
+                job_row.status = "completed"
+                job_row.started_at = ts
+                job_row.finished_at = ts
+                db.commit()
+    except Exception:
+        pass
+    try:
+        dispatch_webhook_event(
+            db,
+            "appointment.reminder",
+            {"sent": sent, "skipped": skipped, "date": tomorrow.strftime("%Y-%m-%d")},
+            now_co=now_co,
+        )
+    except Exception:
+        pass
     return {
         "success": True,
         "sent": sent,
@@ -3229,7 +3843,7 @@ def generate_nutrition_report(
     """
     # Reusar la función que construye el PDF y devuelve bytes + filename
     authorize_patient_access(patient_id, current_user, db)
-    pdf_bytes, filename = build_nutrition_report_bytes(patient_id, db)
+    pdf_bytes, filename = build_nutrition_report_bytes(patient_id, db, current_user)
     return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
@@ -3250,7 +3864,7 @@ def send_nutrition_report_email(
         raise HTTPException(status_code=400, detail="El paciente no tiene email registrado")
 
     # Generar el mismo PDF detallado que se usa para la descarga
-    pdf_bytes, filename = build_nutrition_report_bytes(patient_id, db)
+    pdf_bytes, filename = build_nutrition_report_bytes(patient_id, db, current_user)
 
     # Preparar y enviar email con adjunto
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -3308,6 +3922,13 @@ def create_patient(
     current_user: UserDB = Depends(require_admin_or_superadmin)
 ):
     """Crear un nuevo paciente"""
+    if current_user.role == "admin":
+        try:
+            enforce_nutritionist_quota(db, current_user.id, UserDB, now_co)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     # Verificar si el email ya existe
     existing_patient = db.query(UserDB).filter(UserDB.email == patient_data.email).first()
     if existing_patient:
@@ -3351,7 +3972,14 @@ def create_patient(
         alimentos_disgusto=patient_data.alimentos_disgusto,
         antecedentes_familiares=patient_data.antecedentes_familiares,
         evaluacion_nutricional=patient_data.evaluacion_nutricional,
-        frecuencia_consumo=patient_data.frecuencia_consumo
+        frecuencia_consumo=patient_data.frecuencia_consumo,
+        acompanante_nombre=(patient_data.acompanante_nombre or None),
+        acompanante_parentesco=(patient_data.acompanante_parentesco or None),
+        acompanante_telefono=(patient_data.acompanante_telefono or None),
+        acompanante_email=(patient_data.acompanante_email or None),
+        acompanante_documento=(patient_data.acompanante_documento or None),
+        acompanante_observaciones=(patient_data.acompanante_observaciones or None),
+        examenes_bioquimicos=(patient_data.examenes_bioquimicos or None),
     )
 
     if current_user.role == "admin":
@@ -3367,7 +3995,22 @@ def create_patient(
         db.add(new_patient)
         db.commit()
         db.refresh(new_patient)
-        
+        try:
+            dispatch_webhook_event(
+                db,
+                "patient.created",
+                {
+                    "patient_id": new_patient.id,
+                    "email": new_patient.email,
+                    "nombres": new_patient.nombres,
+                    "apellidos": new_patient.apellidos,
+                    "nutritionist_id": new_patient.nutritionist_id,
+                },
+                now_co=now_co,
+            )
+        except Exception:
+            pass
+
         edad_form = calcular_edad_detallada(new_patient.fecha_nacimiento)
 
         return _patient_to_response_dict(new_patient, db)
@@ -3424,6 +4067,13 @@ def update_patient(
     patient.antecedentes_familiares = patient_data.antecedentes_familiares
     patient.evaluacion_nutricional = patient_data.evaluacion_nutricional
     patient.frecuencia_consumo = patient_data.frecuencia_consumo
+    patient.acompanante_nombre = patient_data.acompanante_nombre or None
+    patient.acompanante_parentesco = patient_data.acompanante_parentesco or None
+    patient.acompanante_telefono = patient_data.acompanante_telefono or None
+    patient.acompanante_email = patient_data.acompanante_email or None
+    patient.acompanante_documento = patient_data.acompanante_documento or None
+    patient.acompanante_observaciones = patient_data.acompanante_observaciones or None
+    patient.examenes_bioquimicos = patient_data.examenes_bioquimicos or None
     if patient_data.status in ("activo", "pendiente", "inactivo"):
         patient.status = patient_data.status
     
@@ -3440,31 +4090,122 @@ def update_patient(
     
     db.commit()
     db.refresh(patient)
+
+    log_audit(
+        db, actor=current_user, action="update", entity_type="clinical_history",
+        entity_id=patient_id, patient_id=patient_id,
+        summary=f"Historia clínica / ficha actualizada: {patient.nombres} {patient.apellidos}",
+        details={"fields_updated": "patient_profile"},
+        now_co=now_co,
+    )
+    db.commit()
     
     return _patient_to_response_dict(patient, db)
 
 @app.delete("/api/patients/{patient_id}")
-def delete_patient(
+def soft_delete_patient(
     patient_id: int,
     db: Session = Depends(get_db),
     current_user: UserDB = Depends(require_admin_or_superadmin)
 ):
-    """Eliminar un paciente y sus datos relacionados"""
+    """Mover paciente a la papelera (soft delete)."""
     authorize_patient_access(patient_id, current_user, db)
     patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
-    
+    if getattr(patient, "deleted_at", None):
+        raise HTTPException(status_code=400, detail="El paciente ya está en la papelera")
+
+    patient_name = f"{patient.nombres} {patient.apellidos}"
+    deleted_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    previous_status = patient.status
+    patient.deleted_at = deleted_at
+    patient.status = "inactivo"
+    patient.updated_at = deleted_at
+
+    log_audit(
+        db,
+        actor=current_user,
+        action="update",
+        entity_type="patient",
+        entity_id=patient_id,
+        patient_id=patient_id,
+        summary=f"Paciente movido a papelera: {patient_name}",
+        details={
+            "before": {"status": previous_status, "deleted_at": None},
+            "after": {"status": "inactivo", "deleted_at": deleted_at},
+        },
+        now_co=now_co,
+    )
+    db.commit()
+    return {"success": True, "message": "Paciente movido a la papelera"}
+
+
+@app.post("/api/patients/{patient_id}/restore")
+def restore_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
+    """Recuperar paciente desde la papelera."""
+    authorize_patient_access(patient_id, current_user, db)
+    patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    if not getattr(patient, "deleted_at", None):
+        raise HTTPException(status_code=400, detail="El paciente no está en la papelera")
+
+    patient_name = f"{patient.nombres} {patient.apellidos}"
+    previous_deleted_at = patient.deleted_at
+    patient.deleted_at = None
+    if patient.status == "inactivo":
+        patient.status = "activo"
+    patient.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+
+    log_audit(
+        db,
+        actor=current_user,
+        action="update",
+        entity_type="patient",
+        entity_id=patient_id,
+        patient_id=patient_id,
+        summary=f"Paciente recuperado de papelera: {patient_name}",
+        details={
+            "before": {"deleted_at": previous_deleted_at},
+            "after": {"deleted_at": None, "status": patient.status},
+        },
+        now_co=now_co,
+    )
+    db.commit()
+    return {"success": True, "message": "Paciente recuperado correctamente"}
+
+
+@app.delete("/api/patients/{patient_id}/permanent")
+def permanent_delete_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin)
+):
+    """Eliminar definitivamente un paciente que está en la papelera."""
+    authorize_patient_access(patient_id, current_user, db)
+    patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    if not getattr(patient, "deleted_at", None):
+        raise HTTPException(
+            status_code=400,
+            detail="El paciente debe estar en la papelera antes de eliminarlo definitivamente",
+        )
+
     try:
-        _delete_patient_related_data(db, patient_id)
-        db.delete(patient)
+        _hard_delete_patient(db, patient, current_user)
         db.commit()
-        return {"success": True, "message": "Paciente eliminado correctamente"}
-    except Exception as e:
+        return {"success": True, "message": "Paciente eliminado definitivamente"}
+    except Exception:
         db.rollback()
         raise HTTPException(
             status_code=400,
-            detail=f"No se pudo eliminar el paciente: tiene datos relacionados. Detalle: {str(e)}",
+            detail="No se pudo eliminar el paciente: tiene datos relacionados en el sistema. Contacta soporte si persiste.",
         )
 
 # ==================== ENDPOINTS RECORDATORIO 24 HORAS ====================
@@ -3592,6 +4333,21 @@ def login(data: LoginSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
     
     is_complete = check_profile_complete(user)
+
+    if user.role == "superadmin" and superadmin_requires_2fa(db, user.id):
+        temp_token = jwt.encode({
+            "sub": user.email,
+            "id": user.id,
+            "role": user.role,
+            "pending_2fa": True,
+            "exp": datetime.utcnow() + timedelta(minutes=10),
+        }, SECRET_KEY, algorithm="HS256")
+        return {
+            "success": True,
+            "requires_2fa": True,
+            "temp_token": temp_token,
+            "user": {"id": user.id, "name": f"{user.nombres} {user.apellidos}", "role": user.role},
+        }
     
     token = jwt.encode({
         "sub": user.email,
@@ -3991,7 +4747,7 @@ def _recipe_to_response(recipe: RecipeDB) -> dict:
 
     ing_keys = ["ingredient", "Ingredient", "name", "text", "title", "item"]
     inst_keys = ["step", "Step", "instruction", "Instruction", "name", "text", "title"]
-    return {
+    data = {
         "id": recipe.id,
         "name": recipe.name,
         "description": recipe.description or "",
@@ -4010,7 +4766,245 @@ def _recipe_to_response(recipe: RecipeDB) -> dict:
         "isFavorite": bool(getattr(recipe, "isFavorite", 0)),
         "is_public": bool(getattr(recipe, "is_public", 0)),
         "created_by_id": getattr(recipe, "created_by_id", None),
+        "approval_status": getattr(recipe, "approval_status", None) or "draft",
+        "is_system": bool(getattr(recipe, "is_system", 0)),
+        "source_recipe_id": getattr(recipe, "source_recipe_id", None),
+        "reviewed_by_id": getattr(recipe, "reviewed_by_id", None),
+        "reviewed_at": getattr(recipe, "reviewed_at", None),
+        "rejection_reason": getattr(recipe, "rejection_reason", None),
+        "submitted_at": getattr(recipe, "submitted_at", None),
+        "created_at": getattr(recipe, "created_at", None),
+        "updated_at": getattr(recipe, "updated_at", None),
     }
+    return data
+
+
+_FOOD_NUTRIENTS_CACHE: Optional[dict] = None
+
+
+def _load_food_nutrients() -> dict:
+    global _FOOD_NUTRIENTS_CACHE
+    if _FOOD_NUTRIENTS_CACHE is not None:
+        return _FOOD_NUTRIENTS_CACHE
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "food_nutrients.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            _FOOD_NUTRIENTS_CACHE = json.load(f)
+    except Exception:
+        _FOOD_NUTRIENTS_CACHE = {}
+    return _FOOD_NUTRIENTS_CACHE
+
+
+def _normalize_ingredient_name(name: str) -> str:
+    s = (name or "").strip()
+    if ":" in s:
+        s = s.split(":")[0].strip()
+    return s.lower()
+
+
+def _lookup_food_nutrient(ingredient_name: str) -> Optional[dict]:
+    nutrients = _load_food_nutrients()
+    if not nutrients:
+        return None
+    base = _normalize_ingredient_name(ingredient_name)
+    if not base:
+        return None
+    if base in {k.lower(): k for k in nutrients}:
+        for k in nutrients:
+            if k.lower() == base:
+                return nutrients[k]
+    for k, v in nutrients.items():
+        if base in k.lower() or k.lower() in base:
+            return v
+    return None
+
+
+def _recipe_nutrition_quality_report(recipe: RecipeDB) -> dict:
+    """Compara macros declarados vs. calculados desde ingredientes (tabla EVANUT)."""
+    ing_keys = ["ingredient", "Ingredient", "name", "text", "title", "item"]
+    ingredients = _recipe_to_response(recipe)["ingredients"]
+    computed = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+    matched = []
+    unmatched = []
+    for ing in ingredients:
+        row = _lookup_food_nutrient(ing)
+        if row:
+            computed["calories"] += float(row.get("kcal", 0) or 0)
+            computed["protein"] += float(row.get("prot", 0) or 0)
+            computed["carbs"] += float(row.get("chos", 0) or 0)
+            computed["fat"] += float(row.get("grasa", 0) or 0)
+            matched.append(ing)
+        else:
+            unmatched.append(ing)
+
+    servings = max(recipe.servings or 1, 1)
+    declared = {
+        "calories": float(recipe.calories or 0),
+        "protein": float(recipe.protein or 0),
+        "carbs": float(recipe.carbs or 0),
+        "fat": float(recipe.fat or 0),
+    }
+    per_serving = {k: round(v / servings, 1) for k, v in computed.items()}
+    variance = {}
+    issues = []
+    for key in ("calories", "protein", "carbs", "fat"):
+        d = declared[key]
+        c = computed[key]
+        if c > 0:
+            pct = abs(d - c) / c * 100
+        elif d > 0:
+            pct = 100.0
+        else:
+            pct = 0.0
+        variance[key] = round(pct, 1)
+        if pct > 25:
+            issues.append(f"Diferencia >25% en {key}: declarado {d}, calculado {round(c, 1)}")
+
+    if not ingredients:
+        issues.append("Sin ingredientes registrados")
+    elif len(unmatched) > 0:
+        issues.append(f"{len(unmatched)} ingrediente(s) sin match en tabla nutricional")
+    if (recipe.calories or 0) > 1200:
+        issues.append("Calorías totales muy altas (>1200 kcal por receta)")
+    if (recipe.protein or 0) == 0 and len(matched) > 2:
+        issues.append("Proteína declarada en 0 con varios ingredientes")
+
+    macro_sum = (declared["protein"] * 4 + declared["carbs"] * 4 + declared["fat"] * 9)
+    macro_ok = True
+    if declared["calories"] > 0 and macro_sum > 0:
+        macro_ratio = abs(macro_sum - declared["calories"]) / declared["calories"] * 100
+        if macro_ratio > 20:
+            macro_ok = False
+            issues.append(f"Inconsistencia macro-calorías ({round(macro_ratio, 1)}% de diferencia)")
+
+    avg_var = sum(variance.values()) / max(len(variance), 1)
+    score = max(0, min(100, int(100 - avg_var * 0.6 - len(unmatched) * 5 - len(issues) * 3)))
+    if score >= 85:
+        grade = "excelente"
+    elif score >= 70:
+        grade = "buena"
+    elif score >= 50:
+        grade = "regular"
+    else:
+        grade = "baja"
+
+    return {
+        "score": score,
+        "grade": grade,
+        "declared": declared,
+        "computed_total": {k: round(v, 1) for k, v in computed.items()},
+        "computed_per_serving": per_serving,
+        "variance_pct": variance,
+        "issues": issues,
+        "matched_ingredients": len(matched),
+        "total_ingredients": len(ingredients),
+        "unmatched_ingredients": unmatched[:20],
+        "macro_balance_ok": macro_ok,
+        "servings": servings,
+    }
+
+
+def _count_recipe_in_structure(obj, recipe_id: int) -> int:
+    count = 0
+    if isinstance(obj, dict):
+        rid = obj.get("recipe_id")
+        try:
+            if rid is not None and int(rid) == recipe_id:
+                count += 1
+        except (TypeError, ValueError):
+            pass
+        for value in obj.values():
+            count += _count_recipe_in_structure(value, recipe_id)
+    elif isinstance(obj, list):
+        for item in obj:
+            count += _count_recipe_in_structure(item, recipe_id)
+    elif isinstance(obj, str):
+        try:
+            count += _count_recipe_in_structure(json.loads(obj), recipe_id)
+        except Exception:
+            pass
+    return count
+
+
+def _recipe_usage_stats(db: Session, recipe_id: int) -> dict:
+    menu_ids = set()
+    total_slots = 0
+    day_cols = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    for menu in db.query(WeeklyMenuCompleteDB).all():
+        hits = 0
+        for col in day_cols:
+            hits += _count_recipe_in_structure(getattr(menu, col, None), recipe_id)
+        if hits:
+            menu_ids.add(menu.id)
+            total_slots += hits
+
+    legacy_menu_ids = set()
+    for menu in db.query(WeeklyMenuDB).all():
+        hits = 0
+        for col in day_cols:
+            hits += _count_recipe_in_structure(getattr(menu, col, None), recipe_id)
+        if hits:
+            legacy_menu_ids.add(menu.id)
+            total_slots += hits
+
+    assignment_count = 0
+    slot_cols = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner", "evening_snack"]
+    for row in db.query(DailyMealAssignmentDB).all():
+        hits = sum(_count_recipe_in_structure(getattr(row, c, None), recipe_id) for c in slot_cols)
+        if hits:
+            assignment_count += 1
+            total_slots += hits
+
+    patient_ids = set()
+    for pmp in db.query(PatientMealPlanDB).filter(PatientMealPlanDB.status == "active").all():
+        plan = db.query(MealPlanDB).filter(MealPlanDB.id == pmp.meal_plan_id).first()
+        if not plan:
+            continue
+        for wm in db.query(WeeklyMenuDB).filter(WeeklyMenuDB.meal_plan_id == plan.id).all():
+            for col in day_cols:
+                if _count_recipe_in_structure(getattr(wm, col, None), recipe_id):
+                    patient_ids.add(pmp.patient_id)
+                    break
+
+    return {
+        "menu_count": len(menu_ids),
+        "legacy_menu_count": len(legacy_menu_ids),
+        "daily_assignment_days": assignment_count,
+        "total_slot_usages": total_slots,
+        "active_patient_count": len(patient_ids),
+    }
+
+
+def _recipe_share_nutritionist_ids(db: Session, recipe_id: int) -> list:
+    rows = db.query(RecipeShareDB).filter(RecipeShareDB.recipe_id == recipe_id).all()
+    return [r.nutritionist_id for r in rows]
+
+
+def _recipe_shared_with(db: Session, recipe_id: int) -> list:
+    rows = db.query(RecipeShareDB).filter(RecipeShareDB.recipe_id == recipe_id).all()
+    out = []
+    for row in rows:
+        u = db.query(UserDB).filter(UserDB.id == row.nutritionist_id).first()
+        if u:
+            out.append({
+                "id": u.id,
+                "name": f"{u.nombres or ''} {u.apellidos or ''}".strip() or u.email,
+                "email": u.email,
+            })
+    return out
+
+
+def _enrich_recipe_superadmin(db: Session, recipe: RecipeDB, include_usage: bool = False, include_quality: bool = False) -> dict:
+    out = _recipe_to_response(recipe)
+    creator = db.query(UserDB).filter(UserDB.id == recipe.created_by_id).first() if recipe.created_by_id else None
+    out["created_by_name"] = (f"{creator.nombres or ''} {creator.apellidos or ''}".strip() or creator.email) if creator else None
+    out["shared_nutritionist_ids"] = _recipe_share_nutritionist_ids(db, recipe.id)
+    out["shared_with"] = _recipe_shared_with(db, recipe.id)
+    if include_usage:
+        out["usage"] = _recipe_usage_stats(db, recipe.id)
+    if include_quality:
+        out["quality_report"] = _recipe_nutrition_quality_report(recipe)
+    return out
 
 
 def _collect_recipe_ids_from_structure(obj, out: set):
@@ -4075,43 +5069,70 @@ def _patient_plan_recipe_ids(db: Session, patient_id: int) -> set:
 def _recipe_query_for_user(db: Session, current_user: Optional[UserDB]):
     """Query de recetas según rol:
     - superadmin: ve todas
-    - admin/nutricionista: las que él creó + las públicas
-    - patient: públicas + las de su plan activo
-    - sin usuario: solo públicas
+    - admin/nutricionista: las que él creó + públicas aprobadas + sistema + compartidas
+    - patient: públicas aprobadas + las de su plan activo + sistema
+    - sin usuario: solo públicas aprobadas + sistema
     """
     q = db.query(RecipeDB)
     role = getattr(current_user, "role", None) if current_user else None
     if role == "superadmin":
         pass
     elif role == "admin":
-        q = q.filter((RecipeDB.created_by_id == current_user.id) | (RecipeDB.is_public == 1))
+        shared_ids = [
+            r.recipe_id
+            for r in db.query(RecipeShareDB).filter(RecipeShareDB.nutritionist_id == current_user.id).all()
+        ]
+        filters = [
+            RecipeDB.created_by_id == current_user.id,
+            (RecipeDB.is_public == 1) & (RecipeDB.approval_status == "approved"),
+            RecipeDB.is_system == 1,
+        ]
+        if shared_ids:
+            filters.append(RecipeDB.id.in_(shared_ids))
+        q = q.filter(or_(*filters))
     elif role == "patient" and current_user:
         plan_ids = _patient_plan_recipe_ids(db, current_user.id)
+        pub = (RecipeDB.is_public == 1) & (RecipeDB.approval_status == "approved")
         if plan_ids:
-            q = q.filter((RecipeDB.is_public == 1) | (RecipeDB.id.in_(list(plan_ids))))
+            q = q.filter(or_(pub, RecipeDB.is_system == 1, RecipeDB.id.in_(list(plan_ids))))
         else:
-            q = q.filter(RecipeDB.is_public == 1)
+            q = q.filter(or_(pub, RecipeDB.is_system == 1))
     else:
-        q = q.filter(RecipeDB.is_public == 1)
+        q = q.filter(
+            or_(
+                (RecipeDB.is_public == 1) & (RecipeDB.approval_status == "approved"),
+                RecipeDB.is_system == 1,
+            )
+        )
     return q
 
 
 def _authorize_recipe_view(recipe: RecipeDB, current_user: Optional[UserDB], db: Session):
-    """Puede ver: superadmin, dueño, pública, o paciente con receta en su plan."""
+    """Puede ver: superadmin, dueño, pública aprobada, sistema, compartida, o paciente con receta en plan."""
     role = getattr(current_user, "role", None) if current_user else None
     if role == "superadmin":
         return
+    if bool(getattr(recipe, "is_system", 0)):
+        return
     if role == "admin" and current_user:
-        if recipe.created_by_id == current_user.id or bool(getattr(recipe, "is_public", 0)):
+        if recipe.created_by_id == current_user.id:
+            return
+        if bool(getattr(recipe, "is_public", 0)) and getattr(recipe, "approval_status", "draft") == "approved":
+            return
+        shared = db.query(RecipeShareDB).filter(
+            RecipeShareDB.recipe_id == recipe.id,
+            RecipeShareDB.nutritionist_id == current_user.id,
+        ).first()
+        if shared:
             return
         raise HTTPException(status_code=403, detail="No autorizado a ver esta receta")
     if role == "patient" and current_user:
-        if bool(getattr(recipe, "is_public", 0)):
+        if bool(getattr(recipe, "is_public", 0)) and getattr(recipe, "approval_status", "draft") == "approved":
             return
         if recipe.id in _patient_plan_recipe_ids(db, current_user.id):
             return
         raise HTTPException(status_code=403, detail="Receta privada")
-    if bool(getattr(recipe, "is_public", 0)):
+    if bool(getattr(recipe, "is_public", 0)) and getattr(recipe, "approval_status", "draft") == "approved":
         return
     raise HTTPException(status_code=403, detail="Receta privada")
 
@@ -4151,7 +5172,19 @@ def get_recipes(
 ):
     query = _recipe_query_for_user(db, current_user)
     recipes = query.order_by(RecipeDB.id.desc()).all()
-    return [_recipe_to_response(r) for r in recipes]
+    shared_ids = set()
+    if current_user and getattr(current_user, "role", None) == "admin":
+        shared_ids = {
+            r.recipe_id
+            for r in db.query(RecipeShareDB).filter(RecipeShareDB.nutritionist_id == current_user.id).all()
+        }
+    out = []
+    for r in recipes:
+        item = _recipe_to_response(r)
+        if shared_ids and r.id in shared_ids and r.created_by_id != current_user.id:
+            item["shared_with_me"] = True
+        out.append(item)
+    return out
 
 @app.get("/api/recipes/{recipe_id}")
 def get_recipe(
@@ -4222,6 +5255,10 @@ async def create_recipe(
         image=image_url,
         created_by_id=current_user.id,
         is_public=0,
+        approval_status="draft",
+        is_system=0,
+        created_at=now_co().strftime("%Y-%m-%d %H:%M:%S"),
+        updated_at=now_co().strftime("%Y-%m-%d %H:%M:%S"),
     )
     db.add(new_recipe)
     db.commit()
@@ -4318,6 +5355,36 @@ def toggle_recipe_favorite(
     recipe.isFavorite = 0 if recipe.isFavorite else 1
     db.commit()
     return {"success": True, "isFavorite": bool(recipe.isFavorite)}
+
+
+@app.post("/api/recipes/{recipe_id}/submit-for-review")
+def submit_recipe_for_review(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_admin_or_superadmin),
+):
+    """Nutricionista envía receta a moderación del superadmin."""
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    _authorize_recipe_modify(recipe, current_user)
+    if getattr(recipe, "is_system", 0):
+        raise HTTPException(status_code=400, detail="Las recetas del sistema no requieren moderación")
+    status = getattr(recipe, "approval_status", "draft") or "draft"
+    if status == "approved":
+        raise HTTPException(status_code=400, detail="La receta ya está aprobada")
+    if status == "pending":
+        raise HTTPException(status_code=400, detail="La receta ya está en revisión")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    recipe.approval_status = "pending"
+    recipe.submitted_at = now
+    recipe.updated_at = now
+    recipe.rejection_reason = None
+    db.commit()
+    db.refresh(recipe)
+    out = _recipe_to_response(recipe)
+    out["quality_report"] = _recipe_nutrition_quality_report(recipe)
+    return {"success": True, "message": "Receta enviada a moderación", "recipe": out}
 
 # ==================== ENDPOINTS PARA MEAL PLANS ====================
 
@@ -4512,7 +5579,16 @@ def get_menu_by_plan(plan_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/api/meal-plans/{plan_id}", response_model=MealPlanResponse)
-def update_meal_plan(plan_id: int, plan_data: MealPlanCreate, db: Session = Depends(get_db)):
+def update_meal_plan(
+    plan_id: int,
+    plan_data: MealPlanCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    if current_user.role == "admin":
+        role = get_staff_role(db, current_user, AdminProfileDB)
+        if not staff_has_permission(role, "plans"):
+            raise HTTPException(status_code=403, detail="Sin permiso para modificar planes")
     plan = db.query(MealPlanDB).filter(MealPlanDB.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan no encontrado")
@@ -4540,6 +5616,15 @@ def update_meal_plan(plan_id: int, plan_data: MealPlanCreate, db: Session = Depe
     
     db.commit()
     db.refresh(plan)
+
+    if current_user and current_user.role in ("admin", "superadmin"):
+        log_audit(
+            db, actor=current_user, action="update", entity_type="meal_plan",
+            entity_id=plan_id, summary=f"Plan modificado: {plan.name}",
+            details={"calories": plan.calories, "tipo": getattr(plan, "tipo", None)},
+            now_co=now_co,
+        )
+        db.commit()
     
     patient_count = db.query(PatientMealPlanDB).filter(
         PatientMealPlanDB.meal_plan_id == plan_id,
@@ -4648,7 +5733,7 @@ def assign_plan_with_weekly_menu(
             f"¡Puedes revisarlo ahora en la app!\n"
             f"🔗 {frontend_url}/patient/my-plan"
         )
-        send_whatsapp_notification(patient.telefono, msg)
+        send_whatsapp_notification(patient.telefono, msg, db=db)
 
     if patient.email:
         patient_name = f"{patient.nombres or ''} {patient.apellidos or ''}".strip() or "Paciente"
@@ -5143,6 +6228,23 @@ def create_appointment(
         db.commit()
         db.refresh(new_appointment)
 
+        try:
+            dispatch_webhook_event(
+                db,
+                "appointment.created",
+                {
+                    "appointment_id": new_appointment.id,
+                    "patient_id": new_appointment.patient_id,
+                    "date": appointment_date.strftime("%Y-%m-%d"),
+                    "time": new_appointment.time,
+                    "type": new_appointment.type,
+                    "status": new_appointment.status,
+                },
+                now_co=now_co,
+            )
+        except Exception:
+            pass
+
         if patient.telefono:
             try:
                 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080").rstrip("/")
@@ -5154,9 +6256,40 @@ def create_appointment(
                     f"Link: {frontend_url}/patient/appointments\n\n"
                     f"Te esperamos!"
                 )
-                send_whatsapp_notification(patient.telefono, msg)
+                org_id = None
+                try:
+                    from platform_module import get_user_organization_id
+                    org_id = get_user_organization_id(db, patient.id)
+                except Exception:
+                    pass
+                send_whatsapp_notification(patient.telefono, msg, db=db, organization_id=org_id)
             except Exception as notify_err:
                 print(f"[WARN] WhatsApp notify failed: {notify_err}")
+
+        try:
+            from integrations_module import sync_appointment_to_google_calendar
+            org_id = None
+            try:
+                from platform_module import get_user_organization_id
+                org_id = get_user_organization_id(db, patient.id)
+            except Exception:
+                pass
+            sync_appointment_to_google_calendar(
+                db,
+                {
+                    "id": new_appointment.id,
+                    "patient_name": new_appointment.patient_name,
+                    "date": appointment_date.strftime("%Y-%m-%d"),
+                    "time": new_appointment.time,
+                    "duration": new_appointment.duration,
+                    "notes": new_appointment.notes,
+                    "type": new_appointment.type,
+                },
+                organization_id=org_id,
+                nutritionist_id=nutritionist_id,
+            )
+        except Exception as cal_err:
+            print(f"[WARN] Calendar sync: {cal_err}")
 
         return appointment_to_response(new_appointment)
     except HTTPException:
@@ -6285,6 +7418,13 @@ def get_recent_patients(
                 "condiciones_medicas": patient.condiciones_medicas,
                 "alimentos_disgusto": patient.alimentos_disgusto,
                 "antecedentes_familiares": patient.antecedentes_familiares,
+                "acompanante_nombre": getattr(patient, "acompanante_nombre", None),
+                "acompanante_parentesco": getattr(patient, "acompanante_parentesco", None),
+                "acompanante_telefono": getattr(patient, "acompanante_telefono", None),
+                "acompanante_email": getattr(patient, "acompanante_email", None),
+                "acompanante_documento": getattr(patient, "acompanante_documento", None),
+                "acompanante_observaciones": getattr(patient, "acompanante_observaciones", None),
+                "examenes_bioquimicos": getattr(patient, "examenes_bioquimicos", None) or {},
                 "role": patient.role,
             }
         )
@@ -7158,7 +8298,7 @@ def get_patient_dashboard_summary(
             "id": patient.id,
             "name": f"{patient.nombres} {patient.apellidos}",
             "email": patient.email,
-            "photo": patient.foto_perfil
+            "photo": get_absolute_url(patient.foto_perfil)
         },
         "next_appointment": {
             "date": next_appointment.date.strftime("%d %b %Y") if next_appointment else None,
@@ -7301,12 +8441,12 @@ async def upload_admin_avatar(
         buffer.write(contents)
     
     # Actualizar URL de foto
-    user.foto_perfil = f"http://localhost:8000/uploads/{file_name}"
+    user.foto_perfil = f"/uploads/{file_name}"
     db.commit()
     
     return {
         "success": True,
-        "avatar_url": user.foto_perfil
+        "avatar_url": get_absolute_url(user.foto_perfil)
     }
 
 @app.post("/api/admin/profile/{user_id}/change-password")
@@ -7513,54 +8653,41 @@ def update_appearance_settings(
     }
 
 @app.get("/api/admin/billing/{user_id}")
-def get_billing_info(user_id: int, db: Session = Depends(get_db)):
-    """Obtener información de facturación (Mock)"""
-    user = db.query(UserDB).filter(
-        UserDB.id == user_id,
-        UserDB.role.in_(["admin", "superadmin"])
-    ).first()
-    
-    if not user:
-        raise HTTPException(status_code=404, detail="Administrador no encontrado")
-    
-    # Datos mock de facturación
+def get_billing_info_legacy(user_id: int, db: Session = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Redirige a facturación real del nutricionista autenticado."""
+    if current_user.id != user_id and current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    target = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    from billing_module import get_active_subscription, _ensure_default_plans, _serialize_plan, _serialize_subscription, _serialize_invoice
+    _ensure_default_plans(db, now_co)
+    sub = get_active_subscription(db, "nutritionist", user_id)
+    if not sub and OrganizationMemberDB:
+        om = db.query(OrganizationMemberDB).filter(OrganizationMemberDB.user_id == user_id).first()
+        if om:
+            sub = get_active_subscription(db, "organization", om.organization_id)
+    plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == sub.plan_id).first() if sub else db.query(BillingPlanDB).filter(BillingPlanDB.code == "basic").first()
+    invoices = db.query(InvoiceDB).filter(InvoiceDB.subscription_id == sub.id).order_by(InvoiceDB.id.desc()).limit(12).all() if sub else []
     return {
         "plan": {
-            "name": "Plan Profesional",
-            "description": "Hasta 100 pacientes activos",
-            "price": 29,
-            "currency": "EUR",
-            "billing_cycle": "monthly"
+            "name": plan.name if plan else "Sin plan",
+            "description": f"Hasta {plan.max_patients if plan else 0} pacientes",
+            "price": (plan.price_monthly_cop or 0) / 1000 if plan else 0,
+            "currency": "COP",
+            "billing_cycle": sub.billing_cycle if sub else "monthly",
         },
-        "payment_method": {
-            "type": "card",
-            "brand": "VISA",
-            "last4": "4242",
-            "expiry": "12/25"
-        },
+        "payment_method": {"type": sub.payment_provider if sub else "manual", "brand": (sub.payment_provider or "").upper(), "last4": "****"},
         "invoices": [
             {
-                "id": 1,
-                "date": "2024-12-01",
-                "amount": 29.00,
-                "status": "paid",
-                "invoice_url": "#"
-            },
-            {
-                "id": 2,
-                "date": "2024-11-01",
-                "amount": 29.00,
-                "status": "paid",
-                "invoice_url": "#"
-            },
-            {
-                "id": 3,
-                "date": "2024-10-01",
-                "amount": 29.00,
-                "status": "paid",
-                "invoice_url": "#"
+                "id": i.id,
+                "date": (i.paid_at or i.created_at or "")[:10],
+                "amount": i.amount_cop,
+                "status": i.status,
+                "invoice_url": f"/api/superadmin/billing/invoices/{i.id}/pdf",
             }
-        ]
+            for i in invoices
+        ],
     }
 
 @app.get("/api/admin/settings/complete/{user_id}")
@@ -7662,24 +8789,109 @@ class SystemSettingsDB(Base):
     require_email_verification = Column(Integer, default=1)
     enable_two_factor = Column(Integer, default=0)
     maintenance_mode = Column(Integer, default=0)
+    maintenance_message = Column(Text, nullable=True)
+    feature_flags_global = Column(JSON, nullable=True)
+    runtime_config = Column(JSON, nullable=True)
     email_notifications = Column(Integer, default=1)
     slack_notifications = Column(Integer, default=0)
     hero_image = Column(String(500), nullable=True)
+    audit_retention_days = Column(Integer, default=180)
+    personal_data_retention_days = Column(Integer, default=365)
     updated_at = Column(String(50))
 
 # Crear las tablas
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 # Migración: columna hero_image en system_settings
 try:
-    _inspector = inspect(engine)
-    if "system_settings" in _inspector.get_table_names():
-        _cols = {c["name"] for c in _inspector.get_columns("system_settings")}
-        if "hero_image" not in _cols:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE system_settings ADD COLUMN hero_image VARCHAR(500) NULL"))
+    if _DB_AVAILABLE is not False:
+        _inspector = inspect(engine)
+        if "system_settings" in _inspector.get_table_names():
+            _cols = {c["name"] for c in _inspector.get_columns("system_settings")}
+            if "hero_image" not in _cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE system_settings ADD COLUMN hero_image VARCHAR(500) NULL"))
 except Exception as _mig_err:
     print(f"[MIGRATE] system_settings.hero_image: {_mig_err}")
+
+# Migración: columna audit_retention_days en system_settings
+try:
+    if _DB_AVAILABLE is not False:
+        _inspector = inspect(engine)
+        if "system_settings" in _inspector.get_table_names():
+            _cols = {c["name"] for c in _inspector.get_columns("system_settings")}
+            if "audit_retention_days" not in _cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE system_settings ADD COLUMN audit_retention_days INTEGER DEFAULT 180"))
+except Exception as _mig_err:
+    print(f"[MIGRATE] system_settings.audit_retention_days: {_mig_err}")
+
+# Migración: personal_data_retention_days
+try:
+    if _DB_AVAILABLE is not False:
+        _inspector = inspect(engine)
+        if "system_settings" in _inspector.get_table_names():
+            _cols = {c["name"] for c in _inspector.get_columns("system_settings")}
+            if "personal_data_retention_days" not in _cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE system_settings ADD COLUMN personal_data_retention_days INTEGER DEFAULT 365"))
+except Exception as _mig_err:
+    print(f"[MIGRATE] system_settings.personal_data_retention_days: {_mig_err}")
+
+# Migración: configuración avanzada (flags, runtime, mantenimiento)
+try:
+    if _DB_AVAILABLE is not False:
+        _inspector = inspect(engine)
+        if "system_settings" in _inspector.get_table_names():
+            _cols = {c["name"] for c in _inspector.get_columns("system_settings")}
+            for _col, _sql in [
+                ("maintenance_message", "TEXT NULL"),
+                ("feature_flags_global", "JSON NULL"),
+                ("runtime_config", "JSON NULL"),
+            ]:
+                if _col not in _cols:
+                    with engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE system_settings ADD COLUMN {_col} {_sql}"))
+except Exception as _mig_err:
+    print(f"[MIGRATE] system_settings config: {_mig_err}")
+
+# Migración: columnas admin_profiles (licencia, invitación)
+try:
+    if _DB_AVAILABLE is not False:
+        _inspector = inspect(engine)
+        if "admin_profiles" in _inspector.get_table_names():
+            _cols = {c["name"] for c in _inspector.get_columns("admin_profiles")}
+            for _col, _sql in [
+                ("license_expiry", "VARCHAR(20) NULL"),
+                ("invited_at", "VARCHAR(50) NULL"),
+                ("invite_expires_at", "VARCHAR(50) NULL"),
+            ]:
+                if _col not in _cols:
+                    with engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE admin_profiles ADD COLUMN {_col} {_sql}"))
+except Exception as _mig_err:
+    print(f"[MIGRATE] admin_profiles license/invite: {_mig_err}")
+
+# Migración: CMS artículos (SEO, programación, analytics) + categorías
+try:
+    if _DB_AVAILABLE is not False:
+        _inspector = inspect(engine)
+        if "articles" in _inspector.get_table_names():
+            _cols = {c["name"] for c in _inspector.get_columns("articles")}
+            for _col, _sql in [
+                ("slug", "VARCHAR(280) NULL"),
+                ("meta_description", "VARCHAR(320) NULL"),
+                ("og_image", "VARCHAR(500) NULL"),
+                ("scheduled_publish_at", "VARCHAR(50) NULL"),
+                ("view_count", "INTEGER DEFAULT 0"),
+            ]:
+                if _col not in _cols:
+                    with engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE articles ADD COLUMN {_col} {_sql}"))
+        if "article_categories" not in _inspector.get_table_names():
+            ArticleCategoryDB.__table__.create(bind=engine, checkfirst=True)
+except Exception as _mig_err:
+    print(f"[MIGRATE] articles/cms: {_mig_err}")
 
 # Esquemas Pydantic para pacientes
 class PatientNotificationSettingsUpdate(BaseModel):
@@ -7706,6 +8918,7 @@ class SystemSettingsUpdate(BaseModel):
     requireEmailVerification: bool
     enableTwoFactor: bool
     maintenanceMode: bool
+    maintenanceMessage: Optional[str] = None
     emailNotifications: bool
     slackNotifications: bool
 
@@ -7918,6 +9131,19 @@ def _get_or_create_system_settings(db: Session) -> SystemSettingsDB:
         require_email_verification=1,
         enable_two_factor=0,
         maintenance_mode=0,
+        maintenance_message="Estamos realizando mejoras. Vuelve en unos minutos.",
+        feature_flags_global={
+            "patient_phase_1": True,
+            "patient_phase_2": True,
+            "patient_phase_3": True,
+            "patient_phase_4": True,
+            "clinical_colombia": True,
+            "pwa_offline": True,
+            "wearables": True,
+            "gamification": True,
+            "nutritionist_advanced_hub": True,
+        },
+        runtime_config=None,
         email_notifications=1,
         slack_notifications=0,
         hero_image=DEFAULT_HERO_IMAGE,
@@ -7926,6 +9152,11 @@ def _get_or_create_system_settings(db: Session) -> SystemSettingsDB:
     db.add(settings)
     db.commit()
     db.refresh(settings)
+    try:
+        from config_module import refresh_runtime_cache
+        refresh_runtime_cache(settings)
+    except Exception:
+        pass
     return settings
 
 
@@ -7967,16 +9198,13 @@ async def update_home_hero(
 
 
 @app.get("/api/superadmin/settings/{user_id}")
-def get_system_settings(user_id: int, db: Session = Depends(get_db)):
-    """Obtener configuración del sistema (solo superadmin)"""
-    user = db.query(UserDB).filter(
-        UserDB.id == user_id,
-        UserDB.role == "superadmin"
-    ).first()
-    
-    if not user:
-        raise HTTPException(status_code=403, detail="Acceso denegado")
-    
+def get_system_settings(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Obtener configuración del sistema (solo superadmin autenticado)."""
+    _ = user_id  # compatibilidad con rutas existentes del frontend
     settings = _get_or_create_system_settings(db)
     
     return {
@@ -7988,6 +9216,7 @@ def get_system_settings(user_id: int, db: Session = Depends(get_db)):
         "requireEmailVerification": bool(settings.require_email_verification),
         "enableTwoFactor": bool(settings.enable_two_factor),
         "maintenanceMode": bool(settings.maintenance_mode),
+        "maintenanceMessage": getattr(settings, "maintenance_message", None) or "",
         "emailNotifications": bool(settings.email_notifications),
         "slackNotifications": bool(settings.slack_notifications),
         "heroImage": _resolve_media_url(settings.hero_image, DEFAULT_HERO_IMAGE),
@@ -7997,17 +9226,11 @@ def get_system_settings(user_id: int, db: Session = Depends(get_db)):
 def update_system_settings(
     user_id: int,
     settings_data: SystemSettingsUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
 ):
-    """Actualizar configuración del sistema (solo superadmin)"""
-    user = db.query(UserDB).filter(
-        UserDB.id == user_id,
-        UserDB.role == "superadmin"
-    ).first()
-    
-    if not user:
-        raise HTTPException(status_code=403, detail="Acceso denegado")
-    
+    """Actualizar configuración del sistema (solo superadmin autenticado)."""
+    _ = user_id
     settings = db.query(SystemSettingsDB).first()
     
     if not settings:
@@ -8022,11 +9245,18 @@ def update_system_settings(
     settings.require_email_verification = int(settings_data.requireEmailVerification)
     settings.enable_two_factor = int(settings_data.enableTwoFactor)
     settings.maintenance_mode = int(settings_data.maintenanceMode)
+    if settings_data.maintenanceMessage is not None:
+        settings.maintenance_message = settings_data.maintenanceMessage.strip()
     settings.email_notifications = int(settings_data.emailNotifications)
     settings.slack_notifications = int(settings_data.slackNotifications)
     settings.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     db.commit()
+    try:
+        from config_module import refresh_runtime_cache
+        refresh_runtime_cache(settings)
+    except Exception:
+        pass
     
     return {
         "success": True,
@@ -8060,7 +9290,7 @@ def get_patient_dashboard(patient_id: int, db: Session = Depends(get_db)):
         "id": patient.id,
         "name": f"{patient.nombres} {patient.apellidos}",
         "email": patient.email,
-        "photo": patient.foto_perfil,
+        "photo": get_absolute_url(patient.foto_perfil),
         "phone": patient.telefono
     }
     
@@ -8661,7 +9891,7 @@ async def upload_patient_avatar(
     
     return {
         "success": True,
-        "foto_url": user.foto_perfil
+        "foto_url": get_absolute_url(user.foto_perfil)
     }
 
 @app.put("/api/patient/{patient_id}/profile/update")
@@ -11764,7 +12994,7 @@ def delete_meal_plan(plan_id: int, db: Session = Depends(get_db)):
 # ==================== CREAR TABLA EN LA BASE DE DATOS ====================
 # Ejecutar esto después de agregar el código
 
-Base.metadata.create_all(bind=engine)
+safe_create_all()
 
 # --- Endpoint para que el Dialog del Front pueda listar los menús ---
 @app.get("/api/weekly-menus-complete")
@@ -11841,12 +13071,113 @@ def assign_menu_to_plan(
         "weeks_linked": weeks_linked,
         "template_menu_id": menu.id,
     }
+def _relative_time_es(ts: Optional[str]) -> str:
+    """Formato relativo en español desde timestamp YYYY-MM-DD HH:MM:SS."""
+    if not ts:
+        return "—"
+    try:
+        dt = datetime.strptime(str(ts)[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(ts)[:16]
+    delta = now_co() - dt
+    sec = int(delta.total_seconds())
+    if sec < 60:
+        return "Hace un momento"
+    if sec < 3600:
+        m = sec // 60
+        return f"Hace {m} min"
+    if sec < 86400:
+        h = sec // 3600
+        return f"Hace {h} h"
+    d = sec // 86400
+    return f"Hace {d} d"
+
+
+def _monthly_invoice_revenue(db: Session, month_start: date, month_end: date) -> int:
+    """Suma facturas pagadas en un rango de fechas (paid_at)."""
+    start_str = month_start.strftime("%Y-%m-%d")
+    end_str = month_end.strftime("%Y-%m-%d")
+    paid = (
+        db.query(func.coalesce(func.sum(InvoiceDB.amount_cop), 0))
+        .filter(
+            InvoiceDB.status == "paid",
+            InvoiceDB.paid_at.isnot(None),
+            InvoiceDB.paid_at >= start_str,
+            InvoiceDB.paid_at < end_str,
+        )
+        .scalar()
+    )
+    return int(paid or 0)
+
+
+def _billing_mrr_snapshot(db: Session) -> dict:
+    """MRR y serie mensual desde suscripciones/facturas reales."""
+    try:
+        from billing_module import _compute_revenue_metrics
+        metrics = _compute_revenue_metrics(db)
+        return {
+            "mrr_cop": metrics.get("mrr_cop", 0),
+            "monthly_chart": metrics.get("monthly_revenue_chart", []),
+        }
+    except Exception:
+        subs = db.query(SubscriptionDB).filter(SubscriptionDB.status.in_(("active", "trialing"))).all()
+        mrr = sum(getattr(s, "mrr_cop", 0) or 0 for s in subs)
+        return {"mrr_cop": mrr, "monthly_chart": []}
+
+
+def _build_activity_feed(db: Session, limit: int = 10) -> list:
+    """Feed de actividad desde audit logs y eventos recientes del sistema."""
+    activities = []
+    if AuditLogDB is not None:
+        logs = (
+            db.query(AuditLogDB)
+            .order_by(AuditLogDB.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        for log in logs:
+            activities.append({
+                "id": f"audit_{log.id}",
+                "action": log.summary or f"{log.action} · {log.entity_type}",
+                "user": log.actor_name or "Sistema",
+                "time": _relative_time_es(log.created_at),
+                "timestamp": log.created_at or "",
+                "type": log.entity_type or "audit",
+            })
+    if len(activities) < limit:
+        remaining = limit - len(activities)
+        recent_users = db.query(UserDB).order_by(UserDB.created_at.desc()).limit(remaining).all()
+        for user in recent_users:
+            action = (
+                "Nuevo nutricionista registrado"
+                if user.role == "admin"
+                else "Nuevo paciente registrado"
+                if user.role == "patient"
+                else "Nuevo usuario registrado"
+            )
+            ts = (
+                user.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                if hasattr(user.created_at, "strftime")
+                else str(user.created_at or "")
+            )
+            activities.append({
+                "id": f"user_{user.id}",
+                "action": action,
+                "user": f"{user.nombres} {user.apellidos}",
+                "time": _relative_time_es(ts),
+                "timestamp": ts,
+                "type": "user",
+            })
+    return activities[:limit]
+
+
 @app.get("/api/superadmin/users", response_model=List[SuperAdminUserResponse])
 def superadmin_get_all_users(
     search: Optional[str] = None,
     role: Optional[str] = None,
     status: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
 ):
     """
     Obtener todos los usuarios del sistema con filtros opcionales
@@ -11871,7 +13202,18 @@ def superadmin_get_all_users(
     
     results = []
     for user in users:
-        results.append({
+        nutritionist_name = None
+        organization_name = None
+        if user.role == "patient" and user.nutritionist_id:
+            nutri = db.query(UserDB).filter(UserDB.id == user.nutritionist_id).first()
+            if nutri:
+                nutritionist_name = f"{nutri.nombres} {nutri.apellidos}"
+        if user.role == "admin" and OrganizationMemberDB is not None:
+            om = db.query(OrganizationMemberDB).filter(OrganizationMemberDB.user_id == user.id).first()
+            if om:
+                org = db.query(OrganizationDB).filter(OrganizationDB.id == om.organization_id).first()
+                organization_name = org.name if org else None
+        row = {
             "id": user.id,
             "name": f"{user.nombres} {user.apellidos}",
             "email": user.email,
@@ -11879,15 +13221,21 @@ def superadmin_get_all_users(
             "status": user.status,
             "avatar": user.foto_perfil,
             "createdAt": user.created_at.strftime("%Y-%m-%d") if user.created_at else None,
-            "lastLogin": user.updated_at if user.updated_at else None
-        })
+            "lastLogin": user.updated_at if user.updated_at else None,
+        }
+        if nutritionist_name:
+            row["nutritionist_name"] = nutritionist_name
+        if organization_name:
+            row["organization_name"] = organization_name
+        results.append(row)
     
     return results
 
 @app.post("/api/superadmin/users", response_model=SuperAdminUserResponse)
 def superadmin_create_user(
     user_data: SuperAdminUserCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
 ):
     """
     Crear un nuevo usuario desde el panel de superadmin
@@ -11922,6 +13270,26 @@ def superadmin_create_user(
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+
+        log_audit(
+            db,
+            actor=current_user,
+            action="create",
+            entity_type="user",
+            entity_id=new_user.id,
+            summary=f"Usuario creado: {new_user.nombres} {new_user.apellidos} ({new_user.role})",
+            details={"email": new_user.email, "role": new_user.role},
+            now_co=now_co,
+        )
+        db.add(
+            NotificationDB(
+                user_id=new_user.id,
+                type="welcome",
+                title="Bienvenido a NutriData",
+                description="Tu cuenta fue creada por el administrador de la plataforma.",
+            )
+        )
+        db.commit()
         
         return {
             "id": new_user.id,
@@ -11938,7 +13306,11 @@ def superadmin_create_user(
         raise HTTPException(status_code=500, detail=f"Error al crear usuario: {str(e)}")
 
 @app.get("/api/superadmin/users/{user_id}", response_model=SuperAdminUserResponse)
-def superadmin_get_user(user_id: int, db: Session = Depends(get_db)):
+def superadmin_get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Obtener detalles de un usuario específico
     """
@@ -11961,7 +13333,8 @@ def superadmin_get_user(user_id: int, db: Session = Depends(get_db)):
 def superadmin_update_user(
     user_id: int,
     user_data: SuperAdminUserUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
 ):
     """
     Actualizar información de un usuario
@@ -11969,7 +13342,9 @@ def superadmin_update_user(
     user = db.query(UserDB).filter(UserDB.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
+    old_role = user.role
+    old_status = user.status
     # Verificar si el email cambió y ya existe
     if user_data.email != user.email:
         existing = db.query(UserDB).filter(
@@ -11993,6 +13368,26 @@ def superadmin_update_user(
     try:
         db.commit()
         db.refresh(user)
+
+        if old_role != user.role or old_status != user.status:
+            log_audit(
+                db,
+                actor=current_user,
+                action="role_change" if old_role != user.role else "update",
+                entity_type="user",
+                entity_id=user.id,
+                summary=(
+                    f"Rol cambiado a {user.role}: {user.nombres} {user.apellidos}"
+                    if old_role != user.role
+                    else f"Estado cambiado a {user.status}: {user.nombres} {user.apellidos}"
+                ),
+                details={
+                    "before": {"role": old_role, "status": old_status},
+                    "after": {"role": user.role, "status": user.status},
+                },
+                now_co=now_co,
+            )
+            db.commit()
         
         return {
             "id": user.id,
@@ -12009,7 +13404,11 @@ def superadmin_update_user(
         raise HTTPException(status_code=500, detail=f"Error al actualizar usuario: {str(e)}")
 
 @app.delete("/api/superadmin/users/{user_id}")
-def superadmin_delete_user(user_id: int, db: Session = Depends(get_db)):
+def superadmin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Eliminar un usuario del sistema
     """
@@ -12025,7 +13424,24 @@ def superadmin_delete_user(user_id: int, db: Session = Depends(get_db)):
         )
     
     try:
+        snapshot = {
+            "id": user.id,
+            "name": f"{user.nombres} {user.apellidos}",
+            "email": user.email,
+            "role": user.role,
+            "status": user.status,
+        }
         db.delete(user)
+        log_audit(
+            db,
+            actor=current_user,
+            action="delete",
+            entity_type="user",
+            entity_id=user_id,
+            summary=f"Usuario eliminado: {snapshot['name']} ({snapshot['role']})",
+            details={"before": snapshot, "after": None},
+            now_co=now_co,
+        )
         db.commit()
         return {"success": True, "message": "Usuario eliminado correctamente"}
     except Exception as e:
@@ -12033,7 +13449,11 @@ def superadmin_delete_user(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error al eliminar usuario: {str(e)}")
 
 @app.patch("/api/superadmin/users/{user_id}/toggle-status")
-def superadmin_toggle_user_status(user_id: int, db: Session = Depends(get_db)):
+def superadmin_toggle_user_status(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Activar/Desactivar un usuario
     """
@@ -12042,6 +13462,7 @@ def superadmin_toggle_user_status(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
     # Alternar estado
+    old_status = user.status
     if user.status == "activo":
         user.status = "inactivo"
     else:
@@ -12050,6 +13471,24 @@ def superadmin_toggle_user_status(user_id: int, db: Session = Depends(get_db)):
     user.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     
     try:
+        log_audit(
+            db,
+            actor=current_user,
+            action="update",
+            entity_type="user",
+            entity_id=user.id,
+            summary=f"Estado cambiado {old_status} → {user.status}: {user.nombres} {user.apellidos}",
+            details={"before": {"status": old_status}, "after": {"status": user.status}},
+            now_co=now_co,
+        )
+        db.add(
+            NotificationDB(
+                user_id=user.id,
+                type="account_status",
+                title="Estado de cuenta actualizado",
+                description=f"Tu cuenta ahora está {user.status}.",
+            )
+        )
         db.commit()
         return {
             "success": True,
@@ -12061,7 +13500,10 @@ def superadmin_toggle_user_status(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error al cambiar estado: {str(e)}")
 
 @app.get("/api/superadmin/stats", response_model=SuperAdminStatsResponse)
-def superadmin_get_stats(db: Session = Depends(get_db)):
+def superadmin_get_stats(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Obtener estadísticas generales del sistema
     """
@@ -12096,26 +13538,260 @@ def superadmin_get_stats(db: Session = Depends(get_db)):
 
 @app.get("/api/superadmin/recipes")
 def superadmin_get_all_recipes(
+    status: Optional[str] = None,
+    include_usage: bool = False,
+    include_quality: bool = False,
     db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user)
+    current_user: UserDB = Depends(require_superadmin),
 ):
-    """Biblioteca de recetas: todas las recetas creadas por todos los nutricionistas (solo superadmin)."""
-    if current_user.role != "superadmin":
-        raise HTTPException(status_code=403, detail="Solo el superadmin puede acceder a la biblioteca de recetas")
-    recipes = db.query(RecipeDB).order_by(RecipeDB.id.desc()).all()
-    result = []
+    """Biblioteca global de recetas con moderación, calidad y uso."""
+    q = db.query(RecipeDB)
+    if status and status.lower() not in ("all", "todas", ""):
+        q = q.filter(RecipeDB.approval_status == status.lower())
+    recipes = q.order_by(RecipeDB.id.desc()).all()
+    return [
+        _enrich_recipe_superadmin(db, r, include_usage=include_usage, include_quality=include_quality)
+        for r in recipes
+    ]
+
+
+@app.get("/api/superadmin/recipes/stats")
+def superadmin_recipes_usage_stats(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Estadísticas de uso de recetas en menús."""
+    recipes = db.query(RecipeDB).all()
+    rows = []
     for r in recipes:
-        creator_name = None
-        if getattr(r, "created_by_id", None):
-            creator = db.query(UserDB).filter(UserDB.id == r.created_by_id).first()
-            if creator:
-                creator_name = f"{creator.nombres or ''} {creator.apellidos or ''}".strip() or creator.email
-        out = _recipe_to_response(r)
-        out["created_by_id"] = getattr(r, "created_by_id", None)
-        out["created_by_name"] = creator_name
-        out["is_public"] = bool(getattr(r, "is_public", 0))
-        result.append(out)
-    return result
+        usage = _recipe_usage_stats(db, r.id)
+        if usage["total_slot_usages"] > 0 or bool(getattr(r, "is_public", 0)):
+            rows.append({
+                "id": r.id,
+                "name": r.name,
+                "is_public": bool(getattr(r, "is_public", 0)),
+                "is_system": bool(getattr(r, "is_system", 0)),
+                "approval_status": getattr(r, "approval_status", "draft"),
+                **usage,
+            })
+    rows.sort(key=lambda x: x["total_slot_usages"], reverse=True)
+    return {
+        "total_recipes": len(recipes),
+        "public_recipes": sum(1 for r in recipes if getattr(r, "is_public", 0)),
+        "system_recipes": sum(1 for r in recipes if getattr(r, "is_system", 0)),
+        "pending_moderation": sum(1 for r in recipes if getattr(r, "approval_status", "") == "pending"),
+        "top_by_usage": rows[:25],
+    }
+
+
+@app.get("/api/superadmin/recipes/{recipe_id}")
+def superadmin_get_recipe(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    return _enrich_recipe_superadmin(db, recipe, include_usage=True, include_quality=True)
+
+
+@app.get("/api/superadmin/recipes/{recipe_id}/quality-report")
+def superadmin_recipe_quality_report(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    return _recipe_nutrition_quality_report(recipe)
+
+
+@app.get("/api/superadmin/recipes/{recipe_id}/usage")
+def superadmin_recipe_usage(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    return _recipe_usage_stats(db, recipe_id)
+
+
+@app.patch("/api/superadmin/recipes/{recipe_id}/approve")
+def superadmin_approve_recipe(
+    recipe_id: int,
+    body: dict = Body(default={}),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    make_public = body.get("is_public", True)
+    recipe.approval_status = "approved"
+    recipe.is_public = 1 if make_public else 0
+    recipe.reviewed_by_id = current_user.id
+    recipe.reviewed_at = now
+    recipe.rejection_reason = None
+    recipe.updated_at = now
+    db.commit()
+    db.refresh(recipe)
+    return {
+        "success": True,
+        "message": "Receta aprobada",
+        "recipe": _enrich_recipe_superadmin(db, recipe, include_quality=True),
+    }
+
+
+@app.patch("/api/superadmin/recipes/{recipe_id}/reject")
+def superadmin_reject_recipe(
+    recipe_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    reason = (body.get("reason") or body.get("rejection_reason") or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Indica el motivo del rechazo")
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    recipe.approval_status = "rejected"
+    recipe.is_public = 0
+    recipe.reviewed_by_id = current_user.id
+    recipe.reviewed_at = now
+    recipe.rejection_reason = reason
+    recipe.updated_at = now
+    db.commit()
+    db.refresh(recipe)
+    return {
+        "success": True,
+        "message": "Receta rechazada",
+        "recipe": _enrich_recipe_superadmin(db, recipe),
+    }
+
+
+@app.post("/api/superadmin/recipes/{recipe_id}/duplicate-to-library")
+def superadmin_duplicate_recipe_to_library(
+    recipe_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Duplica receta a la biblioteca global del sistema."""
+    source = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    base_name = source.name or "Receta"
+    if not base_name.endswith("(Biblioteca)"):
+        base_name = f"{base_name} (Biblioteca)"
+    clone = RecipeDB(
+        name=base_name,
+        description=source.description,
+        category=source.category,
+        prepTime=source.prepTime,
+        cookTime=source.cookTime,
+        servings=source.servings,
+        calories=source.calories,
+        protein=source.protein,
+        carbs=source.carbs,
+        fat=source.fat,
+        ingredients=source.ingredients,
+        instructions=source.instructions,
+        tags=source.tags,
+        image=source.image,
+        isFavorite=0,
+        created_by_id=current_user.id,
+        is_public=1,
+        approval_status="approved",
+        is_system=1,
+        source_recipe_id=source.id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+    return {
+        "success": True,
+        "message": "Receta duplicada en biblioteca del sistema",
+        "recipe": _enrich_recipe_superadmin(db, clone, include_quality=True),
+        "source_recipe_id": source.id,
+    }
+
+
+@app.put("/api/superadmin/recipes/{recipe_id}/shares")
+def superadmin_update_recipe_shares(
+    recipe_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    ids = body.get("nutritionist_ids") or []
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="nutritionist_ids debe ser una lista")
+    clean_ids = []
+    for x in ids:
+        try:
+            clean_ids.append(int(x))
+        except (TypeError, ValueError):
+            pass
+    unique_ids = list(set(clean_ids))
+    if unique_ids:
+        valid_rows = (
+            db.query(UserDB.id)
+            .filter(UserDB.id.in_(unique_ids), UserDB.role == "admin")
+            .all()
+        )
+        valid_ids = {row[0] for row in valid_rows}
+        invalid = sorted(set(unique_ids) - valid_ids)
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"IDs inválidos o no son nutricionistas (role=admin): {invalid}",
+            )
+    else:
+        valid_ids = set()
+    db.query(RecipeShareDB).filter(RecipeShareDB.recipe_id == recipe_id).delete()
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    for nid in valid_ids:
+        db.add(RecipeShareDB(recipe_id=recipe_id, nutritionist_id=nid, created_at=ts))
+    log_audit(
+        db,
+        actor=current_user,
+        action="update",
+        entity_type="recipe",
+        entity_id=recipe_id,
+        summary=f"Receta «{recipe.name}» compartida con {len(valid_ids)} nutricionista(s)",
+        details={"nutritionist_ids": sorted(valid_ids), "recipe_id": recipe_id},
+        now_co=now_co,
+    )
+    for nid in valid_ids:
+        db.add(
+            NotificationDB(
+                user_id=nid,
+                type="recipe_share",
+                title="Receta compartida contigo",
+                description=f"Se compartió la receta «{recipe.name}» en tu biblioteca.",
+            )
+        )
+    db.commit()
+    enriched = _enrich_recipe_superadmin(db, recipe)
+    return {
+        "success": True,
+        "message": "Compartidos actualizados",
+        "recipe": enriched,
+        "shared_nutritionist_ids": enriched["shared_nutritionist_ids"],
+        "shared_with": enriched["shared_with"],
+    }
 
 
 @app.patch("/api/superadmin/recipes/{recipe_id}/visibility")
@@ -12123,24 +13799,174 @@ def superadmin_toggle_recipe_visibility(
     recipe_id: int,
     body: dict = Body(...),
     db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user)
+    current_user: UserDB = Depends(require_superadmin),
 ):
     is_public = body.get("is_public", False)
-    """Solo superadmin puede marcar recetas como públicas o privadas."""
-    if current_user.role != "superadmin":
-        raise HTTPException(status_code=403, detail="Solo el superadmin puede cambiar la visibilidad")
     recipe = db.query(RecipeDB).filter(RecipeDB.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
     recipe.is_public = 1 if is_public else 0
+    if is_public and getattr(recipe, "approval_status", "draft") in ("draft", "pending", "rejected"):
+        recipe.approval_status = "approved"
+        recipe.reviewed_by_id = current_user.id
+        recipe.reviewed_at = now
+        recipe.rejection_reason = None
+    recipe.updated_at = now
     db.commit()
     db.refresh(recipe)
-    out = _recipe_to_response(recipe)
-    out["is_public"] = bool(recipe.is_public)
-    out["created_by_id"] = getattr(recipe, "created_by_id", None)
-    creator = db.query(UserDB).filter(UserDB.id == recipe.created_by_id).first() if recipe.created_by_id else None
-    out["created_by_name"] = (f"{creator.nombres or ''} {creator.apellidos or ''}".strip() or creator.email) if creator else None
-    return out
+    return _enrich_recipe_superadmin(db, recipe)
+
+
+# ==================== HELPERS NUTRICIONISTAS / STAFF ====================
+
+def _license_alert_status(expiry: Optional[str]) -> Optional[str]:
+    if not expiry:
+        return None
+    try:
+        exp_date = datetime.strptime(str(expiry)[:10], "%Y-%m-%d").date()
+        days = (exp_date - date.today()).days
+        if days < 0:
+            return "expired"
+        if days <= 30:
+            return "expiring_soon"
+        return "valid"
+    except Exception:
+        return None
+
+
+def _nutritionist_onboarding(db: Session, nutritionist_id: int) -> dict:
+    user = db.query(UserDB).filter(UserDB.id == nutritionist_id).first()
+    prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == nutritionist_id).first()
+    profile_ok = bool(
+        prof
+        and prof.license
+        and prof.specialty
+        and user
+        and user.telefono
+    )
+    patients_count = db.query(UserDB).filter(
+        UserDB.role == "patient",
+        UserDB.nutritionist_id == nutritionist_id,
+    ).count()
+    patient_ids = [
+        row[0]
+        for row in db.query(UserDB.id).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == nutritionist_id,
+        ).all()
+    ]
+    plans_count = 0
+    if patient_ids:
+        plans_count = db.query(PatientMealPlanDB).filter(
+            PatientMealPlanDB.patient_id.in_(patient_ids)
+        ).count()
+    steps = [
+        {"key": "profile", "label": "Perfil completo (TO, especialidad, teléfono)", "done": profile_ok},
+        {"key": "first_patient", "label": "Primer paciente registrado", "done": patients_count > 0},
+        {"key": "first_plan", "label": "Primer plan asignado", "done": plans_count > 0},
+    ]
+    completed = sum(1 for s in steps if s["done"])
+    return {
+        "steps": steps,
+        "completed": completed,
+        "total": len(steps),
+        "percent": round(completed / len(steps) * 100) if steps else 0,
+        "is_complete": completed == len(steps),
+    }
+
+
+def _serialize_nutritionist_row(db: Session, nutritionist) -> dict:
+    admin_profile = db.query(AdminProfileDB).filter(
+        AdminProfileDB.user_id == nutritionist.id
+    ).first()
+    patients_count = db.query(UserDB).filter(
+        UserDB.role == "patient",
+        UserDB.nutritionist_id == nutritionist.id,
+    ).count()
+    org_name = None
+    org_id = None
+    staff_role = (
+        admin_profile.staff_role
+        if admin_profile and getattr(admin_profile, "staff_role", None)
+        else "nutritionist"
+    )
+    if admin_profile and getattr(admin_profile, "organization_id", None):
+        org_id = admin_profile.organization_id
+    if OrganizationMemberDB is not None:
+        om = db.query(OrganizationMemberDB).filter(
+            OrganizationMemberDB.user_id == nutritionist.id
+        ).first()
+        if om:
+            org_id = org_id or om.organization_id
+            org = db.query(OrganizationDB).filter(OrganizationDB.id == om.organization_id).first()
+            org_name = org.name if org else None
+    license_expiry = getattr(admin_profile, "license_expiry", None) if admin_profile else None
+    return {
+        "id": nutritionist.id,
+        "name": f"{nutritionist.nombres} {nutritionist.apellidos}",
+        "email": nutritionist.email,
+        "specialty": admin_profile.specialty if admin_profile else None,
+        "license": admin_profile.license if admin_profile else None,
+        "license_expiry": license_expiry,
+        "license_alert": _license_alert_status(license_expiry),
+        "invite_expires_at": getattr(admin_profile, "invite_expires_at", None) if admin_profile else None,
+        "patients": patients_count,
+        "rating": 4.5,
+        "status": nutritionist.status,
+        "avatar": nutritionist.foto_perfil,
+        "joinedAt": nutritionist.created_at if isinstance(nutritionist.created_at, str) else (
+            nutritionist.created_at.strftime("%Y-%m-%d") if nutritionist.created_at else None
+        ),
+        "organization": org_name,
+        "organization_id": org_id,
+        "staff_role": staff_role,
+        "onboarding": _nutritionist_onboarding(db, nutritionist.id),
+    }
+
+
+def _upsert_nutritionist_org(db: Session, user_id: int, organization_id: int, site_id: Optional[int] = None):
+    if OrganizationMemberDB is None:
+        return
+    existing = db.query(OrganizationMemberDB).filter(OrganizationMemberDB.user_id == user_id).first()
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    if existing:
+        existing.organization_id = organization_id
+        if site_id is not None:
+            existing.site_id = site_id
+    else:
+        db.add(OrganizationMemberDB(
+            organization_id=organization_id,
+            user_id=user_id,
+            site_id=site_id,
+            member_role="member",
+            status="activo",
+            joined_at=ts,
+        ))
+    prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == user_id).first()
+    if not prof:
+        prof = AdminProfileDB(user_id=user_id)
+        db.add(prof)
+    prof.organization_id = organization_id
+    if site_id is not None:
+        prof.site_id = site_id
+
+
+def _create_nutritionist_invite_token(user_id: int, email: str, days: int = 7) -> tuple:
+    expires = datetime.utcnow() + timedelta(days=days)
+    invite_token = jwt.encode(
+        {
+            "user_id": user_id,
+            "email": email,
+            "type": "nutritionist_invite",
+            "exp": expires,
+        },
+        SECRET_KEY,
+        algorithm="HS256",
+    )
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    link = f"{frontend_url}/register-nutritionist?token={quote(invite_token, safe='')}"
+    return invite_token, link, expires.strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ==================== ENDPOINTS SUPERADMIN - NUTRICIONISTAS ====================
@@ -12148,7 +13974,8 @@ def superadmin_toggle_recipe_visibility(
 @app.get("/api/superadmin/nutritionists", response_model=List[NutritionistResponse])
 def superadmin_get_nutritionists(
     search: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
 ):
     """
     Obtener todos los nutricionistas (admins) del sistema
@@ -12163,41 +13990,40 @@ def superadmin_get_nutritionists(
         )
     
     nutritionists = query.order_by(UserDB.created_at.desc()).all()
-    
-    results = []
-    for nutritionist in nutritionists:
-        # Obtener perfil extendido
-        admin_profile = db.query(AdminProfileDB).filter(
-            AdminProfileDB.user_id == nutritionist.id
-        ).first()
-        
-        # Contar pacientes asignados
-        patients_count = db.query(PatientMealPlanDB).join(
-            MealPlanDB
-        ).filter(
-            PatientMealPlanDB.status == "active"
-        ).count()  # Nota: Aquí necesitarías una relación entre admin y planes
-        
-        # Por ahora usamos un conteo general, pero deberías ajustar según tu modelo
-        # Si tienes una tabla que relacione admins con pacientes
-        
-        results.append({
-            "id": nutritionist.id,
-            "name": f"{nutritionist.nombres} {nutritionist.apellidos}",
-            "email": nutritionist.email,
-            "specialty": admin_profile.specialty if admin_profile else None,
-            "patients": patients_count,
-            "rating": 4.5,  # Mock - implementar sistema de ratings
-            "status": nutritionist.status,
-            "avatar": nutritionist.foto_perfil,
-            "joinedAt": nutritionist.created_at.strftime("%Y-%m-%d") if nutritionist.created_at else None,
-            "organization": None  # Mock - implementar si tienes organizaciones
-        })
-    
-    return results
+    return [_serialize_nutritionist_row(db, n) for n in nutritionists]
+
+
+@app.get("/api/superadmin/nutritionists/license-alerts")
+def superadmin_nutritionist_license_alerts(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Alertas de licencia TO vencida o por vencer (30 días)."""
+    rows = db.query(UserDB, AdminProfileDB).join(
+        AdminProfileDB, AdminProfileDB.user_id == UserDB.id
+    ).filter(UserDB.role == "admin", UserDB.status == "activo").all()
+    alerts = []
+    for user, prof in rows:
+        alert = _license_alert_status(getattr(prof, "license_expiry", None))
+        if alert in ("expired", "expiring_soon"):
+            alerts.append({
+                "nutritionist_id": user.id,
+                "name": f"{user.nombres} {user.apellidos}",
+                "email": user.email,
+                "license": prof.license,
+                "license_expiry": prof.license_expiry,
+                "alert": alert,
+            })
+    alerts.sort(key=lambda a: (0 if a["alert"] == "expired" else 1, a.get("license_expiry") or ""))
+    return {"alerts": alerts, "total": len(alerts)}
+
 
 @app.get("/api/superadmin/nutritionists/{nutritionist_id}")
-def superadmin_get_nutritionist_details(nutritionist_id: int, db: Session = Depends(get_db)):
+def superadmin_get_nutritionist_details(
+    nutritionist_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Obtener detalles completos de un nutricionista
     """
@@ -12209,29 +14035,188 @@ def superadmin_get_nutritionist_details(nutritionist_id: int, db: Session = Depe
     if not nutritionist:
         raise HTTPException(status_code=404, detail="Nutricionista no encontrado")
     
-    # Obtener perfil extendido
+    base = _serialize_nutritionist_row(db, nutritionist)
     admin_profile = db.query(AdminProfileDB).filter(
         AdminProfileDB.user_id == nutritionist_id
     ).first()
-    
-    # Contar pacientes activos
-    active_patients = db.query(PatientMealPlanDB).filter(
-        PatientMealPlanDB.status == "active"
-    ).count()
-    
-    return {
-        "id": nutritionist.id,
-        "name": f"{nutritionist.nombres} {nutritionist.apellidos}",
-        "email": nutritionist.email,
+    base.update({
         "phone": nutritionist.telefono,
-        "specialty": admin_profile.specialty if admin_profile else None,
-        "license": admin_profile.license if admin_profile else None,
         "bio": admin_profile.bio if admin_profile else None,
-        "patients": active_patients,
-        "rating": 4.5,
-        "status": nutritionist.status,
-        "avatar": nutritionist.foto_perfil,
-        "joinedAt": nutritionist.created_at.strftime("%Y-%m-%d") if nutritionist.created_at else None
+    })
+    return base
+
+@app.put("/api/superadmin/nutritionists/{nutritionist_id}/profile")
+def superadmin_update_nutritionist_profile(
+    nutritionist_id: int,
+    payload: NutritionistProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    nutritionist = db.query(UserDB).filter(
+        UserDB.id == nutritionist_id,
+        UserDB.role == "admin",
+    ).first()
+    if not nutritionist:
+        raise HTTPException(status_code=404, detail="Nutricionista no encontrado")
+
+    prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == nutritionist_id).first()
+    if not prof:
+        prof = AdminProfileDB(user_id=nutritionist_id)
+        db.add(prof)
+
+    before = {
+        "license": prof.license,
+        "license_expiry": getattr(prof, "license_expiry", None),
+        "specialty": prof.specialty,
+        "organization_id": getattr(prof, "organization_id", None),
+        "staff_role": getattr(prof, "staff_role", None),
+    }
+
+    if payload.phone is not None:
+        nutritionist.telefono = payload.phone
+    if payload.specialty is not None:
+        prof.specialty = payload.specialty
+    if payload.license is not None:
+        prof.license = payload.license
+    if payload.license_expiry is not None:
+        prof.license_expiry = payload.license_expiry
+    if payload.bio is not None:
+        prof.bio = payload.bio
+    if payload.staff_role is not None:
+        prof.staff_role = payload.staff_role
+    if payload.organization_id is not None:
+        _upsert_nutritionist_org(db, nutritionist_id, payload.organization_id, payload.site_id)
+
+    nutritionist.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+
+    after = {
+        "license": prof.license,
+        "license_expiry": getattr(prof, "license_expiry", None),
+        "specialty": prof.specialty,
+        "organization_id": getattr(prof, "organization_id", None),
+        "staff_role": getattr(prof, "staff_role", None),
+    }
+    log_audit(
+        db,
+        actor=current_user,
+        action="update",
+        entity_type="staff",
+        entity_id=nutritionist_id,
+        summary=f"Perfil nutricionista actualizado: {nutritionist.nombres} {nutritionist.apellidos}",
+        details={"before": before, "after": after},
+        now_co=now_co,
+    )
+    db.commit()
+    return {"success": True, "nutritionist": _serialize_nutritionist_row(db, nutritionist)}
+
+
+@app.post("/api/superadmin/nutritionists/{nutritionist_id}/impersonate")
+def superadmin_impersonate_nutritionist(
+    nutritionist_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Deprecated: usar POST /api/superadmin/impersonate/user/{user_id}"""
+    raise HTTPException(
+        status_code=410,
+        detail="Endpoint obsoleto. Use POST /api/superadmin/impersonate/user/{user_id} con motivo en el body.",
+    )
+
+
+@app.post("/api/superadmin/impersonation/end")
+def superadmin_end_impersonation(
+    request: Request,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme),
+):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Token inválido")
+    if not payload.get("impersonation"):
+        raise HTTPException(status_code=400, detail="No hay sesión de impersonación activa")
+
+    impersonator = db.query(UserDB).filter(UserDB.id == payload.get("impersonator_id")).first()
+    target = db.query(UserDB).filter(UserDB.email == payload.get("sub")).first()
+    if impersonator and target:
+        if ImpersonationLogDB is not None:
+            ip = request.client.host if request.client else None
+            db.add(
+                ImpersonationLogDB(
+                    impersonator_id=impersonator.id,
+                    target_user_id=target.id,
+                    target_role=target.role,
+                    action="end",
+                    reason=None,
+                    ip_address=ip,
+                    created_at=now_co().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
+        log_audit(
+            db,
+            actor=impersonator,
+            action="impersonation_end",
+            entity_type=target.role,
+            entity_id=target.id,
+            summary=f"Impersonación finalizada: {target.nombres} {target.apellidos}",
+            details={
+                "target_id": target.id,
+                "impersonator_id": impersonator.id,
+            },
+            now_co=now_co,
+        )
+        db.commit()
+    return {"success": True}
+
+
+@app.post("/api/superadmin/nutritionists/{nutritionist_id}/resend-invite")
+def superadmin_resend_nutritionist_invite(
+    nutritionist_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    user = db.query(UserDB).filter(
+        UserDB.id == nutritionist_id,
+        UserDB.role == "admin",
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Nutricionista no encontrado")
+    if user.status != "pendiente":
+        raise HTTPException(status_code=400, detail="Solo se puede reenviar invitación a cuentas pendientes")
+
+    _, registration_link, expires_at = _create_nutritionist_invite_token(user.id, user.email)
+    prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == user.id).first()
+    if not prof:
+        prof = AdminProfileDB(user_id=user.id)
+        db.add(prof)
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    prof.invited_at = ts
+    prof.invite_expires_at = expires_at
+    db.commit()
+
+    email_sent = send_nutritionist_invite_email(
+        to_email=user.email,
+        name=f"{user.nombres} {user.apellidos}".strip() or user.email,
+        registration_link=registration_link,
+    )
+    log_audit(
+        db,
+        actor=current_user,
+        action="update",
+        entity_type="staff",
+        entity_id=user.id,
+        summary=f"Invitación reenviada: {user.email}",
+        details={"invite_expires_at": expires_at, "email_sent": email_sent},
+        now_co=now_co,
+    )
+    db.commit()
+    return {
+        "success": True,
+        "registration_link": registration_link,
+        "invite_expires_at": expires_at,
+        "email_sent": email_sent,
+        "message": "Invitación reenviada" if email_sent else "Enlace regenerado; comparte manualmente",
     }
 
 @app.post("/api/superadmin/nutritionists/invite")
@@ -12294,38 +14279,50 @@ def superadmin_invite_nutritionist(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear invitación: {str(e)}")
     
-    # Token JWT para el enlace de registro (válido 7 días)
-    invite_token = jwt.encode(
-        {
-            "user_id": new_admin.id,
-            "email": new_admin.email,
-            "type": "nutritionist_invite",
-            "exp": datetime.utcnow() + timedelta(days=7)
-        },
-        SECRET_KEY,
-        algorithm="HS256"
-    )
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
-    registration_link = f"{frontend_url}/register-nutritionist?token={quote(invite_token, safe='')}"
+    _, registration_link, expires_at = _create_nutritionist_invite_token(new_admin.id, new_admin.email)
+    prof = db.query(AdminProfileDB).filter(AdminProfileDB.user_id == new_admin.id).first()
+    if not prof:
+        prof = AdminProfileDB(user_id=new_admin.id)
+        db.add(prof)
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    prof.invited_at = ts
+    prof.invite_expires_at = expires_at
+    db.commit()
     
-    # Enviar correo al nutricionista con el enlace de registro
     email_sent = send_nutritionist_invite_email(
         to_email=email,
         name=f"{nombres} {apellidos}".strip() or email,
         registration_link=registration_link
     )
+
+    log_audit(
+        db,
+        actor=current_user,
+        action="create",
+        entity_type="staff",
+        entity_id=new_admin.id,
+        summary=f"Invitación nutricionista: {email}",
+        details={"invite_expires_at": expires_at, "email_sent": email_sent},
+        now_co=now_co,
+    )
+    db.commit()
     
     return {
         "success": True,
         "message": "Nutricionista agregado. Se ha enviado un correo con el enlace de registro." if email_sent else "Nutricionista agregado. No se pudo enviar el correo; comparte el enlace manualmente.",
         "registration_link": registration_link,
+        "invite_expires_at": expires_at,
         "email": email,
         "name": f"{nombres} {apellidos}".strip(),
         "email_sent": email_sent
     }
 
 @app.delete("/api/superadmin/nutritionists/{nutritionist_id}")
-def superadmin_delete_nutritionist(nutritionist_id: int, db: Session = Depends(get_db)):
+def superadmin_delete_nutritionist(
+    nutritionist_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Eliminar un nutricionista del sistema
     """
@@ -12338,9 +14335,24 @@ def superadmin_delete_nutritionist(nutritionist_id: int, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Nutricionista no encontrado")
     
     # Verificar si tiene pacientes asignados
-    has_active_patients = db.query(PatientMealPlanDB).filter(
-        PatientMealPlanDB.status == "active"
-    ).first()
+    patient_ids = [
+        row[0]
+        for row in db.query(UserDB.id).filter(
+            UserDB.role == "patient",
+            UserDB.nutritionist_id == nutritionist_id,
+        ).all()
+    ]
+    has_active_patients = False
+    if patient_ids:
+        has_active_patients = (
+            db.query(PatientMealPlanDB)
+            .filter(
+                PatientMealPlanDB.patient_id.in_(patient_ids),
+                PatientMealPlanDB.status == "active",
+            )
+            .first()
+            is not None
+        )
     
     if has_active_patients:
         raise HTTPException(
@@ -12349,7 +14361,22 @@ def superadmin_delete_nutritionist(nutritionist_id: int, db: Session = Depends(g
         )
     
     try:
+        snapshot = {
+            "id": nutritionist.id,
+            "name": f"{nutritionist.nombres} {nutritionist.apellidos}",
+            "email": nutritionist.email,
+        }
         db.delete(nutritionist)
+        log_audit(
+            db,
+            actor=current_user,
+            action="delete",
+            entity_type="staff",
+            entity_id=nutritionist_id,
+            summary=f"Nutricionista eliminado: {snapshot['name']}",
+            details={"before": snapshot},
+            now_co=now_co,
+        )
         db.commit()
         return {"success": True, "message": "Nutricionista eliminado correctamente"}
     except Exception as e:
@@ -12359,140 +14386,137 @@ def superadmin_delete_nutritionist(nutritionist_id: int, db: Session = Depends(g
 # ==================== ENDPOINTS SUPERADMIN - DASHBOARD ====================
 
 @app.get("/api/superadmin/dashboard/overview")
-def superadmin_get_dashboard_overview(db: Session = Depends(get_db)):
+def superadmin_get_dashboard_overview(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
-    Obtener resumen general del dashboard de superadmin
+    Obtener resumen general del dashboard de superadmin (datos reales).
     """
-    # Usuarios totales
+    from platform_module import OrganizationDB
+
+    today = today_co()
+    this_month_str = today.replace(day=1).strftime("%Y-%m-%d")
+    prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    prev_month_str = prev_month.strftime("%Y-%m-%d")
+
     total_users = db.query(UserDB).count()
-    
-    # Nutricionistas
+    users_prev_month = (
+        db.query(UserDB)
+        .filter(UserDB.created_at >= prev_month_str, UserDB.created_at < this_month_str)
+        .count()
+    )
+    users_this_month = db.query(UserDB).filter(UserDB.created_at >= this_month_str).count()
+    user_change = (
+        f"+{((users_this_month - users_prev_month) / users_prev_month * 100):.1f}%"
+        if users_prev_month
+        else f"+{users_this_month} nuevos"
+    )
+
     total_nutritionists = db.query(UserDB).filter(UserDB.role == "admin").count()
     new_nutritionists = db.query(UserDB).filter(
         UserDB.role == "admin",
-        UserDB.created_at >= now_co().replace(day=1)
+        UserDB.created_at >= this_month_str,
     ).count()
-    
-    # Organizaciones (mock)
-    total_organizations = 42
-    new_organizations = 3
-    
-    # Ingresos (mock - implementar cuando tengas sistema de pagos)
-    monthly_revenue = 16800
-    revenue_growth = 27
-    
-    # Datos de gráficos
-    # Crecimiento de usuarios por mes (últimos 6 meses)
+
+    total_organizations = 0
+    new_organizations = 0
+    if OrganizationDB is not None:
+        total_organizations = db.query(OrganizationDB).count()
+        new_organizations = (
+            db.query(OrganizationDB)
+            .filter(OrganizationDB.created_at >= this_month_str)
+            .count()
+            if hasattr(OrganizationDB, "created_at")
+            else 0
+        )
+
+    month_names = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    billing_snap = _billing_mrr_snapshot(db)
     user_growth = []
+    ref = today.replace(day=1)
     for i in range(5, -1, -1):
-        month_start = now_co().replace(day=1) - timedelta(days=30*i)
-        month_users = db.query(UserDB).filter(
-            UserDB.created_at >= month_start,
-            UserDB.created_at < month_start + timedelta(days=30)
-        ).count()
-        
-        month_name = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"][month_start.month - 1]
+        month_ref = ref
+        for _ in range(i):
+            month_ref = (month_ref.replace(day=1) - timedelta(days=1)).replace(day=1)
+        next_m = (month_ref.replace(day=28) + timedelta(days=4)).replace(day=1)
+        ref_str = month_ref.strftime("%Y-%m-%d")
+        next_str = next_m.strftime("%Y-%m-%d")
+        month_users = (
+            db.query(UserDB)
+            .filter(UserDB.created_at >= ref_str, UserDB.created_at < next_str)
+            .count()
+        )
+        month_revenue = _monthly_invoice_revenue(db, month_ref, next_m)
         user_growth.append({
-            "name": month_name,
-            "usuarios": month_users * 20,  # Multiplicador para datos mock
-            "ingresos": month_users * 100
+            "name": month_names[month_ref.month - 1],
+            "usuarios": month_users,
+            "ingresos": month_revenue,
         })
-    
-    # Actividad reciente
-    recent_activity = []
-    
-    # Nuevos registros
-    recent_users = db.query(UserDB).order_by(UserDB.created_at.desc()).limit(3).all()
-    for user in recent_users:
-        activity_type = "user" if user.role == "patient" else "user"
-        action = "Nuevo nutricionista registrado" if user.role == "admin" else "Nuevo usuario registrado"
-        
-        recent_activity.append({
-            "id": user.id,
-            "action": action,
-            "user": f"{user.nombres} {user.apellidos}",
-            "time": "Hace pocos minutos",
-            "type": activity_type
-        })
-    
+
+    mrr_cop = billing_snap.get("mrr_cop", 0)
+    this_month_start = today.replace(day=1)
+    next_month = (this_month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    revenue_this_month = _monthly_invoice_revenue(db, this_month_start, next_month)
+    revenue_prev_month = _monthly_invoice_revenue(db, prev_month, this_month_start)
+    revenue_trend = "up" if revenue_this_month >= revenue_prev_month else "down"
+    if revenue_prev_month:
+        rev_pct = ((revenue_this_month - revenue_prev_month) / revenue_prev_month) * 100
+        revenue_change = f"{rev_pct:+.1f}% vs mes anterior"
+    else:
+        revenue_change = f"${revenue_this_month:,} COP este mes" if revenue_this_month else "Sin pagos registrados"
+
+    recent_activity = _build_activity_feed(db, limit=5)
+
     return {
         "stats": {
             "total_users": {
                 "value": total_users,
-                "change": "+12.5%",
-                "trend": "up"
+                "change": user_change,
+                "trend": "up" if users_this_month >= users_prev_month else "down",
             },
             "nutritionists": {
                 "value": total_nutritionists,
-                "change": f"+{new_nutritionists} nuevos",
-                "trend": "up"
+                "change": f"+{new_nutritionists} este mes",
+                "trend": "up",
             },
             "organizations": {
                 "value": total_organizations,
                 "change": f"+{new_organizations} este mes",
-                "trend": "up"
+                "trend": "up",
             },
             "revenue": {
-                "value": monthly_revenue,
-                "change": f"+{revenue_growth}% vs mes anterior",
-                "trend": "up"
-            }
+                "value": mrr_cop,
+                "change": revenue_change,
+                "trend": revenue_trend,
+                "monthly_collected_cop": revenue_this_month,
+            },
         },
         "charts": {
-            "user_growth": user_growth
+            "user_growth": user_growth,
+            "monthly_revenue": billing_snap.get("monthly_chart") or [
+                {"name": row["name"], "ingresos": row["ingresos"]} for row in user_growth
+            ],
         },
-        "recent_activity": recent_activity[:5]
+        "recent_activity": recent_activity,
     }
 
 @app.get("/api/superadmin/dashboard/activity")
-def superadmin_get_activity_feed(limit: int = 10, db: Session = Depends(get_db)):
-    """
-    Obtener feed de actividad del sistema
-    """
-    activities = []
-    
-    # Nuevos usuarios
-    recent_users = db.query(UserDB).order_by(UserDB.created_at.desc()).limit(5).all()
-    for user in recent_users:
-        if user.role == "admin":
-            activities.append({
-                "id": f"user_{user.id}",
-                "action": "Nuevo nutricionista registrado",
-                "user": f"{user.nombres} {user.apellidos}",
-                "time": "Hace 5 min",
-                "type": "user"
-            })
-        elif user.role == "patient":
-            activities.append({
-                "id": f"user_{user.id}",
-                "action": "Nuevo paciente registrado",
-                "user": f"{user.nombres} {user.apellidos}",
-                "time": "Hace 15 min",
-                "type": "user"
-            })
-    
-    # Planes activados
-    recent_plans = db.query(PatientMealPlanDB).order_by(
-        PatientMealPlanDB.assigned_date.desc()
-    ).limit(3).all()
-    
-    for plan_assignment in recent_plans:
-        patient = db.query(UserDB).filter(UserDB.id == plan_assignment.patient_id).first()
-        if patient:
-            activities.append({
-                "id": f"plan_{plan_assignment.id}",
-                "action": "Plan nutricional activado",
-                "user": f"{patient.nombres} {patient.apellidos}",
-                "time": "Hace 30 min",
-                "type": "billing"
-            })
-    
-    return activities[:limit]
+def superadmin_get_activity_feed(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Feed de actividad del sistema (audit logs + eventos recientes)."""
+    return _build_activity_feed(db, limit=min(limit, 50))
 
 # ==================== ENDPOINTS ADICIONALES ====================
 
 @app.get("/api/superadmin/users/export")
-def superadmin_export_users(db: Session = Depends(get_db)):
+def superadmin_export_users(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
     """
     Exportar lista de usuarios (CSV o JSON)
     """
@@ -12519,12 +14543,13 @@ def superadmin_export_users(db: Session = Depends(get_db)):
 @app.post("/api/superadmin/users/bulk-action")
 def superadmin_bulk_user_action(
     action_data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
 ):
     """
     Realizar acciones en lote sobre usuarios
     """
-    action = action_data.get("action")  # activate, deactivate, delete
+    action = action_data.get("action")  # activate, deactivate, delete, reassign_org
     user_ids = action_data.get("user_ids", [])
     
     if not action or not user_ids:
@@ -12539,6 +14564,15 @@ def superadmin_bulk_user_action(
                 synchronize_session=False
             )
             affected = len(user_ids)
+            log_audit(
+                db,
+                actor=current_user,
+                action="update",
+                entity_type="user",
+                summary=f"Activación masiva de {affected} usuario(s)",
+                details={"action": action, "user_ids": user_ids},
+                now_co=now_co,
+            )
             
         elif action == "deactivate":
             db.query(UserDB).filter(UserDB.id.in_(user_ids)).update(
@@ -12546,14 +14580,58 @@ def superadmin_bulk_user_action(
                 synchronize_session=False
             )
             affected = len(user_ids)
+            log_audit(
+                db,
+                actor=current_user,
+                action="update",
+                entity_type="user",
+                summary=f"Desactivación masiva de {affected} usuario(s)",
+                details={"action": action, "user_ids": user_ids},
+                now_co=now_co,
+            )
             
         elif action == "delete":
-            # No permitir eliminar superadmins
-            db.query(UserDB).filter(
+            affected = db.query(UserDB).filter(
                 UserDB.id.in_(user_ids),
                 UserDB.role != "superadmin"
             ).delete(synchronize_session=False)
-            affected = len(user_ids)
+            log_audit(
+                db,
+                actor=current_user,
+                action="delete",
+                entity_type="user",
+                summary=f"Eliminación masiva de {affected} usuario(s)",
+                details={"action": action, "user_ids": user_ids},
+                now_co=now_co,
+            )
+
+        elif action == "reassign_org":
+            org_id = action_data.get("organization_id")
+            if not org_id:
+                raise HTTPException(status_code=400, detail="organization_id requerido")
+            org = db.query(OrganizationDB).filter(OrganizationDB.id == org_id).first()
+            if not org:
+                raise HTTPException(status_code=404, detail="Organización no encontrada")
+            site_id = action_data.get("site_id")
+            for uid in user_ids:
+                user = db.query(UserDB).filter(UserDB.id == uid, UserDB.role == "admin").first()
+                if not user:
+                    continue
+                _upsert_nutritionist_org(db, uid, org_id, site_id)
+                affected += 1
+            log_audit(
+                db,
+                actor=current_user,
+                action="update",
+                entity_type="organization",
+                entity_id=org_id,
+                organization_id=org_id,
+                summary=f"Reasignación masiva de {affected} nutricionistas a {org.name}",
+                details={"user_ids": user_ids, "organization_id": org_id},
+                now_co=now_co,
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Acción no soportada: {action}")
         
         db.commit()
         
@@ -12565,8 +14643,62 @@ def superadmin_bulk_user_action(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error en acción en lote: {str(e)}")
-        
 
+
+@app.post("/api/superadmin/users/{user_id}/notify")
+def superadmin_notify_user(
+    user_id: int,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    """Enviar notificación in-app y/o email a un usuario."""
+    user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    subject = (body.get("subject") or "Mensaje de NutriData").strip()
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="El mensaje es requerido")
+
+    send_email = body.get("send_email", True)
+    send_in_app = body.get("send_in_app", True)
+    email_sent = False
+
+    if send_in_app:
+        db.add(
+            NotificationDB(
+                user_id=user.id,
+                type="admin_message",
+                title=subject,
+                description=message,
+            )
+        )
+
+    if send_email and user.email:
+        email_sent = send_generic_email(user.email, subject, message)
+
+    log_audit(
+        db,
+        actor=current_user,
+        action="notify",
+        entity_type="user",
+        entity_id=user.id,
+        summary=f"Notificación enviada a {user.nombres} {user.apellidos}",
+        details={"subject": subject, "email_sent": email_sent, "send_in_app": send_in_app},
+        now_co=now_co,
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "email_sent": email_sent,
+        "in_app": send_in_app,
+        "message": "Notificación enviada" if email_sent or send_in_app else "No se pudo entregar la notificación",
+    }
+
+        
 # ==================== Endpoints for Notifications ====================
 @app.get("/api/notifications")
 def get_notifications(
@@ -12851,53 +14983,73 @@ def debug_patient_plan(patient_id: int, db: Session = Depends(get_db)):
 # ==================== SUPPORT & HELP ENDPOINTS ====================
 
 @app.post("/api/support/ticket")
-def create_support_ticket(patient_id: int, category: str, subject: str, message: str, priority: str = "normal", db: Session = Depends(get_db)):
+def create_support_ticket(
+    patient_id: int,
+    category: str,
+    subject: str,
+    message: str,
+    priority: str = "normal",
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    if current_user.role != "patient" or current_user.id != patient_id:
+        raise HTTPException(status_code=403, detail="Solo puedes crear tickets para tu propia cuenta")
     patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
     new_ticket = SupportTicketDB(patient_id=patient_id, category=category, subject=subject, message=message, priority=priority, status="open")
+    on_ticket_created(new_ticket, priority, now_co, db=db, OrganizationMemberDB=OrganizationMemberDB, OrganizationDB=OrganizationDB)
     db.add(new_ticket)
     db.commit()
     db.refresh(new_ticket)
     return {"success": True, "message": "Ticket creado exitosamente", "ticket_id": new_ticket.id}
 
 @app.get("/api/patient/{patient_id}/support/tickets")
-def get_patient_tickets(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_tickets(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    if current_user.role == "patient" and current_user.id != patient_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if current_user.role == "admin":
+        patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
+        if not patient or patient.nutritionist_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No autorizado")
+    elif current_user.role not in ("superadmin", "patient"):
+        raise HTTPException(status_code=403, detail="No autorizado")
     tickets = db.query(SupportTicketDB).filter(SupportTicketDB.patient_id == patient_id).order_by(SupportTicketDB.created_at.desc()).all()
     return [{"id": t.id, "category": t.category, "subject": t.subject, "message": t.message, "status": t.status, "priority": t.priority, "admin_response": t.admin_response, "created_at": t.created_at, "updated_at": t.updated_at, "resolved_at": t.resolved_at} for t in tickets]
 
-@app.get("/api/support/tickets")
-def get_all_tickets(status: str = None, category: str = None, priority: str = None, db: Session = Depends(get_db)):
-    query = db.query(SupportTicketDB)
-    if status:
-        query = query.filter(SupportTicketDB.status == status)
-    if category:
-        query = query.filter(SupportTicketDB.category == category)
-    if priority:
-        query = query.filter(SupportTicketDB.priority == priority)
-    tickets = query.order_by(SupportTicketDB.created_at.desc()).all()
-    result = []
-    for t in tickets:
-        patient = db.query(UserDB).filter(UserDB.id == t.patient_id).first()
-        result.append({"id": t.id, "patient_id": t.patient_id, "patient_name": f"{patient.nombres} {patient.apellidos}" if patient else "Desconocido", "patient_email": patient.email if patient else "", "category": t.category, "subject": t.subject, "message": t.message, "status": t.status, "priority": t.priority, "admin_response": t.admin_response, "created_at": t.created_at, "updated_at": t.updated_at, "resolved_at": t.resolved_at})
-    return result
+# GET /api/support/tickets → support_module (filtro por nutricionista)
 
 @app.put("/api/support/ticket/{ticket_id}")
-def update_support_ticket(ticket_id: int, status: str = None, admin_response: str = None, admin_id: int = None, priority: str = None, db: Session = Depends(get_db)):
+def update_support_ticket(ticket_id: int, status: str = None, admin_response: str = None, admin_id: int = None, priority: str = None, db: Session = Depends(get_db), current_user: UserDB = Depends(require_admin_or_superadmin)):
     ticket = db.query(SupportTicketDB).filter(SupportTicketDB.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    if current_user.role == "admin":
+        patient = db.query(UserDB).filter(UserDB.id == ticket.patient_id).first()
+        if not patient or patient.nutritionist_id != current_user.id:
+            raise HTTPException(status_code=403, detail="No autorizado")
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
     if status:
         ticket.status = status
         if status in ["resolved", "closed"]:
-            ticket.resolved_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+            ticket.resolved_at = ts
     if admin_response:
         ticket.admin_response = admin_response
+        ticket.admin_id = current_user.id
+        if hasattr(ticket, "first_response_at") and not ticket.first_response_at:
+            ticket.first_response_at = ts
     if admin_id:
         ticket.admin_id = admin_id
     if priority:
         ticket.priority = priority
-    ticket.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+        if hasattr(ticket, "sla_due_at"):
+            from support_module import compute_sla_due, _parse_dt
+            ticket.sla_due_at = compute_sla_due(priority, _parse_dt(ticket.created_at) or now_co())
+    ticket.updated_at = ts
     db.commit()
     return {"success": True, "message": "Ticket actualizado exitosamente"}
 
@@ -12947,6 +15099,22 @@ def delete_faq(faq_id: int, db: Session = Depends(get_db)):
 DEFAULT_ARTICLE_IMAGE = "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1200&q=80"
 
 
+class ArticleCategoryCreateSchema(BaseModel):
+    name: str
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class ArticleCategoryUpdateSchema(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
 class ArticleCreateSchema(BaseModel):
     title: str
     excerpt: Optional[str] = None
@@ -12954,7 +15122,11 @@ class ArticleCreateSchema(BaseModel):
     category: Optional[str] = "Nutrición"
     author: Optional[str] = None
     image: Optional[str] = None
+    slug: Optional[str] = None
+    meta_description: Optional[str] = None
+    og_image: Optional[str] = None
     is_published: bool = False
+    scheduled_publish_at: Optional[str] = None
 
 
 class ArticleUpdateSchema(BaseModel):
@@ -12964,7 +15136,82 @@ class ArticleUpdateSchema(BaseModel):
     category: Optional[str] = None
     author: Optional[str] = None
     image: Optional[str] = None
+    slug: Optional[str] = None
+    meta_description: Optional[str] = None
+    og_image: Optional[str] = None
     is_published: Optional[bool] = None
+    scheduled_publish_at: Optional[str] = None
+
+
+def _slugify_article(text_value: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", (text_value or "").strip().lower())
+    s = s.encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s[:240] or "articulo"
+
+
+def _unique_article_slug(db: Session, base: str, exclude_id: Optional[int] = None) -> str:
+    slug = _slugify_article(base)
+    candidate = slug
+    n = 2
+    while True:
+        q = db.query(ArticleDB).filter(ArticleDB.slug == candidate)
+        if exclude_id:
+            q = q.filter(ArticleDB.id != exclude_id)
+        if not q.first():
+            return candidate
+        candidate = f"{slug}-{n}"
+        n += 1
+
+
+def _promote_scheduled_articles(db: Session) -> None:
+    """Publica artículos cuya fecha programada ya pasó."""
+    now_str = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    rows = (
+        db.query(ArticleDB)
+        .filter(
+            ArticleDB.scheduled_publish_at.isnot(None),
+            ArticleDB.scheduled_publish_at <= now_str,
+            ArticleDB.is_published == False,
+        )
+        .all()
+    )
+    if not rows:
+        return
+    for article in rows:
+        article.is_published = True
+        article.published_at = article.scheduled_publish_at or now_str
+        article.scheduled_publish_at = None
+        article.updated_at = now_str
+    db.commit()
+
+
+def _published_articles_query(db: Session):
+    _promote_scheduled_articles(db)
+    now_str = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    return db.query(ArticleDB).filter(
+        ArticleDB.is_published == True,
+        or_(
+            ArticleDB.scheduled_publish_at.is_(None),
+            ArticleDB.scheduled_publish_at <= now_str,
+        ),
+    )
+
+
+def _article_publish_status(article: ArticleDB) -> str:
+    if article.is_published:
+        sched = getattr(article, "scheduled_publish_at", None)
+        if sched:
+            try:
+                if sched > now_co().strftime("%Y-%m-%d %H:%M:%S"):
+                    return "scheduled"
+            except Exception:
+                pass
+        return "published"
+    if getattr(article, "scheduled_publish_at", None):
+        return "scheduled"
+    return "draft"
 
 
 def _resolve_article_image(image: Optional[str]) -> str:
@@ -12979,15 +15226,22 @@ def _resolve_article_image(image: Optional[str]) -> str:
 
 def _article_to_dict(article: ArticleDB, include_content: bool = True) -> dict:
     date_source = article.published_at or article.created_at or ""
+    og = getattr(article, "og_image", None) or article.image
     data = {
         "id": article.id,
         "title": article.title,
+        "slug": getattr(article, "slug", None),
         "excerpt": article.excerpt or "",
         "category": article.category or "Nutrición",
         "author": article.author or "NutriData",
         "image": _resolve_article_image(article.image),
+        "og_image": _resolve_article_image(og),
+        "meta_description": getattr(article, "meta_description", None) or (article.excerpt or "")[:320],
         "is_published": bool(article.is_published),
+        "publish_status": _article_publish_status(article),
         "published_at": article.published_at,
+        "scheduled_publish_at": getattr(article, "scheduled_publish_at", None),
+        "view_count": getattr(article, "view_count", 0) or 0,
         "created_at": article.created_at,
         "updated_at": article.updated_at,
         "date": date_source[:10] if date_source else None,
@@ -12998,6 +15252,93 @@ def _article_to_dict(article: ArticleDB, include_content: bool = True) -> dict:
     return data
 
 
+def _increment_article_views(db: Session, article: ArticleDB) -> None:
+    article.view_count = (getattr(article, "view_count", 0) or 0) + 1
+    db.commit()
+
+
+def _apply_article_schedule(article: ArticleDB, is_published: bool, scheduled_publish_at: Optional[str]) -> None:
+    now = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    sched = (scheduled_publish_at or "").strip() or None
+    if sched and sched > now:
+        article.is_published = False
+        article.scheduled_publish_at = sched
+        return
+    if is_published:
+        article.is_published = True
+        article.scheduled_publish_at = None
+        if not article.published_at:
+            article.published_at = sched or now
+    else:
+        article.is_published = False
+        if sched:
+            article.scheduled_publish_at = sched
+        else:
+            article.scheduled_publish_at = None
+
+
+def _serialize_category(cat: ArticleCategoryDB) -> dict:
+    return {
+        "id": cat.id,
+        "name": cat.name,
+        "slug": cat.slug,
+        "description": cat.description,
+        "sort_order": cat.sort_order or 0,
+        "is_active": bool(cat.is_active),
+        "created_at": cat.created_at,
+        "updated_at": cat.updated_at,
+    }
+
+
+def _backfill_article_slugs(db: Session) -> None:
+    """Genera slugs para artículos existentes sin slug."""
+    rows = (
+        db.query(ArticleDB)
+        .filter(or_(ArticleDB.slug.is_(None), ArticleDB.slug == ""))
+        .limit(200)
+        .all()
+    )
+    if not rows:
+        return
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    for article in rows:
+        article.slug = _unique_article_slug(db, article.title or f"articulo-{article.id}", exclude_id=article.id)
+        article.updated_at = ts
+    db.commit()
+
+
+def _ensure_default_article_categories(db: Session) -> None:
+    if db.query(ArticleCategoryDB).count() > 0:
+        return
+    defaults = [
+        ("Nutrición", "nutricion"),
+        ("Consejos", "consejos"),
+        ("Salud", "salud"),
+        ("Planificación", "planificacion"),
+        ("Fitness", "fitness"),
+        ("Recetas", "recetas"),
+        ("Noticias", "noticias"),
+    ]
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    for i, (name, slug) in enumerate(defaults):
+        db.add(ArticleCategoryDB(
+            name=name, slug=slug, sort_order=i, is_active=True, created_at=ts, updated_at=ts
+        ))
+    db.commit()
+
+
+@app.get("/api/articles/categories")
+def list_public_article_categories(db: Session = Depends(get_db)):
+    _ensure_default_article_categories(db)
+    rows = (
+        db.query(ArticleCategoryDB)
+        .filter(ArticleCategoryDB.is_active == True)
+        .order_by(ArticleCategoryDB.sort_order.asc(), ArticleCategoryDB.name.asc())
+        .all()
+    )
+    return [_serialize_category(c) for c in rows]
+
+
 @app.get("/api/articles")
 def list_published_articles(
     search: Optional[str] = None,
@@ -13006,7 +15347,8 @@ def list_published_articles(
     db: Session = Depends(get_db),
 ):
     """Artículos publicados visibles en el home público (sin auth)."""
-    query = db.query(ArticleDB).filter(ArticleDB.is_published == True)
+    _backfill_article_slugs(db)
+    query = _published_articles_query(db)
     if category and category.lower() not in ("todas", "all", ""):
         query = query.filter(ArticleDB.category == category)
     if search:
@@ -13027,21 +15369,38 @@ def list_published_articles(
     return [_article_to_dict(a, include_content=False) for a in articles]
 
 
-@app.get("/api/articles/{article_id}")
-def get_published_article(article_id: int, db: Session = Depends(get_db)):
+@app.get("/api/articles/by-slug/{slug}")
+def get_published_article_by_slug(slug: str, db: Session = Depends(get_db)):
+    _promote_scheduled_articles(db)
     article = (
-        db.query(ArticleDB)
-        .filter(ArticleDB.id == article_id, ArticleDB.is_published == True)
+        _published_articles_query(db)
+        .filter(ArticleDB.slug == slug.strip().lower())
         .first()
     )
     if not article:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    _increment_article_views(db, article)
     related = (
-        db.query(ArticleDB)
-        .filter(
-            ArticleDB.is_published == True,
-            ArticleDB.id != article_id,
-        )
+        _published_articles_query(db)
+        .filter(ArticleDB.id != article.id)
+        .order_by(ArticleDB.published_at.desc(), ArticleDB.id.desc())
+        .limit(2)
+        .all()
+    )
+    payload = _article_to_dict(article, include_content=True)
+    payload["related"] = [_article_to_dict(r, include_content=False) for r in related]
+    return payload
+
+
+@app.get("/api/articles/{article_id}")
+def get_published_article(article_id: int, db: Session = Depends(get_db)):
+    article = _published_articles_query(db).filter(ArticleDB.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    _increment_article_views(db, article)
+    related = (
+        _published_articles_query(db)
+        .filter(ArticleDB.id != article_id)
         .order_by(ArticleDB.published_at.desc(), ArticleDB.id.desc())
         .limit(2)
         .all()
@@ -13053,11 +15412,133 @@ def get_published_article(article_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/superadmin/articles")
 def superadmin_list_articles(
+    include_content: bool = False,
     db: Session = Depends(get_db),
     current_user: UserDB = Depends(require_superadmin),
 ):
+    _backfill_article_slugs(db)
     articles = db.query(ArticleDB).order_by(ArticleDB.id.desc()).all()
-    return [_article_to_dict(a, include_content=True) for a in articles]
+    return [_article_to_dict(a, include_content=include_content) for a in articles]
+
+
+@app.get("/api/superadmin/articles/analytics")
+def superadmin_articles_analytics(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    articles = db.query(ArticleDB).order_by(ArticleDB.view_count.desc()).all()
+    total_views = sum(getattr(a, "view_count", 0) or 0 for a in articles)
+    return {
+        "total_views": total_views,
+        "total_articles": len(articles),
+        "published": sum(1 for a in articles if a.is_published),
+        "scheduled": sum(1 for a in articles if _article_publish_status(a) == "scheduled"),
+        "top_articles": [
+            {
+                "id": a.id,
+                "title": a.title,
+                "slug": getattr(a, "slug", None),
+                "view_count": getattr(a, "view_count", 0) or 0,
+                "is_published": bool(a.is_published),
+                "published_at": a.published_at,
+            }
+            for a in articles[:20]
+        ],
+    }
+
+
+@app.get("/api/superadmin/articles/{article_id}")
+def superadmin_get_article(
+    article_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    article = db.query(ArticleDB).filter(ArticleDB.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    return _article_to_dict(article, include_content=True)
+
+
+@app.get("/api/superadmin/article-categories")
+def superadmin_list_article_categories(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    _ensure_default_article_categories(db)
+    rows = db.query(ArticleCategoryDB).order_by(ArticleCategoryDB.sort_order.asc()).all()
+    return [_serialize_category(c) for c in rows]
+
+
+@app.post("/api/superadmin/article-categories")
+def superadmin_create_article_category(
+    payload: ArticleCategoryCreateSchema,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    if db.query(ArticleCategoryDB).filter(ArticleCategoryDB.name == name).first():
+        raise HTTPException(status_code=400, detail="Categoría ya existe")
+    slug = _slugify_article(payload.slug or name)
+    if db.query(ArticleCategoryDB).filter(ArticleCategoryDB.slug == slug).first():
+        slug = f"{slug}-{db.query(ArticleCategoryDB).count() + 1}"
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    row = ArticleCategoryDB(
+        name=name,
+        slug=slug,
+        description=payload.description,
+        sort_order=payload.sort_order,
+        is_active=payload.is_active,
+        created_at=ts,
+        updated_at=ts,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize_category(row)
+
+
+@app.put("/api/superadmin/article-categories/{category_id}")
+def superadmin_update_article_category(
+    category_id: int,
+    payload: ArticleCategoryUpdateSchema,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    row = db.query(ArticleCategoryDB).filter(ArticleCategoryDB.id == category_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    if payload.name is not None:
+        row.name = payload.name.strip()
+    if payload.slug is not None:
+        row.slug = _slugify_article(payload.slug)
+    if payload.description is not None:
+        row.description = payload.description
+    if payload.sort_order is not None:
+        row.sort_order = payload.sort_order
+    if payload.is_active is not None:
+        row.is_active = payload.is_active
+    row.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    return _serialize_category(row)
+
+
+@app.delete("/api/superadmin/article-categories/{category_id}")
+def superadmin_delete_article_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(require_superadmin),
+):
+    row = db.query(ArticleCategoryDB).filter(ArticleCategoryDB.id == category_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    in_use = db.query(ArticleDB).filter(ArticleDB.category == row.name).count()
+    if in_use:
+        raise HTTPException(status_code=400, detail=f"Categoría en uso por {in_use} artículo(s)")
+    db.delete(row)
+    db.commit()
+    return {"success": True}
 
 
 @app.post("/api/superadmin/articles")
@@ -13068,28 +15549,41 @@ async def superadmin_create_article(
     category: Optional[str] = Form("Nutrición"),
     author: Optional[str] = Form(None),
     image_url: Optional[str] = Form(None),
+    og_image_url: Optional[str] = Form(None),
+    slug: Optional[str] = Form(None),
+    meta_description: Optional[str] = Form(None),
     is_published: bool = Form(False),
+    scheduled_publish_at: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
+    og_image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: UserDB = Depends(require_superadmin),
 ):
     now = now_co().strftime("%Y-%m-%d %H:%M:%S")
     saved_image = await _save_recipe_image(image)
+    saved_og = await _save_recipe_image(og_image)
     image_value = saved_image or (image_url.strip() if image_url else None)
+    og_value = saved_og or (og_image_url.strip() if og_image_url else None) or image_value
 
     article = ArticleDB(
         title=title.strip(),
+        slug=_unique_article_slug(db, slug or title.strip()),
         excerpt=(excerpt or "").strip() or None,
         content=content.strip(),
         category=(category or "Nutrición").strip(),
         author=(author or f"{current_user.nombres} {current_user.apellidos}".strip() or "NutriData"),
         image=image_value,
-        is_published=bool(is_published),
-        published_at=now if is_published else None,
+        meta_description=(meta_description or "").strip() or None,
+        og_image=og_value,
+        is_published=False,
+        published_at=None,
+        scheduled_publish_at=None,
+        view_count=0,
         created_by_id=current_user.id,
         created_at=now,
         updated_at=now,
     )
+    _apply_article_schedule(article, bool(is_published), scheduled_publish_at)
     db.add(article)
     db.commit()
     db.refresh(article)
@@ -13105,8 +15599,13 @@ async def superadmin_update_article(
     category: Optional[str] = Form(None),
     author: Optional[str] = Form(None),
     image_url: Optional[str] = Form(None),
+    og_image_url: Optional[str] = Form(None),
+    slug: Optional[str] = Form(None),
+    meta_description: Optional[str] = Form(None),
     is_published: Optional[bool] = Form(None),
+    scheduled_publish_at: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
+    og_image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: UserDB = Depends(require_superadmin),
 ):
@@ -13116,6 +15615,10 @@ async def superadmin_update_article(
 
     if title is not None:
         article.title = title.strip()
+        if slug is None:
+            article.slug = _unique_article_slug(db, article.title, exclude_id=article.id)
+    if slug is not None and slug.strip():
+        article.slug = _unique_article_slug(db, slug.strip(), exclude_id=article.id)
     if content is not None:
         article.content = content.strip()
     if excerpt is not None:
@@ -13124,21 +15627,26 @@ async def superadmin_update_article(
         article.category = category.strip() or "Nutrición"
     if author is not None:
         article.author = author.strip() or article.author
+    if meta_description is not None:
+        article.meta_description = meta_description.strip() or None
     if image_url is not None and image_url.strip():
         article.image = image_url.strip()
+    if og_image_url is not None and og_image_url.strip():
+        article.og_image = og_image_url.strip()
 
     saved_image = await _save_recipe_image(image)
     if saved_image:
         article.image = saved_image
+    saved_og = await _save_recipe_image(og_image)
+    if saved_og:
+        article.og_image = saved_og
 
-    if is_published is not None:
-        was_published = bool(article.is_published)
-        article.is_published = bool(is_published)
-        if article.is_published and not was_published:
-            article.published_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
-        if not article.is_published:
-            # keep published_at history if unpublished
-            pass
+    if is_published is not None or scheduled_publish_at is not None:
+        _apply_article_schedule(
+            article,
+            bool(is_published) if is_published is not None else bool(article.is_published),
+            scheduled_publish_at if scheduled_publish_at is not None else getattr(article, "scheduled_publish_at", None),
+        )
 
     article.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     db.commit()
@@ -13157,9 +15665,8 @@ def superadmin_toggle_publish_article(
     if not article:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
     publish = bool(payload.get("is_published", not article.is_published))
-    article.is_published = publish
-    if publish and not article.published_at:
-        article.published_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    scheduled = payload.get("scheduled_publish_at")
+    _apply_article_schedule(article, publish, scheduled)
     article.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
     db.commit()
     db.refresh(article)
@@ -13180,8 +15687,363 @@ def superadmin_delete_article(
     return {"success": True, "message": "Artículo eliminado"}
 
 
+# ==================== PLATAFORMA: ORGS, AUDITORÍA, ROLES, TENANT HEALTH ====================
+register_platform_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "require_admin_or_superadmin": require_admin_or_superadmin,
+    "get_current_user": get_current_user,
+    "UserDB": UserDB,
+    "AdminProfileDB": AdminProfileDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "AppointmentDB": AppointmentDB,
+    "MealTrackingDB": MealTrackingDB,
+    "SystemSettingsDB": SystemSettingsDB,
+    "now_co": now_co,
+    "today_co": today_co,
+    "pwd_context": pwd_context,
+})
+
+from analytics_module import register_analytics_routes
+
+register_analytics_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "UserDB": UserDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "AdminProfileDB": AdminProfileDB,
+    "get_initial_weight": get_initial_weight,
+    "today_co": today_co,
+    "now_co": now_co,
+})
+
+from clinical_module import register_clinical_routes, register_specialty_routes
+
+register_clinical_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "require_admin_or_superadmin": require_admin_or_superadmin,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealPlanDB": MealPlanDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "now_co": now_co,
+    "today_co": today_co,
+})
+
+register_specialty_routes(app, {
+    "get_db": get_db,
+    "require_admin_or_superadmin": require_admin_or_superadmin,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealPlanDB": MealPlanDB,
+    "ProgressMetricDB": ProgressMetricDB,
+})
+
+register_nutritionist_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "AppointmentDB": AppointmentDB,
+    "NutritionistNoteDB": NutritionistNoteDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "AdminProfileDB": AdminProfileDB,
+    "today_co": today_co,
+    "now_co": now_co,
+})
+
+register_phase4_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "AppointmentDB": AppointmentDB,
+    "NotificationDB": NotificationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "AdminProfileDB": AdminProfileDB,
+    "today_co": today_co,
+    "now_co": now_co,
+})
+
+register_patient_phase1_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "AppointmentDB": AppointmentDB,
+    "NotificationDB": NotificationDB,
+    "today_co": today_co,
+    "now_co": now_co,
+    "calculate_weekly_adherence": calculate_weekly_adherence,
+    "calculate_previous_week_adherence": calculate_previous_week_adherence,
+})
+
+register_patient_phase2_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "AppointmentDB": AppointmentDB,
+    "WeeklyMenuDB": WeeklyMenuDB,
+    "RecipeDB": RecipeDB,
+    "NotificationDB": NotificationDB,
+    "InterventionTemplateDB": InterventionTemplateDB,
+    "build_nutrition_report_bytes": build_nutrition_report_bytes,
+    "UPLOAD_DIR": UPLOAD_DIR,
+    "sanitize_filename": sanitize_filename,
+    "validate_upload_file": validate_upload_file,
+    "today_co": today_co,
+    "now_co": now_co,
+    "load_prep_item_defs": load_prep_item_defs,
+})
+
+register_patient_phase3_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "MealPlanDB": MealPlanDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "AppointmentDB": AppointmentDB,
+    "WaterTrackingDB": WaterTrackingDB,
+    "AchievementDB": AchievementDB,
+    "ArticleDB": ArticleDB,
+    "NotificationDB": NotificationDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "calculate_weekly_adherence": calculate_weekly_adherence,
+    "send_whatsapp_notification": send_whatsapp_notification,
+    "today_co": today_co,
+    "now_co": now_co,
+    "load_challenge_defs": load_challenge_defs,
+})
+
+register_patient_phase4_routes(app, {
+    "get_db": get_db,
+    "get_current_user": get_current_user,
+    "authorize_patient_access": authorize_patient_access,
+    "UserDB": UserDB,
+    "MealTrackingDB": MealTrackingDB,
+    "WaterTrackingDB": WaterTrackingDB,
+    "RecipeDB": RecipeDB,
+    "PatientHabitLogDB": PatientHabitLogDB,
+    "UPLOAD_DIR": UPLOAD_DIR,
+    "sanitize_filename": sanitize_filename,
+    "validate_upload_file": validate_upload_file,
+    "today_co": today_co,
+    "now_co": now_co,
+    "load_substitution_groups": load_substitution_groups,
+})
+
+
+from config_module import register_config_routes, create_maintenance_middleware, refresh_runtime_cache, get_email_config
+
+_config_deps = {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "get_current_user": get_current_user,
+    "get_current_user_optional": get_current_user_optional,
+    "SystemSettingsDB": SystemSettingsDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "UserDB": UserDB,
+    "get_or_create_system_settings": _get_or_create_system_settings,
+    "now_co": now_co,
+    "SECRET_KEY": SECRET_KEY,
+    "ALGORITHM": ALGORITHM,
+    "SessionLocal": SessionLocal,
+    "log_audit": log_audit,
+}
+register_config_routes(app, _config_deps)
+app.middleware("http")(create_maintenance_middleware(_config_deps))
+
+register_billing_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "get_current_user": get_current_user,
+    "require_admin_or_superadmin": require_admin_or_superadmin,
+    "UserDB": UserDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "SystemSettingsDB": SystemSettingsDB,
+    "now_co": now_co,
+})
+
+register_ops_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "UserDB": UserDB,
+    "OfflineSyncLogDB": OfflineSyncLogDB,
+    "ArticleDB": ArticleDB,
+    "UPLOAD_DIR": UPLOAD_DIR,
+    "engine": engine,
+    "now_co": now_co,
+    "get_email_config": get_email_config,
+})
+app.middleware("http")(create_ops_metrics_middleware())
+
+register_compliance_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "get_current_user": get_current_user,
+    "UserDB": UserDB,
+    "SystemSettingsDB": SystemSettingsDB,
+    "AuditLogDB": AuditLogDB,
+    "log_audit": log_audit,
+    "MealTrackingDB": MealTrackingDB,
+    "NotificationDB": NotificationDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "now_co": now_co,
+    "send_generic_email": send_generic_email,
+})
+
+register_integrations_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "OrganizationDB": OrganizationDB,
+    "now_co": now_co,
+})
+
+register_support_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "require_admin_or_superadmin": require_admin_or_superadmin,
+    "get_current_user": get_current_user,
+    "UserDB": UserDB,
+    "SupportTicketDB": SupportTicketDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "log_audit": log_audit,
+    "now_co": now_co,
+    "get_nutritionist_patient_ids": get_nutritionist_patient_ids,
+})
+
+register_platform_analytics_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "get_current_user": get_current_user,
+    "UserDB": UserDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealTrackingDB": MealTrackingDB,
+    "AppointmentDB": AppointmentDB,
+    "ProgressMetricDB": ProgressMetricDB,
+    "PatientHabitLogDB": PatientHabitLogDB,
+    "WaterTrackingDB": WaterTrackingDB,
+    "SupportTicketDB": SupportTicketDB,
+    "NutritionistNoteDB": NutritionistNoteDB,
+    "PlatformModuleUsageDB": PlatformModuleUsageDB,
+    "PlatformAppSessionDB": PlatformAppSessionDB,
+    "NpsSurveyDB": NpsSurveyDB,
+    "now_co": now_co,
+    "today_co": today_co,
+})
+
+register_clinical_content_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "InterventionTemplateDB": InterventionTemplateDB,
+    "ArticleDB": ArticleDB,
+    "now_co": now_co,
+    "log_audit": log_audit,
+})
+
+register_crosscutting_routes(app, {
+    "get_db": get_db,
+    "require_superadmin": require_superadmin,
+    "get_current_user": get_current_user,
+    "UserDB": UserDB,
+    "OrganizationDB": OrganizationDB,
+    "OrganizationMemberDB": OrganizationMemberDB,
+    "SystemSettingsDB": SystemSettingsDB,
+    "FollowUpTaskDB": FollowUpTaskDB,
+    "NotificationDB": NotificationDB,
+    "MealTrackingDB": MealTrackingDB,
+    "PatientMealPlanDB": PatientMealPlanDB,
+    "MealPlanDB": MealPlanDB,
+    "AppointmentDB": AppointmentDB,
+    "log_audit": log_audit,
+    "now_co": now_co,
+    "today_co": today_co,
+    "SECRET_KEY": SECRET_KEY,
+    "ALGORITHM": ALGORITHM,
+    "send_generic_email": send_generic_email,
+    "calculate_weekly_adherence": calculate_weekly_adherence,
+})
+
+app.middleware("http")(create_rate_limit_middleware(get_db, SystemSettingsDB))
+
+# Bootstrap DB en startup (_run_database_bootstrap)
+
+
+# ==================== FRONTEND SPA (mismo contenedor) ====================
+FRONTEND_DIST = os.getenv(
+    "FRONTEND_DIST",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_dist"),
+)
+
+if os.path.isdir(FRONTEND_DIST):
+    _assets_dir = os.path.join(FRONTEND_DIST, "assets")
+    if os.path.isdir(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="frontend-assets")
+
+    @app.get("/")
+    async def serve_frontend_root():
+        index_path = os.path.join(FRONTEND_DIST, "index.html")
+        if not os.path.isfile(index_path):
+            raise HTTPException(status_code=404, detail="Frontend no encontrado")
+        return FileResponse(index_path)
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend_spa(full_path: str):
+        # No interceptar API ni uploads
+        if full_path.startswith("api/") or full_path.startswith("uploads/") or full_path.startswith("assets/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        candidate = os.path.join(FRONTEND_DIST, full_path)
+        # Evitar path traversal
+        frontend_real = os.path.realpath(FRONTEND_DIST)
+        candidate_real = os.path.realpath(candidate)
+        if candidate_real.startswith(frontend_real) and os.path.isfile(candidate_real):
+            return FileResponse(candidate_real)
+
+        index_path = os.path.join(FRONTEND_DIST, "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="Frontend no encontrado")
+
+
 if __name__ == "__main__":
     import uvicorn
     # Create tables if they don't exist
-    Base.metadata.create_all(bind=engine)
+    safe_create_all()
     uvicorn.run(app, host="0.0.0.0", port=8000)

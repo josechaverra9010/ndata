@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminLayout } from "@/layouts/AdminLayout";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { LoadingGate } from "@/components/LoadingGate";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ScheduleAppointmentDialog } from "@/components/admin/ScheduleAppointmentDialog";
 import { AssignPlanWithMenuDialog } from "@/components/admin/AssignPlanWithMenuDialog";
+import { InterventionPickerDialog } from "@/components/admin/InterventionPickerDialog";
 import { todayInColombiaISO } from "@/lib/timezone";
 import {
   Calendar,
@@ -25,6 +26,7 @@ import {
   TrendingUp,
   User,
   AlertTriangle,
+  BookOpen,
 } from "lucide-react";
 
 interface QueueItem {
@@ -102,6 +104,7 @@ export default function Consultation() {
   const [savingNote, setSavingNote] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [interventionOpen, setInterventionOpen] = useState(false);
 
   const tokenHeaders = () => {
     const token = localStorage.getItem("userToken");
@@ -270,16 +273,9 @@ export default function Consultation() {
     }
   };
 
-  if (loading) {
-    return (
-      <AdminLayout>
-        <LoadingScreen message="Cargando consultas" />
-      </AdminLayout>
-    );
-  }
-
   return (
     <AdminLayout>
+      <LoadingGate loading={loading} message="Cargando consultas">
       <div className="space-y-6">
         <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.07] p-5 sm:p-6 shadow-card">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -550,8 +546,17 @@ export default function Consultation() {
                 </div>
 
                 <Card className="rounded-2xl">
-                  <CardHeader className="pb-2">
+                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
                     <CardTitle className="text-base">Nota rápida</CardTitle>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="rounded-full h-8"
+                      onClick={() => setInterventionOpen(true)}
+                    >
+                      <BookOpen className="h-3.5 w-3.5 mr-1" />
+                      Intervención
+                    </Button>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <Textarea
@@ -585,6 +590,7 @@ export default function Consultation() {
           </div>
         </div>
       </div>
+      </LoadingGate>
 
       {prep?.patient && (
         <>
@@ -611,6 +617,13 @@ export default function Consultation() {
               if (selectedId) loadPrep(selectedId);
               loadQueue();
             }}
+          />
+          <InterventionPickerDialog
+            open={interventionOpen}
+            onOpenChange={setInterventionOpen}
+            patientId={prep.patient.id}
+            patientName={`${prep.patient.nombres} ${prep.patient.apellidos}`}
+            onSelect={(text) => setNote((prev) => (prev.trim() ? `${prev.trim()}\n\n${text}` : text))}
           />
         </>
       )}

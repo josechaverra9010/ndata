@@ -38,6 +38,7 @@ import { API_URL } from "@/config/api";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
 import { todayInColombiaISO, formatInColombia } from "@/lib/timezone";
+import { SpecialtyProgressHub } from "@/components/specialty/SpecialtyProgressHub";
 
 interface ProgressData {
   has_data: boolean;
@@ -393,6 +394,8 @@ export default function PatientProgress() {
             </div>
           </div>
 
+          {patientId && <SpecialtyProgressHub patientId={patientId} readOnly={false} />}
+
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 py-16 px-6 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20 mb-4">
               <Scale className="h-8 w-8 text-primary" />
@@ -495,6 +498,8 @@ export default function PatientProgress() {
               Registrar medición
             </Button>
           </div>
+
+          {patientId && <SpecialtyProgressHub patientId={patientId} readOnly={false} />}
 
           {/* Goal progress strip */}
           <div className="relative mt-5 rounded-2xl border border-border/60 bg-background/55 p-4 backdrop-blur-sm">

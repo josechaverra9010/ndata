@@ -1,101 +1,93 @@
+import { useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { LOADING_MIN_DURATION_MS } from "@/hooks/useLoadingGate";
 
 interface LoadingScreenProps {
   message?: string;
   className?: string;
+  /** Pantalla completa (transiciones entre módulos). */
+  fullscreen?: boolean;
+  /** Se invoca cuando el video terminó y cumplió el tiempo mínimo. */
+  onAnimationComplete?: () => void;
+  minDurationMs?: number;
 }
 
 /**
- * Pantalla de carga con animación de persona trotando y texto "Cargando".
+ * Pantalla de carga con animación en video (una reproducción completa por montaje).
  */
-export function LoadingScreen({ message = "Cargando", className }: LoadingScreenProps) {
+export function LoadingScreen({
+  message = "Cargando",
+  className,
+  fullscreen = false,
+  onAnimationComplete,
+  minDurationMs = LOADING_MIN_DURATION_MS,
+}: LoadingScreenProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const startedAtRef = useRef(Date.now());
+  const videoDoneRef = useRef(false);
+  const notifiedRef = useRef(false);
+
+  const notifyComplete = useCallback(() => {
+    if (notifiedRef.current || !onAnimationComplete) return;
+    if (!videoDoneRef.current) return;
+
+    const elapsed = Date.now() - startedAtRef.current;
+    const remaining = Math.max(0, minDurationMs - elapsed);
+
+    notifiedRef.current = true;
+    window.setTimeout(onAnimationComplete, remaining);
+  }, [minDurationMs, onAnimationComplete]);
+
+  useEffect(() => {
+    startedAtRef.current = Date.now();
+    videoDoneRef.current = false;
+    notifiedRef.current = false;
+
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = 0;
+      void video.play().catch(() => {
+        videoDoneRef.current = true;
+      });
+    }
+
+    const fallback = window.setTimeout(() => {
+      videoDoneRef.current = true;
+      notifyComplete();
+    }, minDurationMs + 1200);
+
+    return () => window.clearTimeout(fallback);
+  }, [minDurationMs, notifyComplete]);
+
+  useEffect(() => {
+    if (!videoDoneRef.current) return;
+    notifyComplete();
+  }, [notifyComplete]);
+
+  const handleVideoEnded = () => {
+    videoDoneRef.current = true;
+    notifyComplete();
+  };
+
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center min-h-[280px] py-12 px-4",
+        "flex flex-col items-center justify-center py-12 px-4",
+        fullscreen ? "fixed inset-0 z-[100] bg-background" : "min-h-[280px]",
         className
       )}
     >
-      {/* Corredor: figura simple con brazos y piernas animados */}
-      <div className="relative mb-6">
-        <svg
-          viewBox="0 0 120 100"
-          className="w-24 h-20 text-primary"
-          aria-hidden
-        >
-          {/* Cabeza */}
-          <circle
-            cx="60"
-            cy="18"
-            r="10"
-            fill="currentColor"
-            className="opacity-90"
-          />
-          {/* Torso */}
-          <line
-            x1="60"
-            y1="28"
-            x2="60"
-            y2="52"
-            stroke="currentColor"
-            strokeWidth="6"
-            strokeLinecap="round"
-            className="opacity-90"
-          />
-          {/* Brazo trasero */}
-          <line
-            x1="60"
-            y1="34"
-            x2="42"
-            y2="48"
-            stroke="currentColor"
-            strokeWidth="5"
-            strokeLinecap="round"
-            className="runner-arm-back"
-            style={{ transformOrigin: "60px 34px" }}
-          />
-          {/* Brazo delantero */}
-          <line
-            x1="60"
-            y1="34"
-            x2="78"
-            y2="44"
-            stroke="currentColor"
-            strokeWidth="5"
-            strokeLinecap="round"
-            className="runner-arm-front"
-            style={{ transformOrigin: "60px 34px" }}
-          />
-          {/* Pierna trasera */}
-          <line
-            x1="60"
-            y1="52"
-            x2="44"
-            y2="82"
-            stroke="currentColor"
-            strokeWidth="6"
-            strokeLinecap="round"
-            className="runner-leg-back"
-            style={{ transformOrigin: "60px 52px" }}
-          />
-          {/* Pierna delantera */}
-          <line
-            x1="60"
-            y1="52"
-            x2="76"
-            y2="80"
-            stroke="currentColor"
-            strokeWidth="6"
-            strokeLinecap="round"
-            className="runner-leg-front"
-            style={{ transformOrigin: "60px 52px" }}
-          />
-        </svg>
-        {/* Suelo / movimiento */}
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-28 h-1 rounded-full bg-primary/20 overflow-hidden">
-          <div className="h-full w-1/2 rounded-full bg-primary/40 runner-ground" />
-        </div>
-      </div>
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        aria-label="Animación de carga"
+        onEnded={handleVideoEnded}
+        className="mb-6 w-48 max-w-[70vw] rounded-2xl object-contain shadow-sm"
+      >
+        <source src="/loading-animation.mp4" type="video/mp4" />
+      </video>
       <p className="text-muted-foreground font-medium text-sm tracking-wide animate-pulse">
         {message}
       </p>

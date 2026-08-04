@@ -2029,6 +2029,32 @@ export const EVANUT_GRUPOS_ALIMENTOS: string[] = [
 export const SUPLEMENTOS_GRUPO =
   "Suplementos (Introduzca la información nutricional de 1 porción de suplemento)";
 
+/** Prefijo para filas adicionales de suplementos MIPRESS en fase 3 */
+export const SUPLEMENTO_EXTRA_PREFIX = "__mipress_suplemento__:";
+
+export function makeSuplementoExtraKey(id?: string): string {
+  const uid =
+    id ||
+    (typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  return `${SUPLEMENTO_EXTRA_PREFIX}${uid}`;
+}
+
+export function isSuplementoGrupoKey(nombre: string): boolean {
+  return nombre === SUPLEMENTOS_GRUPO || nombre.startsWith(SUPLEMENTO_EXTRA_PREFIX);
+}
+
+/** Lista de claves de suplemento (principal + extras) presentes en grupos_alimentos_f3 */
+export function listSuplementoKeys(grupos?: Record<string, any> | null): string[] {
+  const keys = [SUPLEMENTOS_GRUPO];
+  if (!grupos || typeof grupos !== "object") return keys;
+  const extras = Object.keys(grupos)
+    .filter((k) => k.startsWith(SUPLEMENTO_EXTRA_PREFIX))
+    .sort();
+  return [...keys, ...extras];
+}
+
 /**
  * Grupos Fase 3 para plan Deportista (EVANUT hoja Deportista).
  * Igual que adultos + fila Suplementos después de leches altas en calorías.
@@ -2092,10 +2118,20 @@ export const EVANUT_GRUPOS_PEDIATRIA: string[] = [
 ];
 
 export function getEvanutGruposForTipo(tipoPlan?: string): string[] {
-  if (tipoPlan === "deportista") return EVANUT_GRUPOS_DEPORTISTA;
-  if (tipoPlan === "pediatria") return EVANUT_GRUPOS_PEDIATRIA;
-  // Gestante / Ges Adoles / Hospitalizado usan grupos adultos EVANUT
-  return EVANUT_GRUPOS_ALIMENTOS;
+  let groups: string[];
+  if (tipoPlan === "deportista") groups = [...EVANUT_GRUPOS_DEPORTISTA];
+  else if (tipoPlan === "pediatria") groups = [...EVANUT_GRUPOS_PEDIATRIA];
+  else groups = [...EVANUT_GRUPOS_ALIMENTOS];
+
+  // Fórmula sintética desarrollada: incluir fila de suplementos MIPRESS/EVANUT
+  if (!groups.includes(SUPLEMENTOS_GRUPO)) {
+    const idx = groups.indexOf(
+      "Leches frescas y fermentadas enteras altas en calorías y azucares"
+    );
+    if (idx >= 0) groups.splice(idx + 1, 0, SUPLEMENTOS_GRUPO);
+    else groups.push(SUPLEMENTOS_GRUPO);
+  }
+  return groups;
 }
 
 /** Lookup de nutrientes por grupo (soporta alias leche materna y nombres cortos del Excel) */
@@ -2252,6 +2288,65 @@ export function getGestAdolesBaseReq(
 }
 
 /** Recomendaciones RIEN pediátricas por edad (años decimales) */
+/** Requerimientos energéticos para Geriatría (Harris-Benedict o Mifflin) */
+export function calculateGeriatriaEnergia(
+  peso: number,
+  alturaCm: number,
+  edad: number,
+  sexo: "M" | "F",
+  actividad: "sedentario" | "ligero" | "moderado",
+  formula: "harris" | "mifflin" = "harris"
+) {
+  let tmb = 0;
+  if (formula === "harris") {
+    if (sexo === "F") {
+      tmb = 655.0955 + 9.5634 * peso + 1.8496 * alturaCm - 4.6756 * edad;
+    } else {
+      tmb = 88.362 + 13.397 * peso + 4.799 * alturaCm - 5.677 * edad;
+    }
+  } else {
+    // mifflin
+    if (sexo === "F") {
+      tmb = 10 * peso + 6.25 * alturaCm - 5 * edad - 161;
+    } else {
+      tmb = 10 * peso + 6.25 * alturaCm - 5 * edad + 5;
+    }
+  }
+
+  let pal = 1.2;
+  if (actividad === "ligero") pal = 1.375;
+  if (actividad === "moderado") pal = 1.55;
+
+  return { tmb, requerimiento: tmb * pal, pal };
+}
+
+/** Distribución de macronutrientes recomendada para geriatría */
+export function getGeriatriaTargets(requerimientoKcal: number, pesoKg: number) {
+  // Proteína: 1.1 g/kg (recomendación general para preservar masa muscular en adultos mayores)
+  const proteinaG = 1.1 * pesoKg;
+  const proteinaKcal = proteinaG * 4;
+  
+  // Carbohidratos: 55% del total
+  const carbsKcal = requerimientoKcal * 0.55;
+  const carbsG = carbsKcal / 4;
+  
+  // Grasas: 30% del total
+  const fatKcal = requerimientoKcal * 0.30;
+  const fatG = fatKcal / 9;
+
+  return {
+    proteina_g: proteinaG,
+    carbs_g: carbsG,
+    fat_g: fatG,
+    proteina_kcal: proteinaKcal,
+    carbs_kcal: carbsKcal,
+    fat_kcal: fatKcal,
+    proteina_pct: (proteinaKcal / requerimientoKcal) * 100,
+    carbs_pct: 55,
+    fat_pct: 30
+  };
+}
+
 export function getPediatriaRienTargets(ageYears: number) {
   if (ageYears < 0.5) {
     return { band: "0-6 meses", proteinas_kg: 1.52, grasas_amdr: 40, cho_hint: "60g", proteinas_amdr: "—" };

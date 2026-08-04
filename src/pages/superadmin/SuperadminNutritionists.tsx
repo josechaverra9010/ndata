@@ -21,7 +21,16 @@ import {
   Briefcase,
   FileText,
   Copy,
-  Link
+  Link,
+  Download,
+  UserCheck,
+  UserX,
+  Building2,
+  AlertTriangle,
+  RefreshCw,
+  CheckCircle2,
+  Circle,
+  LogIn,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -41,6 +50,40 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+import { startImpersonation } from "@/lib/impersonation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface OnboardingStep {
+  key: string;
+  label: string;
+  done: boolean;
+}
+
+interface Onboarding {
+  steps: OnboardingStep[];
+  completed: number;
+  total: number;
+  percent: number;
+  is_complete: boolean;
+}
+
+interface LicenseAlert {
+  nutritionist_id: number;
+  name: string;
+  email: string;
+  license?: string;
+  license_expiry?: string;
+  alert: "expired" | "expiring_soon";
+}
 
 interface Nutritionist {
   id: number;
@@ -53,6 +96,13 @@ interface Nutritionist {
   avatar?: string;
   joinedAt: string;
   organization?: string;
+  organization_id?: number | null;
+  staff_role?: StaffRole;
+  license?: string | null;
+  license_expiry?: string | null;
+  license_alert?: string | null;
+  invite_expires_at?: string | null;
+  onboarding?: Onboarding;
 }
 
 interface NutritionistDetails extends Nutritionist {
@@ -61,7 +111,13 @@ interface NutritionistDetails extends Nutritionist {
   bio?: string;
 }
 
+interface OrganizationOption {
+  id: number;
+  name: string;
+}
+
 import { API_URL } from "@/config/api";
+import { STAFF_ROLE_LABELS, StaffRole } from "@/lib/staffPermissions";
 
 export default function SuperadminNutritionists() {
   const [nutritionists, setNutritionists] = useState<Nutritionist[]>([]);
@@ -71,7 +127,12 @@ export default function SuperadminNutritionists() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedNutritionist, setSelectedNutritionist] = useState<NutritionistDetails | null>(null);
-  const [editData, setEditData] = useState<Partial<NutritionistDetails>>({});
+  const [editData, setEditData] = useState<Partial<NutritionistDetails & {
+    staff_role?: StaffRole;
+    license_expiry?: string;
+    organization_id?: number;
+  }>>({});
+  const [roleSaving, setRoleSaving] = useState(false);
   const [inviteData, setInviteData] = useState({
     name: "",
     email: "",
@@ -83,21 +144,39 @@ export default function SuperadminNutritionists() {
     pending: 0,
     totalPatients: 0
   });
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
+  const [licenseAlerts, setLicenseAlerts] = useState<LicenseAlert[]>([]);
+  const [reassignOrgOpen, setReassignOrgOpen] = useState(false);
+  const [reassignOrgId, setReassignOrgId] = useState("");
+
+  const authHeaders = (): HeadersInit => {
+    const token = localStorage.getItem("userToken");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   // Cargar nutricionistas
   useEffect(() => {
     fetchNutritionists();
+    fetchLicenseAlerts();
+    fetch(`${API_URL}/superadmin/organizations`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((orgs) => setOrganizations(orgs.map((o: OrganizationOption) => ({ id: o.id, name: o.name }))))
+      .catch(() => {});
   }, []);
 
   const fetchNutritionists = async () => {
     try {
       setLoading(true);
       const params = searchQuery ? `?search=${encodeURIComponent(searchQuery)}` : "";
-      const response = await fetch(`${API_URL}/superadmin/nutritionists${params}`);
+      const response = await fetch(`${API_URL}/superadmin/nutritionists${params}`, {
+        headers: authHeaders(),
+      });
       const data = await response.json();
       setNutritionists(data);
+      setSelectedIds([]);
 
-      // Calcular estadísticas
       setStats({
         total: data.length,
         active: data.filter((n: Nutritionist) => n.status === "activo").length,
@@ -109,6 +188,20 @@ export default function SuperadminNutritionists() {
       toast.error("Error al cargar nutricionistas");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLicenseAlerts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/superadmin/nutritionists/license-alerts`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLicenseAlerts(data.alerts || []);
+      }
+    } catch {
+      /* ignore */
     }
   };
 
@@ -209,12 +302,41 @@ export default function SuperadminNutritionists() {
     }
   };
 
+  const handleSaveStaffRole = async (nutritionistId: number, staffRole: StaffRole) => {
+    setRoleSaving(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/superadmin/nutritionists/${nutritionistId}/staff-role`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ staff_role: staffRole }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.detail === "string" ? data.detail : "Error al guardar rol");
+      }
+      toast.success("Rol actualizado");
+      fetchNutritionists();
+    } catch (e: any) {
+      toast.error(e?.message || "Error");
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
   const handleEdit = (nutritionist: Nutritionist) => {
     setSelectedNutritionist(nutritionist as NutritionistDetails);
     setEditData({
       name: nutritionist.name,
       email: nutritionist.email,
       specialty: nutritionist.specialty || "",
+      staff_role: nutritionist.staff_role || "nutritionist",
+      license: nutritionist.license || "",
+      license_expiry: nutritionist.license_expiry || "",
+      organization_id: nutritionist.organization_id ?? undefined,
     });
     setIsEditOpen(true);
   };
@@ -223,10 +345,12 @@ export default function SuperadminNutritionists() {
     if (!selectedNutritionist) return;
 
     try {
+      const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/superadmin/users/${selectedNutritionist.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           name: editData.name,
@@ -237,20 +361,125 @@ export default function SuperadminNutritionists() {
         }),
       });
 
-      if (response.ok) {
-        toast.success("Nutricionista actualizado correctamente");
-        setIsEditOpen(false);
-        setSelectedNutritionist(null);
-        setEditData({});
-        fetchNutritionists();
-      } else {
+      if (!response.ok) {
         const data = await response.json();
-        toast.error(data.detail || "Error al actualizar");
+        throw new Error(data.detail || "Error al actualizar usuario");
       }
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("Error al actualizar nutricionista");
+
+      const profileRes = await fetch(
+        `${API_URL}/superadmin/nutritionists/${selectedNutritionist.id}/profile`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            specialty: editData.specialty,
+            license: editData.license,
+            license_expiry: editData.license_expiry,
+            bio: editData.bio,
+            phone: editData.phone,
+            staff_role: editData.staff_role,
+            organization_id: editData.organization_id ?? undefined,
+          }),
+        }
+      );
+      if (!profileRes.ok) {
+        const data = await profileRes.json().catch(() => ({}));
+        throw new Error(data.detail || "Error al guardar perfil profesional");
+      }
+
+      toast.success("Nutricionista actualizado correctamente");
+      setIsEditOpen(false);
+      setSelectedNutritionist(null);
+      setEditData({});
+      fetchNutritionists();
+      fetchLicenseAlerts();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Error al actualizar");
     }
+  };
+
+  const handleResendInvite = async (id: number) => {
+    try {
+      const res = await fetch(`${API_URL}/superadmin/nutritionists/${id}/resend-invite`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al reenviar");
+      toast.success(data.message);
+      if (data.registration_link) {
+        setRegistrationLink(data.registration_link);
+        setLinkDialogOpen(true);
+      }
+      fetchNutritionists();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error al reenviar invitación");
+    }
+  };
+
+  const handleImpersonate = async (id: number) => {
+    const reason = window.prompt(
+      "Motivo de impersonación (mín. 5 caracteres — queda en auditoría):"
+    );
+    if (!reason?.trim()) return;
+    const ok = await startImpersonation(id, reason.trim());
+    if (!ok) toast.error("No se pudo iniciar impersonación. Verifica el motivo (mín. 5 caracteres).");
+  };
+
+  const runBulkAction = async (action: string, extra?: Record<string, unknown>) => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/superadmin/users/bulk-action`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ action, user_ids: selectedIds, ...extra }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error");
+      toast.success(data.message);
+      setSelectedIds([]);
+      setReassignOrgOpen(false);
+      fetchNutritionists();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleExportSelected = () => {
+    const rows = nutritionists.filter((n) => selectedIds.includes(n.id));
+    const csv = [
+      "ID,Nombre,Email,Especialidad,Estado,TO,Vencimiento TO,Pacientes,Organización",
+      ...rows.map((n) =>
+        [
+          n.id,
+          `"${n.name}"`,
+          n.email,
+          `"${n.specialty || ""}"`,
+          n.status,
+          n.license || "",
+          n.license_expiry || "",
+          n.patients,
+          `"${n.organization || ""}"`,
+        ].join(",")
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `nutricionistas_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    toast.success(`Exportados ${rows.length} nutricionistas`);
+  };
+
+  const toggleSelect = (id: number, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)));
   };
 
   const handleToggleStatus = async (id: number, currentStatus: string) => {
@@ -310,6 +539,49 @@ export default function SuperadminNutritionists() {
           </Button>
         </div>
 
+        {licenseAlerts.length > 0 && (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Alertas licencia TO ({licenseAlerts.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {licenseAlerts.slice(0, 5).map((a) => (
+                <div key={a.nutritionist_id} className="flex flex-wrap items-center justify-between gap-2 text-sm rounded-lg border p-2">
+                  <span>
+                    <strong>{a.name}</strong> — TO {a.license || "—"} vence {a.license_expiry || "—"}
+                  </span>
+                  <Badge variant={a.alert === "expired" ? "destructive" : "outline"}>
+                    {a.alert === "expired" ? "Vencida" : "Por vencer"}
+                  </Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {selectedIds.length > 0 && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="py-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{selectedIds.length} seleccionado(s)</span>
+              <Button size="sm" variant="outline" disabled={bulkLoading} onClick={() => runBulkAction("activate")}>
+                <UserCheck className="h-4 w-4 mr-1" /> Activar
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkLoading} onClick={() => runBulkAction("deactivate")}>
+                <UserX className="h-4 w-4 mr-1" /> Desactivar
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleExportSelected}>
+                <Download className="h-4 w-4 mr-1" /> Exportar
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setReassignOrgOpen(true)}>
+                <Building2 className="h-4 w-4 mr-1" /> Reasignar org
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="border-border bg-card">
@@ -351,8 +623,14 @@ export default function SuperadminNutritionists() {
         {/* List */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredNutritionists.map((nutritionist) => (
-            <Card key={nutritionist.id} className="border-border bg-card">
-              <CardContent className="pt-6">
+            <Card key={nutritionist.id} className="border-border bg-card relative">
+              <div className="absolute top-3 left-3 z-10">
+                <Checkbox
+                  checked={selectedIds.includes(nutritionist.id)}
+                  onCheckedChange={(v) => toggleSelect(nutritionist.id, Boolean(v))}
+                />
+              </div>
+              <CardContent className="pt-6 pl-10">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-12 w-12">
@@ -379,10 +657,22 @@ export default function SuperadminNutritionists() {
                         <Eye className="h-4 w-4 mr-2" />
                         Ver perfil
                       </DropdownMenuItem>
+                      {nutritionist.status === "activo" && (
+                        <DropdownMenuItem onClick={() => handleImpersonate(nutritionist.id)}>
+                          <LogIn className="h-4 w-4 mr-2" />
+                          Ver como nutricionista
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={() => handleEdit(nutritionist)}>
                         <Edit className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      {nutritionist.status === "pendiente" && (
+                        <DropdownMenuItem onClick={() => handleResendInvite(nutritionist.id)}>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Reenviar invitación
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => handleToggleStatus(nutritionist.id, nutritionist.status)}>
                         {nutritionist.status === "activo" ? (
@@ -416,7 +706,35 @@ export default function SuperadminNutritionists() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Estado</span>
-                    {getStatusBadge(nutritionist.status)}
+                    <div className="flex items-center gap-1">
+                      {getStatusBadge(nutritionist.status)}
+                      {nutritionist.license_alert === "expired" && (
+                        <Badge variant="destructive" className="text-[10px]">TO vencida</Badge>
+                      )}
+                      {nutritionist.license_alert === "expiring_soon" && (
+                        <Badge variant="outline" className="text-[10px] border-amber-500">TO por vencer</Badge>
+                      )}
+                    </div>
+                  </div>
+                  {nutritionist.onboarding && !nutritionist.onboarding.is_complete && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Onboarding</span>
+                        <span>{nutritionist.onboarding.percent}%</span>
+                      </div>
+                      <Progress value={nutritionist.onboarding.percent} className="h-1.5" />
+                    </div>
+                  )}
+                  {nutritionist.status === "pendiente" && nutritionist.invite_expires_at && (
+                    <p className="text-xs text-warning">
+                      Invitación expira: {nutritionist.invite_expires_at}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Rol</span>
+                    <Badge variant="outline" className="text-xs">
+                      {STAFF_ROLE_LABELS[nutritionist.staff_role || "nutritionist"]}
+                    </Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground flex items-center gap-1">
@@ -608,8 +926,44 @@ export default function SuperadminNutritionists() {
                     <Label className="text-xs text-muted-foreground">Número de TO (tarjeta profesional)</Label>
                     <p className="font-medium text-sm">{selectedNutritionist.license || "No registrada"}</p>
                   </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Vencimiento TO</Label>
+                    <p className="font-medium text-sm flex items-center gap-2">
+                      {selectedNutritionist.license_expiry || "No registrada"}
+                      {selectedNutritionist.license_alert === "expired" && (
+                        <Badge variant="destructive">Vencida</Badge>
+                      )}
+                      {selectedNutritionist.license_alert === "expiring_soon" && (
+                        <Badge variant="outline">Por vencer</Badge>
+                      )}
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              {selectedNutritionist.onboarding && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Onboarding ({selectedNutritionist.onboarding.completed}/{selectedNutritionist.onboarding.total})
+                  </h4>
+                  <Progress value={selectedNutritionist.onboarding.percent} className="h-2" />
+                  <div className="space-y-2">
+                    {selectedNutritionist.onboarding.steps.map((step) => (
+                      <div key={step.key} className="flex items-center gap-2 text-sm">
+                        {step.done ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className={cn(step.done && "text-muted-foreground line-through")}>
+                          {step.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Estadísticas */}
               <div className="space-y-3">
@@ -731,6 +1085,59 @@ export default function SuperadminNutritionists() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Vencimiento TO</Label>
+              <Input
+                type="date"
+                value={editData.license_expiry || ""}
+                onChange={(e) => setEditData({ ...editData, license_expiry: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Organización (EPS)</Label>
+              <Select
+                value={editData.organization_id ? String(editData.organization_id) : "none"}
+                onValueChange={(v) =>
+                  setEditData({
+                    ...editData,
+                    organization_id: v === "none" ? undefined : Number(v),
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin organización" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin organización</SelectItem>
+                  {organizations.map((o) => (
+                    <SelectItem key={o.id} value={String(o.id)}>
+                      {o.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Rol granular</Label>
+              <Select
+                value={editData.staff_role || "nutritionist"}
+                onValueChange={(v) => setEditData({ ...editData, staff_role: v as StaffRole })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(STAFF_ROLE_LABELS) as StaffRole[]).map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {STAFF_ROLE_LABELS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Asistente: solo citas · Senior: + transferencias · Admin org: solo su EPS
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label>Biografía</Label>
               <Textarea
                 value={editData.bio || ""}
@@ -748,6 +1155,37 @@ export default function SuperadminNutritionists() {
             </Button>
             <Button onClick={handleSaveEdit} className="gradient-primary border-0">
               Guardar Cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reassignOrgOpen} onOpenChange={setReassignOrgOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reasignar organización</DialogTitle>
+          </DialogHeader>
+          <Select value={reassignOrgId} onValueChange={setReassignOrgId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Organización destino" />
+            </SelectTrigger>
+            <SelectContent>
+              {organizations.map((o) => (
+                <SelectItem key={o.id} value={String(o.id)}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReassignOrgOpen(false)}>Cancelar</Button>
+            <Button
+              disabled={!reassignOrgId || bulkLoading}
+              onClick={() =>
+                runBulkAction("reassign_org", { organization_id: Number(reassignOrgId) })
+              }
+            >
+              Reasignar {selectedIds.length} nutricionista(s)
             </Button>
           </DialogFooter>
         </DialogContent>

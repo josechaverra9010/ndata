@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { AdminLayout } from "@/layouts/AdminLayout";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { LoadingGate } from "@/components/LoadingGate";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -499,18 +499,11 @@ export default function AdminCalendar() {
     </div>
   );
 
-  if (loading) {
-    return (
-      <AdminLayout>
-        <LoadingScreen message="Cargando citas" />
-      </AdminLayout>
-    );
-  }
-
   const dayAppointments = getAppointmentsForDate(selectedDate);
 
   return (
     <AdminLayout>
+      <LoadingGate loading={loading} message="Cargando citas">
       <div className="space-y-6">
         {/* Header */}
         <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-sky-500/5 p-5 sm:p-6">
@@ -1101,6 +1094,7 @@ export default function AdminCalendar() {
           </div>
         </div>
       </div>
+      </LoadingGate>
 
       <NewAppointmentDialog
         open={createOpen}

@@ -1,0 +1,58 @@
+# Despliegue en Google Cloud Run (NutriData — API + SPA en un solo contenedor)
+#
+# Requisitos:
+#   - Cloud SQL (MySQL) o DATABASE_URL accesible desde Cloud Run
+#   - Artifact Registry / Container Registry para la imagen
+#
+# Variables de entorno obligatorias en Cloud Run:
+#   DATABASE_URL=mysql+pymysql://USER:PASS@/ndata?unix_socket=/cloudsql/PROJECT:REGION:INSTANCE
+#   SECRET_KEY=<clave-segura-32+chars>
+#   ALLOWED_ORIGINS=https://tu-dominio.run.app
+#
+# Opcionales:
+#   FRONTEND_URL=https://tu-dominio.run.app
+#   BASE_URL=https://tu-dominio.run.app
+#
+# El contenedor escucha en $PORT (8080 por defecto).
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nutridata:$COMMIT_SHA
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nutridata:$COMMIT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - nutridata
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nutridata:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --timeout=300
+      - --cpu=1
+      - --memory=1Gi
+      - --min-instances=0
+      - --max-instances=10
+      - --startup-cpu-boost
+      - --set-env-vars=PYTHONUNBUFFERED=1
+
+substitutions:
+  _REGION: us-central1
+  _REPO: nutridata
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/nutridata:$COMMIT_SHA

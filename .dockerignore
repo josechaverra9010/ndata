@@ -1,0 +1,37 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+build
+.vite
+.vscode
+.idea
+.cursor
+
+*.md
+README.md
+render.yaml
+
+# Python / local
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+env
+*.log
+
+# Uploads locales
+uploads/*
+!uploads/.gitkeep
+
+# No hace falta en el contexto (Dockerfile se lee aparte)
+.dockerignore
+cloudbuild.yaml
+*.ps1
+*.bat
+agent-transcripts

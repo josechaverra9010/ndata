@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 
 import { useAuth } from "@/hooks/useAuth";
+import { resolveMediaUrl } from "@/lib/media";
 
 
 
@@ -45,7 +46,7 @@ export function UserDropdown() {
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-3 rounded-full bg-muted/50 py-1.5 pl-1.5 pr-3 transition-colors hover:bg-muted">
           <Avatar className="h-8 w-8 border-2 border-primary/20">
-            <AvatarImage src={userAvatar} />
+            <AvatarImage src={resolveMediaUrl(userAvatar)} />
             <AvatarFallback className="bg-primary text-primary-foreground text-sm">
               {userName.substring(0, 2).toUpperCase()}
             </AvatarFallback>

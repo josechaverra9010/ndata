@@ -17,19 +17,41 @@ import { ArticleContentView } from "@/components/articles/ArticleRichEditor";
 
 interface Article {
   id: number;
+  slug?: string | null;
   title: string;
   excerpt: string;
   content: string;
   category: string;
   author: string;
   image: string;
+  og_image?: string;
+  meta_description?: string;
   date?: string | null;
   published_at?: string | null;
   related?: Article[];
 }
 
+function isNumericId(value: string): boolean {
+  return /^\d+$/.test(value);
+}
+
+function articlePath(article: Article): string {
+  if (article.slug) return `/article/${article.slug}`;
+  return `/article/${article.id}`;
+}
+
+function setMetaTag(attr: "name" | "property", key: string, content: string) {
+  let el = document.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attr, key);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
 const ArticleDetail = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id: idOrSlug } = useParams<{ id: string }>();
   const { theme, setTheme } = useTheme();
   const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +60,7 @@ const ArticleDetail = () => {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!id) {
+      if (!idOrSlug) {
         setNotFound(true);
         setLoading(false);
         return;
@@ -46,7 +68,10 @@ const ArticleDetail = () => {
       try {
         setLoading(true);
         setNotFound(false);
-        const res = await fetch(`${API_URL}/articles/${id}`);
+        const endpoint = isNumericId(idOrSlug)
+          ? `${API_URL}/articles/${idOrSlug}`
+          : `${API_URL}/articles/by-slug/${encodeURIComponent(idOrSlug)}`;
+        const res = await fetch(endpoint);
         if (res.status === 404) {
           if (!cancelled) setNotFound(true);
           return;
@@ -65,7 +90,41 @@ const ArticleDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [idOrSlug]);
+
+  useEffect(() => {
+    if (!article) return;
+
+    const description =
+      article.meta_description || article.excerpt || "Artículo de nutrición por NutriData";
+    const ogImage = article.og_image || article.image;
+    const canonicalPath = articlePath(article);
+    const canonicalUrl = `${window.location.origin}${canonicalPath}`;
+
+    document.title = `${article.title} | NutriData`;
+    setMetaTag("name", "description", description);
+    setMetaTag("property", "og:title", article.title);
+    setMetaTag("property", "og:description", description);
+    setMetaTag("property", "og:image", ogImage);
+    setMetaTag("property", "og:type", "article");
+    setMetaTag("property", "og:url", canonicalUrl);
+    setMetaTag("name", "twitter:card", "summary_large_image");
+    setMetaTag("name", "twitter:title", article.title);
+    setMetaTag("name", "twitter:description", description);
+    setMetaTag("name", "twitter:image", ogImage);
+
+    let linkCanonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (!linkCanonical) {
+      linkCanonical = document.createElement("link");
+      linkCanonical.rel = "canonical";
+      document.head.appendChild(linkCanonical);
+    }
+    linkCanonical.href = canonicalUrl;
+
+    return () => {
+      document.title = "NutriData";
+    };
+  }, [article]);
 
   if (loading) {
     return (
@@ -184,7 +243,7 @@ const ArticleDetail = () => {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {related.map((relatedArticle) => (
-                    <Link key={relatedArticle.id} to={`/article/${relatedArticle.id}`}>
+                    <Link key={relatedArticle.id} to={articlePath(relatedArticle)}>
                       <Card className="hover:border-primary/20 transition-all hover:shadow-md cursor-pointer h-full">
                         <div className="aspect-video overflow-hidden rounded-t-xl">
                           <img

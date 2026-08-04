@@ -1,0 +1,13 @@
+# Semgrep Scan — NutriData
+# Mode: important-only (MEDIUM/HIGH/CRITICAL security)
+# Engine: Semgrep OSS
+
+p/security-audit
+p/secrets
+p/python
+p/fastapi
+p/typescript
+p/javascript
+p/react
+p/dockerfile
+trailofbits (cloned)

@@ -43,9 +43,13 @@ import {
   Calculator,
   ClipboardList,
   FileText,
-  Utensils
+  Utensils,
+  Plus,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CreateWeeklyMenuDialog, CreatedWeeklyMenu } from "@/components/admin/CreateWeeklyMenuDialog";
+import { generatePlanPdf } from "@/lib/planPdf";
 
 interface MealPlan {
   id: number;
@@ -75,6 +79,7 @@ const planTypeLabels: Record<string, string> = {
   gestante: "Gestante",
   gestante_adolescente: "Gestante adolescente",
   hospitalizado: "Hospitalizado",
+  geriatrico: "Geriátrico",
   deportista: "Deportista",
 };
 
@@ -163,6 +168,7 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
   const [selectedMenuId, setSelectedMenuId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
 
   useEffect(() => {
     fetchMenus();
@@ -189,6 +195,25 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleMenuCreated = (menu: CreatedWeeklyMenu) => {
+    const normalized: WeeklyMenuComplete = {
+      id: menu.id,
+      name: menu.name,
+      description: menu.description || "",
+      category: menu.category || "",
+      total_calories: menu.total_calories || 0,
+      assigned_patients: menu.assigned_patients || 0,
+    } as WeeklyMenuComplete;
+    setMenus((prev) => {
+      if (prev.some((m) => m.id === normalized.id)) {
+        return prev.map((m) => (m.id === normalized.id ? { ...m, ...normalized } : m));
+      }
+      return [normalized, ...prev];
+    });
+    setSelectedMenuId(String(normalized.id));
+    setCreateMenuOpen(false);
   };
 
   const handleAssign = async () => {
@@ -228,28 +253,53 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Asignar Menú Semanal</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Selecciona un menú semanal existente para asignarlo a este plan nutricional.
+          Selecciona un menú semanal existente o crea uno nuevo para asignarlo a este plan.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label>Menú Semanal Disponible</Label>
-          <Select value={selectedMenuId} onValueChange={setSelectedMenuId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Seleccionar menú..." />
-            </SelectTrigger>
-            <SelectContent>
-              {menus.map((menu) => (
-                <SelectItem key={menu.id} value={menu.id.toString()}>
-                  {menu.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center justify-between gap-2">
+            <Label>Menú Semanal Disponible</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => setCreateMenuOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Crear menú
+            </Button>
+          </div>
+          {menus.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4 text-center space-y-3 bg-muted/20">
+              <p className="text-sm text-muted-foreground">
+                No hay menús semanales. Crea uno para vincularlo a este plan.
+              </p>
+              <Button type="button" onClick={() => setCreateMenuOpen(true)}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Crear menú semanal
+              </Button>
+            </div>
+          ) : (
+            <Select value={selectedMenuId} onValueChange={setSelectedMenuId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar menú..." />
+              </SelectTrigger>
+              <SelectContent>
+                {menus.map((menu) => (
+                  <SelectItem key={menu.id} value={menu.id.toString()}>
+                    {menu.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {selectedMenu && (
@@ -279,6 +329,13 @@ function AssignMenuSection({ planId, onAssignSuccess }: { planId: number; onAssi
         </Button>
       </CardContent>
     </Card>
+
+    <CreateWeeklyMenuDialog
+      open={createMenuOpen}
+      onOpenChange={setCreateMenuOpen}
+      onCreated={handleMenuCreated}
+    />
+    </>
   );
 }
 
@@ -444,6 +501,34 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
     toast.success("Plan duplicado correctamente");
   };
 
+  const handleDownloadPdf = async () => {
+    if (!plan) return;
+    try {
+      let sigOpts = {};
+      try {
+        const token = localStorage.getItem("userToken");
+        const res = await fetch(`${API_URL}/nutritionist/pdf-signature?doc_type=meal_plan`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) sigOpts = await res.json();
+      } catch {
+        /* firma opcional */
+      }
+      generatePlanPdf(plan, {
+        weeklyMenu: weeklyMenu ?? undefined,
+        nutritionistName: (sigOpts as { nutritionist_name?: string }).nutritionist_name,
+        licenseTo: (sigOpts as { license_to?: string }).license_to,
+        specialty: (sigOpts as { specialty?: string }).specialty,
+        generatedAt: (sigOpts as { generated_at?: string }).generated_at,
+        verificationCode: (sigOpts as { verification_code?: string }).verification_code,
+      });
+      toast.success("PDF generado correctamente");
+    } catch (err) {
+      console.error("Error al generar PDF:", err);
+      toast.error("No se pudo generar el PDF");
+    }
+  };
+
   const calculateMacroPercentages = () => {
     if (!plan) return { protein: 30, carbs: 45, fat: 25 };
 
@@ -579,6 +664,10 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
             <div className="flex gap-2">
               {!isEditing ? (
                 <>
+                  <Button variant="outline" size="sm" onClick={handleDownloadPdf} title="Descargar PDF">
+                    <Download className="h-4 w-4 mr-1" />
+                    PDF
+                  </Button>
                   <Button variant="outline" size="icon" onClick={() => setIsEditing(true)}>
                     <Edit className="h-4 w-4" />
                   </Button>
@@ -907,6 +996,8 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                             ? "Fase 1: Evaluación y requerimiento gestante"
                           : plan.fase_1.tipo_fase === "hospitalizado"
                             ? "Fase 1: Requerimiento energético hospitalizado"
+                          : plan.fase_1.tipo_fase === "geriatrico"
+                            ? "Fase 1: Evaluación y requerimiento geriátrico"
                           : "Fase 1: Requerimiento Energético y Peso Saludable"}
                       </CardTitle>
                     </CardHeader>
@@ -1318,6 +1409,105 @@ export function PlanDetailsDialog({ plan, open, onOpenChange, onUpdatePlan }: Pl
                                 <p>Ca {plan.fase_1.nutricion_parenteral.ca_meq_dia || "—"} mEq/día</p>
                                 <p>P {plan.fase_1.nutricion_parenteral.p_mmol_dia || "—"} mMol/día</p>
                               </div>
+                            </div>
+                          )}
+                          {plan.fase_1.requerimiento_energetico && (
+                            <div className="col-span-2">
+                              <Label className="text-xs text-muted-foreground">Requerimiento total</Label>
+                              <p className="font-bold text-lg text-primary">{plan.fase_1.requerimiento_energetico} kcal</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : plan.fase_1.tipo_fase === "geriatrico" ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          {plan.fase_1.peso_actual && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Peso actual</Label>
+                              <p className="font-medium">{plan.fase_1.peso_actual} kg</p>
+                            </div>
+                          )}
+                          {plan.fase_1.altura && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Altura</Label>
+                              <p className="font-medium">{plan.fase_1.altura} cm</p>
+                            </div>
+                          )}
+                          {plan.fase_1.edad && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Edad</Label>
+                              <p className="font-medium">{plan.fase_1.edad} años</p>
+                            </div>
+                          )}
+                          {plan.fase_1.imc && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">IMC</Label>
+                              <p className="font-medium">{plan.fase_1.imc}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.clasificacion_imc && (
+                            <div className="col-span-2">
+                              <Label className="text-xs text-muted-foreground">Clasificación IMC</Label>
+                              <p className="font-medium">{plan.fase_1.clasificacion_imc}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.riesgo_sarcopenia && (
+                            <div className="col-span-2">
+                              <Label className="text-xs text-muted-foreground">Sarcopenia</Label>
+                              <p className="font-medium">{plan.fase_1.riesgo_sarcopenia}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.peso_referencia && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Peso referencia</Label>
+                              <p className="font-medium">{plan.fase_1.peso_referencia} kg</p>
+                            </div>
+                          )}
+                          {plan.fase_1.peso_estimado_chumlea != null && Number(plan.fase_1.peso_estimado_chumlea) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Peso Chumlea</Label>
+                              <p className="font-medium">{Number(plan.fase_1.peso_estimado_chumlea).toFixed(1)} kg</p>
+                            </div>
+                          )}
+                          {plan.fase_1.talla_estimada_chumlea != null && Number(plan.fase_1.talla_estimada_chumlea) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Talla Chumlea</Label>
+                              <p className="font-medium">{Number(plan.fase_1.talla_estimada_chumlea).toFixed(1)} cm</p>
+                            </div>
+                          )}
+                          {plan.fase_1.regla_peso && (
+                            <div className="col-span-2">
+                              <Label className="text-xs text-muted-foreground">Regla de peso</Label>
+                              <p className="font-medium">{plan.fase_1.regla_peso}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.tmb != null && Number(plan.fase_1.tmb) > 0 && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">TMB</Label>
+                              <p className="font-medium">{Math.round(Number(plan.fase_1.tmb))} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.ger_factor_actividad != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Factor actividad</Label>
+                              <p className="font-medium">{plan.fase_1.ger_factor_actividad}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.ger_factor_estres != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Factor estrés</Label>
+                              <p className="font-medium">{plan.fase_1.ger_factor_estres}</p>
+                            </div>
+                          )}
+                          {plan.fase_1.requerimiento_base != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Requerimiento base</Label>
+                              <p className="font-medium">{Math.round(Number(plan.fase_1.requerimiento_base))} kcal</p>
+                            </div>
+                          )}
+                          {plan.fase_1.liquidos_ml != null && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Líquidos</Label>
+                              <p className="font-medium">{plan.fase_1.liquidos_ml} ml/día ({plan.fase_1.ger_liquidos_cc_kg || "—"} cc/kg)</p>
                             </div>
                           )}
                           {plan.fase_1.requerimiento_energetico && (

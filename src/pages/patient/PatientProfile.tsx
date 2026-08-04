@@ -16,6 +16,7 @@ import { FoodFrequencyForm, FOOD_GROUPS } from "@/components/shared/FoodFrequenc
 import { Recordatorio24hForm } from "@/components/admin/Recordatorio24hForm";
 import { Camera, Save, User, Loader2, Clock, ClipboardList, Utensils, Activity } from "lucide-react";
 import { API_URL } from "@/config/api";
+import { resolveMediaUrl } from "@/lib/media";
 import { useAuth } from "@/hooks/useAuth";
 
 const allergiesList = [
@@ -282,7 +283,7 @@ export default function PatientProfile() {
                 <CardContent className="flex flex-col items-center">
                   <div className="relative group">
                     <Avatar className="h-40 w-40 border-4 border-primary/10">
-                      <AvatarImage src={formData.foto_perfil} />
+                      <AvatarImage src={resolveMediaUrl(formData.foto_perfil)} />
                       <AvatarFallback className="bg-secondary">
                         <User className="h-16 w-16 text-muted-foreground" />
                       </AvatarFallback>
