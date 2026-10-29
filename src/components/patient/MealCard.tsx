@@ -16,6 +16,8 @@ interface MealCardProps {
         ingredients?: string[];
         instructions?: string[];
         image?: string;
+        recipes?: { recipe_name?: string; calories?: number }[];
+        recipe_count?: number;
     };
     onToggle: () => void;
     onViewDetails: () => void;
@@ -60,11 +62,26 @@ export function MealCard({ meal, onToggle, onViewDetails, isUpdating }: MealCard
                         <h4 className="font-semibold text-foreground text-base mb-1 line-clamp-1">
                             {meal.description}
                         </h4>
-                        <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                        <p className="text-sm text-muted-foreground flex items-center gap-1.5 flex-wrap">
                             <span className="font-medium">{meal.name}</span>
                             <span className="text-muted-foreground/60">•</span>
                             <span>{meal.time}</span>
+                            {(meal.recipe_count ?? meal.recipes?.length ?? 0) > 1 && (
+                                <>
+                                    <span className="text-muted-foreground/60">•</span>
+                                    <span className="text-primary font-medium">
+                                        {meal.recipe_count ?? meal.recipes?.length} opciones
+                                    </span>
+                                </>
+                            )}
                         </p>
+                        {(meal.recipes?.length ?? 0) > 1 && (
+                            <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground list-disc list-inside">
+                                {meal.recipes!.slice(0, 5).map((r, i) => (
+                                    <li key={i} className="truncate">{r.recipe_name}</li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
                     <Badge
                         variant={meal.completed ? "default" : "secondary"}

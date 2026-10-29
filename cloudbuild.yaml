@@ -45,11 +45,10 @@ steps:
       - --min-instances=0
       - --max-instances=10
       - --startup-cpu-boost
-      - --set-env-vars=PYTHONUNBUFFERED=1
 
 substitutions:
   _REGION: us-central1
-  _REPO: nutridata
+  _REPO: cloud-run-nutridata
 
 options:
   logging: CLOUD_LOGGING_ONLY

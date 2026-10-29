@@ -60,6 +60,84 @@ export const DEPORTISTA_PHASES = [
   { id: 'post', label: 'Post-competencia', hint: 'Ventana 30–60 min: CHO + proteína' },
 ] as const;
 
+/** Pliegues cutáneos para endomorfia (Heath-Carter / EVANUT Deportista) */
+export const DEPORTISTA_PLIEGUES_ENDOMORFIA = [
+  {
+    key: 'deportista_triceps',
+    label: 'Tríceps',
+    apellido: 'Tricipital',
+    site: 'Cara posterior del brazo',
+  },
+  {
+    key: 'deportista_subescapular',
+    label: 'Subescapular',
+    apellido: 'Infraescapular',
+    site: 'Ángulo inferior de la escápula',
+  },
+  {
+    key: 'deportista_supraespinal',
+    label: 'Supraespinal',
+    apellido: 'Supraspinal',
+    site: 'Sobre la cresta ilíaca (pliegue natural)',
+  },
+] as const;
+
+export function getDeportistaSumatoriaPliegues(fase1: Record<string, unknown>): number | null {
+  const values = DEPORTISTA_PLIEGUES_ENDOMORFIA.map((p) => parseNum(fase1[p.key]));
+  if (values.some((v) => v == null || v <= 0)) return null;
+  return Number(values.reduce((sum, v) => sum + (v ?? 0), 0).toFixed(2));
+}
+
+/** Perímetro braquial en cm; pliegue tricipital en mm → PMB (cm) */
+export function calcPerimetroMuscularBrazoCm(perimBrazoCm: number, pliegueTricipitalMm: number): number {
+  if (!(perimBrazoCm > 0)) return 0;
+  return perimBrazoCm - Math.PI * (pliegueTricipitalMm / 10);
+}
+
+export function calcBraquialAreasFromCm(perimBrazoCm: number, pmbCm: number) {
+  const areaMuscularBrazo = pmbCm > 0 ? (pmbCm ** 2) / (4 * Math.PI) : 0;
+  const areaTotalBrazo = perimBrazoCm > 0 ? (Math.PI / 4) * (perimBrazoCm / Math.PI) ** 2 : 0;
+  return {
+    areaMuscularBrazo,
+    areaTotalBrazo,
+    areaGrasaBrazo: areaTotalBrazo - areaMuscularBrazo,
+  };
+}
+
+/** Lee perímetro braquial en cm (compatibilidad con planes guardados en mm) */
+export function readPerimBrazoCm(data: Record<string, unknown>, prefix: 'pediatria' | 'gestante'): number {
+  const cm = parseNum(data[`${prefix}_perim_brazo_cm`]);
+  if (cm != null && cm > 0) return cm;
+  const legacyMm = parseNum(data[`${prefix}_perim_brazo_mm`]);
+  if (legacyMm != null && legacyMm > 0) return legacyMm / 10;
+  return 0;
+}
+
+/** Convierte PMB almacenado (legacy mm) a cm para mostrar */
+export function toPmbCm(stored: unknown): number | null {
+  const n = parseNum(stored);
+  if (n == null || n <= 0) return null;
+  return n > 50 ? n / 10 : n;
+}
+
+/** Convierte áreas almacenadas (legacy mm²) a cm² para mostrar */
+export function toAreaCm2(stored: unknown): number | null {
+  const n = parseNum(stored);
+  if (n == null || n <= 0) return null;
+  return n > 500 ? n / 100 : n;
+}
+
+/** Campos antropométricos pediátricos: perímetros en cm, pliegues en mm */
+export const PEDIATRIA_PERIMETROS = [
+  { key: 'pediatria_perimetro_cefalico', label: 'Perímetro cefálico', unit: 'cm' },
+  { key: 'pediatria_perim_brazo_cm', label: 'Perímetro braquial', unit: 'cm' },
+] as const;
+
+export const PEDIATRIA_PLIEGUES = [
+  { key: 'pediatria_pliegue_tricipital_mm', label: 'Pliegue tricipital', unit: 'mm' },
+  { key: 'pediatria_pliegue_subescapular_mm', label: 'Pliegue subescapular', unit: 'mm' },
+] as const;
+
 /** MNA-SF simplificado (6 ítems, máx 14 puntos) */
 export const MNA_SF_QUESTIONS = [
   {
@@ -191,6 +269,8 @@ export function buildPediatricZAlerts(
     weight_for_age: 'Peso/edad',
     length_for_age: 'Talla/edad',
     head_circumference: 'P. cefálico/edad',
+    bmi_for_age: 'IMC/edad',
+    weight_for_height: 'Peso/talla',
   };
 
   for (const [key, ind] of Object.entries(result.indicators)) {

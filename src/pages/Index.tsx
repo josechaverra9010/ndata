@@ -226,7 +226,10 @@ const Index = () => {
         ) : (
       <div className="space-y-7">
         {/* Hero header */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.07] p-6 shadow-card animate-fade-in">
+        <div
+          data-aos="fade-up"
+          className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.07] p-6 shadow-card"
+        >
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
           <div className="pointer-events-none absolute -bottom-12 left-1/3 h-32 w-32 rounded-full bg-accent/20 blur-2xl" />
           <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -242,33 +245,11 @@ const Index = () => {
                 <span className="capitalize text-foreground/80">{todayLabel}</span>
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-center backdrop-blur-sm">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Citas hoy</p>
-                <p className="text-lg font-bold tabular-nums text-foreground">
-                  {stats?.appointments.pending_today ?? 0}
-                </p>
-              </div>
-              <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-center backdrop-blur-sm">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Promedio</p>
-                <p className="text-lg font-bold tabular-nums text-foreground">
-                  {stats?.progress.average ?? 0}%
-                </p>
-              </div>
-              {(workQueue?.summary.patients_at_risk ?? 0) > 0 && (
-                <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-center backdrop-blur-sm">
-                  <p className="text-[10px] uppercase tracking-wide text-destructive/80">En riesgo</p>
-                  <p className="text-lg font-bold tabular-nums text-destructive">
-                    {workQueue?.summary.patients_at_risk}
-                  </p>
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-aos="fade-up" data-aos-delay="60">
           <StatsCard
             title="Pacientes Activos"
             value={stats?.patients.total.toString() || "0"}
@@ -276,7 +257,6 @@ const Index = () => {
             changeType={stats?.patients.change_type as "positive" | "negative" | "neutral"}
             icon={Users}
             iconColor="primary"
-            style={{ animationDelay: "40ms" }}
             onClick={() => navigate("/patients")}
           />
           <StatsCard
@@ -286,7 +266,6 @@ const Index = () => {
             changeType={stats?.appointments.change_type as "positive" | "negative" | "neutral"}
             icon={Calendar}
             iconColor="info"
-            style={{ animationDelay: "80ms" }}
             onClick={() => {
               const today = todayInColombiaISO();
               navigate(`/appointments?date=${today}&view=day`);
@@ -299,7 +278,6 @@ const Index = () => {
             changeType="neutral"
             icon={CalendarDays}
             iconColor="accent"
-            style={{ animationDelay: "120ms" }}
             onClick={() => navigate("/appointments")}
           />
           <StatsCard
@@ -309,26 +287,24 @@ const Index = () => {
             changeType={stats?.progress.change_type as "positive" | "negative" | "neutral"}
             icon={TrendingUp}
             iconColor="warning"
-            style={{ animationDelay: "160ms" }}
             onClick={() => navigate("/progress")}
           />
         </div>
 
         {/* Cola de trabajo + pacientes en riesgo */}
-        <div className="grid gap-6 lg:grid-cols-2 animate-fade-in" style={{ animationDelay: "200ms" }}>
+        <div className="grid gap-6 lg:grid-cols-2" data-aos="fade-up" data-aos-delay="120">
           <WorkQueuePanel data={workQueue} compact maxItems={6} />
           <AtRiskPatientsWidget data={workQueue} limit={5} />
         </div>
 
         {/* Main content grid */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="animate-fade-in" style={{ animationDelay: "180ms" }}>
+        <div className="grid gap-6 lg:grid-cols-2" data-aos="fade-up" data-aos-delay="160">
+          <div>
             <NutritionChart />
           </div>
 
           <div
-            className="rounded-2xl border border-border/80 bg-card/90 shadow-card backdrop-blur-sm overflow-hidden animate-fade-in h-full"
-            style={{ animationDelay: "220ms" }}
+            className="rounded-2xl border border-border/80 bg-card/90 shadow-card backdrop-blur-sm overflow-hidden h-full"
           >
             <div className="border-b border-border/70 bg-gradient-to-br from-card via-card to-emerald-500/[0.04] p-5">
               <div className="flex items-center gap-3">
@@ -446,7 +422,7 @@ const Index = () => {
         </div>
 
         {/* Bottom grid */}
-        <div className="grid gap-6 lg:grid-cols-2 animate-fade-in" style={{ animationDelay: "260ms" }}>
+        <div className="grid gap-6 lg:grid-cols-2" data-aos="fade-up" data-aos-delay="200">
           <UpcomingAppointments
             appointments={upcomingAppointments}
             loading={false}

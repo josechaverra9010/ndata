@@ -39,6 +39,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
 import { todayInColombiaISO, formatInColombia } from "@/lib/timezone";
 import { SpecialtyProgressHub } from "@/components/specialty/SpecialtyProgressHub";
+import { ProgressPhotosSection } from "@/components/progress/ProgressPhotosSection";
 
 interface ProgressData {
   has_data: boolean;
@@ -409,6 +410,11 @@ export default function PatientProgress() {
               Registrar primera medición
             </Button>
           </div>
+          {patientId && (
+            <div className="mt-6">
+              <ProgressPhotosSection patientId={patientId} />
+            </div>
+          )}
           {renderAddModal()}
         </div>
       </PatientLayout>
@@ -535,6 +541,8 @@ export default function PatientProgress() {
             </div>
           </div>
         </div>
+
+        {patientId && <ProgressPhotosSection patientId={patientId} />}
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -3,6 +3,14 @@
  * Functions to calculate z-scores and generate growth charts for pediatric patients
  */
 
+import {
+  getBmiForAgeTable,
+  mergeHeightForAgeTable,
+  WEIGHT_FOR_HEIGHT_2_5,
+  WEIGHT_FOR_LENGTH_0_2,
+  type LmsTable,
+} from './whoLmsExtended';
+
 // LMS Parameters for WHO Child Growth Standards (0-60 months)
 export const WHO_LMS_DATA = {
   weight_for_age_boys: {
@@ -77,7 +85,64 @@ export const WHO_LMS_DATA = {
     48: { L: 0.7737, M: 49.9, S: 0.02531 },
     60: { L: 0.7384, M: 50.7, S: 0.02510 },
   },
+  bmi_for_age_boys: getBmiForAgeTable('M'),
+  bmi_for_age_girls: getBmiForAgeTable('F'),
+  height_for_age_boys: mergeHeightForAgeTable(
+    {
+      0: { L: 0.3183, M: 49.9, S: 0.03594 },
+      1: { L: 0.3092, M: 54.7, S: 0.03346 },
+      2: { L: 0.3006, M: 58.4, S: 0.03154 },
+      3: { L: 0.2924, M: 61.4, S: 0.03027 },
+      6: { L: 0.2710, M: 67.6, S: 0.02804 },
+      12: { L: 0.2463, M: 75.7, S: 0.02657 },
+      24: { L: 0.2058, M: 87.0, S: 0.02569 },
+      36: { L: 0.1765, M: 95.3, S: 0.02541 },
+      48: { L: 0.1523, M: 102.3, S: 0.02529 },
+      60: { L: 0.1330, M: 108.2, S: 0.02516 },
+    },
+    'M'
+  ),
+  height_for_age_girls: mergeHeightForAgeTable(
+    {
+      0: { L: 0.3181, M: 49.2, S: 0.03765 },
+      1: { L: 0.3090, M: 54.0, S: 0.03489 },
+      2: { L: 0.3004, M: 57.7, S: 0.03272 },
+      3: { L: 0.2923, M: 60.6, S: 0.03118 },
+      6: { L: 0.2711, M: 66.7, S: 0.02872 },
+      12: { L: 0.2463, M: 74.3, S: 0.02704 },
+      24: { L: 0.2060, M: 85.3, S: 0.02605 },
+      36: { L: 0.1768, M: 93.3, S: 0.02570 },
+      48: { L: 0.1526, M: 100.0, S: 0.02556 },
+      60: { L: 0.1333, M: 105.6, S: 0.02541 },
+    },
+    'F'
+  ),
+  weight_for_length_boys: WEIGHT_FOR_LENGTH_0_2.M,
+  weight_for_length_girls: WEIGHT_FOR_LENGTH_0_2.F,
+  weight_for_height_boys: WEIGHT_FOR_HEIGHT_2_5.M,
+  weight_for_height_girls: WEIGHT_FOR_HEIGHT_2_5.F,
 };
+
+/** Resuelve tabla LMS según indicador, sexo e intervalo peso/talla */
+export function resolveLmsTable(
+  indicator: string,
+  sex: 'M' | 'F',
+  options?: { heightCm?: number; weightForHeightIntervalId?: string }
+): LmsTable {
+  const suffix = sex === 'M' ? 'boys' : 'girls';
+  if (indicator === 'weight_for_height') {
+    const useHeightTable =
+      options?.weightForHeightIntervalId === '2-5' ||
+      (options?.heightCm != null && options.heightCm >= 65);
+    const tableKey = useHeightTable ? `weight_for_height_${suffix}` : `weight_for_length_${suffix}`;
+    return WHO_LMS_DATA[tableKey as keyof typeof WHO_LMS_DATA] as LmsTable;
+  }
+  if (indicator === 'length_for_age') {
+    return WHO_LMS_DATA[`height_for_age_${suffix}` as keyof typeof WHO_LMS_DATA] as LmsTable;
+  }
+  const key = `${indicator}_${suffix}` as keyof typeof WHO_LMS_DATA;
+  return WHO_LMS_DATA[key] as LmsTable;
+}
 
 /**
  * Calculate age in months from birth date
@@ -92,29 +157,29 @@ export function calculateAgeMonths(birthDate: Date, measurementDate: Date = new 
  * Interpolate LMS values for a given age using linear interpolation
  */
 export function interpolateLMS(
-  ageMonths: number,
+  x: number,
   lmsTable: Record<number, { L: number; M: number; S: number }>
 ): { L: number; M: number; S: number } {
-  const ages = Object.keys(lmsTable).map(Number).sort((a, b) => a - b);
+  const keys = Object.keys(lmsTable).map(Number).sort((a, b) => a - b);
 
-  if (ageMonths <= ages[0]) {
-    const { L, M, S } = lmsTable[ages[0]];
+  if (x <= keys[0]) {
+    const { L, M, S } = lmsTable[keys[0]];
     return { L, M, S };
   }
 
-  if (ageMonths >= ages[ages.length - 1]) {
-    const { L, M, S } = lmsTable[ages[ages.length - 1]];
+  if (x >= keys[keys.length - 1]) {
+    const { L, M, S } = lmsTable[keys[keys.length - 1]];
     return { L, M, S };
   }
 
-  for (let i = 0; i < ages.length - 1; i++) {
-    if (ages[i] <= ageMonths && ageMonths <= ages[i + 1]) {
-      const age1 = ages[i];
-      const age2 = ages[i + 1];
-      const { L: L1, M: M1, S: S1 } = lmsTable[age1];
-      const { L: L2, M: M2, S: S2 } = lmsTable[age2];
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (keys[i] <= x && x <= keys[i + 1]) {
+      const x1 = keys[i];
+      const x2 = keys[i + 1];
+      const { L: L1, M: M1, S: S1 } = lmsTable[x1];
+      const { L: L2, M: M2, S: S2 } = lmsTable[x2];
 
-      const t = (ageMonths - age1) / (age2 - age1);
+      const t = (x - x1) / (x2 - x1);
       const L = L1 + t * (L2 - L1);
       const M = M1 + t * (M2 - M1);
       const S = S1 + t * (S2 - S1);
@@ -123,7 +188,7 @@ export function interpolateLMS(
     }
   }
 
-  const { L, M, S } = lmsTable[ages[ages.length - 1]];
+  const { L, M, S } = lmsTable[keys[keys.length - 1]];
   return { L, M, S };
 }
 
@@ -196,6 +261,24 @@ export function classifyNutritionalStatus(zScore: number, indicator: string = 'w
     return 'Macrocefalia';
   }
 
+  if (indicator === 'bmi_for_age') {
+    if (zScore < -2) return 'Delgadez severa';
+    if (zScore < -1) return 'Delgadez';
+    if (zScore < 1) return 'Normal';
+    if (zScore < 2) return 'Sobrepeso';
+    return 'Obesidad';
+  }
+
+  if (indicator === 'weight_for_height') {
+    if (zScore < -3) return 'Desnutrición severa aguda';
+    if (zScore < -2) return 'Desnutrición aguda';
+    if (zScore < -1) return 'Riesgo de desnutrición aguda';
+    if (zScore < 1) return 'Normal';
+    if (zScore < 2) return 'Riesgo de sobrepeso';
+    if (zScore < 3) return 'Sobrepeso';
+    return 'Obesidad';
+  }
+
   return 'Normal';
 }
 
@@ -233,9 +316,9 @@ export function calculateGrowthIndicators(
     };
   }
 
-  // Length-for-age
-  if (length !== undefined && ageMonths <= 60) {
-    const lmsTable = sex === 'M' ? WHO_LMS_DATA.length_for_age_boys : WHO_LMS_DATA.length_for_age_girls;
+  // Length/height-for-age (0–17 years)
+  if (length !== undefined && ageMonths <= 204) {
+    const lmsTable = resolveLmsTable('length_for_age', sex);
     const { L, M, S } = interpolateLMS(ageMonths, lmsTable);
     const zScore = calculateZScore(length, L, M, S);
     const percentile = zScoreToPercentile(zScore);
@@ -249,6 +332,46 @@ export function calculateGrowthIndicators(
       zScore: Math.round(zScore * 100) / 100,
       percentile: Math.round(percentile * 10) / 10,
       classification: classifyNutritionalStatus(zScore, 'length_for_age'),
+    };
+  }
+
+  // BMI-for-age (0–17 years)
+  if (weight !== undefined && length !== undefined && length > 0 && ageMonths <= 204) {
+    const heightM = length / 100;
+    const bmi = weight / (heightM * heightM);
+    const lmsTable = resolveLmsTable('bmi_for_age', sex);
+    const { L, M, S } = interpolateLMS(ageMonths, lmsTable);
+    const zScore = calculateZScore(bmi, L, M, S);
+    const percentile = zScoreToPercentile(zScore);
+
+    indicators.bmi_for_age = {
+      measurement: Math.round(bmi * 100) / 100,
+      unit: 'kg/m²',
+      L,
+      M,
+      S,
+      zScore: Math.round(zScore * 100) / 100,
+      percentile: Math.round(percentile * 10) / 10,
+      classification: classifyNutritionalStatus(zScore, 'bmi_for_age'),
+    };
+  }
+
+  // Weight-for-height (0–5 years, x = length cm)
+  if (weight !== undefined && length !== undefined && length >= 45 && length <= 120 && ageMonths <= 60) {
+    const lmsTable = resolveLmsTable('weight_for_height', sex, { heightCm: length });
+    const { L, M, S } = interpolateLMS(length, lmsTable);
+    const zScore = calculateZScore(weight, L, M, S);
+    const percentile = zScoreToPercentile(zScore);
+
+    indicators.weight_for_height = {
+      measurement: weight,
+      unit: 'kg',
+      L,
+      M,
+      S,
+      zScore: Math.round(zScore * 100) / 100,
+      percentile: Math.round(percentile * 10) / 10,
+      classification: classifyNutritionalStatus(zScore, 'weight_for_height'),
     };
   }
 
@@ -287,10 +410,21 @@ export function generatePercentileCurveData(
   ageRange: number[] = Array.from({ length: 121 }, (_, i) => i * 0.5)
 ): Array<{ age: number; value: number }> {
   const zScore = percentileToZScore(percentile);
-  const data: Array<{ age: number; value: number }> = [];
+  return generateZScoreCurveData(lmsTable, zScore, ageRange);
+}
 
-  for (const age of ageRange) {
-    const { L, M, S } = interpolateLMS(age, lmsTable);
+/**
+ * Generate z-score curve data (Resolución MINSALUD 2465 / WHO Anthro)
+ */
+export function generateZScoreCurveData(
+  lmsTable: Record<number, { L: number; M: number; S: number }>,
+  zScore: number,
+  xRange: number[] = Array.from({ length: 121 }, (_, i) => i * 0.5)
+): Array<{ x: number; value: number; age?: number }> {
+  const data: Array<{ x: number; value: number; age?: number }> = [];
+
+  for (const x of xRange) {
+    const { L, M, S } = interpolateLMS(x, lmsTable);
 
     let measurement: number;
     if (L === 0) {
@@ -299,7 +433,7 @@ export function generatePercentileCurveData(
       measurement = M * Math.pow(1 + L * S * zScore, 1 / L);
     }
 
-    data.push({ age, value: measurement });
+    data.push({ x, age: x, value: measurement });
   }
 
   return data;

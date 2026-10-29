@@ -300,7 +300,7 @@ export default function SuperadminOrganizations() {
       if (!res.ok) {
         throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo eliminar");
       }
-      toast.success("Organización eliminada");
+    toast.success("Organización eliminada");
       fetchOrganizations();
     } catch (e: any) {
       toast.error(e?.message || "Error al eliminar");
@@ -561,14 +561,14 @@ export default function SuperadminOrganizations() {
                 No hay organizaciones. Crea la primera convenio.
               </p>
             ) : (
-              <div className="space-y-3">
+            <div className="space-y-3">
                 {filtered.map((org) => (
-                  <div
-                    key={org.id}
-                    className="flex items-center gap-4 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                  >
+                <div
+                  key={org.id}
+                  className="flex items-center gap-4 p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                >
                     <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <Building2 className="h-6 w-6 text-primary" />
+                    <Building2 className="h-6 w-6 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -614,38 +614,38 @@ export default function SuperadminOrganizations() {
                           )}
                         />
                       )}
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => openDetail(org)}>
-                          <Eye className="h-4 w-4 mr-2" />
+                        <Eye className="h-4 w-4 mr-2" />
                           Ver / miembros
-                        </DropdownMenuItem>
+                      </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(org)}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Editar
-                        </DropdownMenuItem>
+                        <Edit className="h-4 w-4 mr-2" />
+                        Editar
+                      </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => copyCode(org.code)}>
                           <Copy className="h-4 w-4 mr-2" />
                           Copiar código
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
+                      <DropdownMenuItem
+                        className="text-destructive"
                           onClick={() => handleDelete(org)}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Eliminar
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ))}
-              </div>
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))}
+            </div>
             )}
           </CardContent>
         </Card>

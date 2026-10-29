@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Callable, List, Optional
 
+from adherence_utils import days_without_meal_logs, no_meal_logs_alert
 from fastapi import Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -117,14 +118,16 @@ def register_phase4_routes(app, deps: dict):
     def _abandonment_score(patient, db: Session, today: date) -> dict:
         factors = []
         score = 0
-        last_log = _last_meal_date(patient.id, db)
-        days_without = (today - last_log).days if last_log else 999
-        if days_without >= 5:
-            score += 35
-            factors.append(f"Sin logs hace {days_without} días")
-        elif days_without >= 3:
-            score += 20
-            factors.append(f"Sin logs hace {days_without} días")
+        days_without = days_without_meal_logs(
+            patient.id, db, today, MealTrackingDB, PatientMealPlanDB
+        )
+        if days_without is not None:
+            if days_without >= 5:
+                score += 35
+                factors.append(f"Sin logs hace {days_without} días")
+            elif days_without >= 3:
+                score += 20
+                factors.append(f"Sin logs hace {days_without} días")
 
         adherence = _adherence_pct(patient.id, db)
         if adherence < 40:
@@ -165,7 +168,7 @@ def register_phase4_routes(app, deps: dict):
             "level": level,
             "factors": factors,
             "adherence_pct": adherence,
-            "days_without_logs": days_without if days_without < 999 else None,
+            "days_without_logs": days_without,
         }
 
     def _task_dict(task, patient=None) -> dict:
@@ -194,15 +197,17 @@ def register_phase4_routes(app, deps: dict):
         nutritionist_tasks = []
 
         for p in patients:
-            last_log = _last_meal_date(p.id, db)
-            days_without = (today - last_log).days if last_log else 999
+            days_without = days_without_meal_logs(
+                p.id, db, today, MealTrackingDB, PatientMealPlanDB
+            )
             adherence = _adherence_pct(p.id, db)
-            if days_without >= 3:
+            meal_alert = no_meal_logs_alert(days_without)
+            if meal_alert:
                 patient_reminders.append({
                     "patient_id": p.id,
                     "patient_name": f"{p.nombres} {p.apellidos}",
                     "type": "no_meal_logs",
-                    "message": f"Recordatorio: registra tus comidas ({days_without} días sin actividad)",
+                    "message": meal_alert["message"],
                 })
             if adherence < 50:
                 patient_reminders.append({

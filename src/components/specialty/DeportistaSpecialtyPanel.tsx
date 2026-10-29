@@ -5,9 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { DEPORTISTA_PHASES } from '@/lib/specialtyModule';
+import {
+  DEPORTISTA_PHASES,
+  DEPORTISTA_PLIEGUES_ENDOMORFIA,
+  getDeportistaSumatoriaPliegues,
+  parseNum,
+} from '@/lib/specialtyModule';
 import { Droplets, Dumbbell, Flame, Plus, Trash2 } from 'lucide-react';
 import { todayInColombiaISO } from '@/lib/timezone';
+import { SomatoChart } from '@/components/specialty/SomatoChart';
 import type { SpecialtyPayload, SpecialtyTracking } from './types';
 
 interface Props {
@@ -51,6 +57,12 @@ export function DeportistaSpecialtyPanel({ data, onTrackingChange, readOnly }: P
     total: sessions.filter((s) => s.phase === p.id).reduce((sum, s) => sum + s.ml, 0),
   }));
 
+  const sumatoriaPliegues =
+    parseNum(f1.sumatoria) ?? getDeportistaSumatoriaPliegues(f1 as Record<string, unknown>);
+  const hasPliegues =
+    sumatoriaPliegues != null ||
+    DEPORTISTA_PLIEGUES_ENDOMORFIA.some((p) => parseNum(f1[p.key]) != null);
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -82,6 +94,53 @@ export function DeportistaSpecialtyPanel({ data, onTrackingChange, readOnly }: P
           </CardContent>
         </Card>
       </div>
+
+      {hasPliegues && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Pliegues cutáneos (endomorfia)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {DEPORTISTA_PLIEGUES_ENDOMORFIA.map((pliegue) => {
+                const value = parseNum(f1[pliegue.key]);
+                return (
+                  <div key={pliegue.key} className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-sm font-semibold">{pliegue.label}</p>
+                    <p className="text-[11px] text-muted-foreground italic">{pliegue.apellido}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{pliegue.site}</p>
+                    <p className="text-xl font-bold mt-2">
+                      {value != null ? `${value.toFixed(1)} mm` : '—'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            {sumatoriaPliegues != null && (
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Sumatoria (tríceps + subescapular + supraespinal)</span>
+                <span className="font-bold">{sumatoriaPliegues.toFixed(2)} mm</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Somatocarta (Heath-Carter)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SomatoChart
+            endomorfia={Number(f1.endomorfia) || undefined}
+            mesomorfia={Number(f1.mesomorfia) || undefined}
+            ectomorfia={Number(f1.ectomorfia) || undefined}
+            coordX={Number(f1.coordenada_x ?? f1.coordX) || undefined}
+            coordY={Number(f1.coordenada_y ?? f1.coordY) || undefined}
+            compact
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

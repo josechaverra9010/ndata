@@ -145,6 +145,23 @@
     animation: fadeIn 0.5s ease-out forwards;
   }
 
+  /* AOS: respetar preferencia de movimiento reducido */
+  @media (prefers-reduced-motion: reduce) {
+    [data-aos] {
+      opacity: 1 !important;
+      transform: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* Pantalla de carga: nunca heredar opacity/transform de AOS */
+  [role="status"][aria-busy="true"],
+  .loading-screen-root {
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+  }
+
   .animate-slide-up {
     animation: slideUp 0.5s ease-out forwards;
   }
@@ -388,6 +405,67 @@
   .article-editor .ProseMirror {
     padding: 1.25rem 1rem;
     min-height: 380px;
+  }
+}
+
+/* Impresión plan paciente (respaldo si se usa window.print en el modal) */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  [data-radix-dialog-overlay] {
+    display: none !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .patient-plan-print-dialog {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+    translate: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    padding: 0 !important;
+  }
+
+  .patient-plan-print-dialog > div {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .patient-plan-print {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 

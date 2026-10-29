@@ -25,8 +25,11 @@ import {
   AlertCircle,
   Trash2,
   ChevronRight,
-  Check
+  Check,
+  Camera,
 } from "lucide-react";
+import { MealPhotoRegister } from "@/components/patient/MealPhotoRegister";
+import { Link } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -213,8 +216,31 @@ export default function PatientMeals() {
       const data = await response.json();
       console.log("Meals data received:", data);
 
-      // Establecer los datos sin llamar a initialize automáticamente
       setMealsData(data);
+
+      // Si hay plan pero aún no hay comidas, sincronizar una vez
+      if (
+        Array.isArray(data?.meals) &&
+        data.meals.length === 0 &&
+        data?.has_plan !== false &&
+        !String(data?.message || "").toLowerCase().includes("no tienes un plan")
+      ) {
+        // El backend ya auto-inicializa; reintentar lectura tras materializar
+        const retry = await fetch(
+          `${API_URL}/patient/${patientId}/meals/today/detailed`,
+          {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          }
+        );
+        if (retry.ok) {
+          const retryData = await retry.json();
+          if (Array.isArray(retryData?.meals) && retryData.meals.length > 0) {
+            setMealsData(retryData);
+          }
+        }
+      }
 
     } catch (error) {
       console.error('Error fetching meals:', error);
@@ -365,7 +391,7 @@ export default function PatientMeals() {
             </Card>
           </div>
         ) : (
-      <div className="space-y-4 lg:space-y-6 animate-fade-in">
+      <div className="space-y-4 lg:space-y-6" data-aos="fade-up">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -493,9 +519,10 @@ export default function PatientMeals() {
               return (
                 <Card
                   key={meal.id}
+                  data-aos="fade-up"
+                  data-aos-delay={String(mealIndex * 70)}
                   className={`border-border shadow-card transition-all duration-300 ${meal.completed ? "bg-primary/5 border-primary/20" : ""
                     }`}
-                  style={{ animationDelay: `${mealIndex * 50}ms` }}
                 >
                   <CardHeader className="pb-2 lg:pb-3 px-3 lg:px-6 pt-3 lg:pt-6">
                     <div className="flex items-center justify-between gap-2">

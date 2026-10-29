@@ -348,7 +348,7 @@ def main() -> int:
     print("\n=== COMPLIANCE ===")
     if super_tok:
         results.append(check("compliance overview", lambda: ((r := client.get("/api/superadmin/compliance/overview", headers=hdr(super_tok))).status_code, r.text[:80])))
-        results.append(check("legal public", lambda: ((r := client.get("/api/public/legal/current?doc_type=privacy_policy")).status_code, r.text[:60])))
+        results.append(check("legal public", lambda: ((r := client.get("/api/public/legal/privacy_policy")).status_code, r.text[:60])))
 
     print("\n=== OPS / MONITORING ===")
     results.append(check("public health", lambda: ((r := client.get("/api/public/health")).status_code, r.text[:80])))

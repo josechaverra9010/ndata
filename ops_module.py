@@ -241,7 +241,24 @@ def _check_uploads(upload_dir: str) -> dict:
         return {"status": "unhealthy", "latency_ms": latency, "message": "Directorio uploads no existe"}
     if not info["writable"]:
         return {"status": "degraded", "latency_ms": latency, "message": "Directorio sin permiso de escritura"}
-    return {"status": "healthy", "latency_ms": latency, "message": f"{info['file_count']} archivos"}
+    message = f"{info['file_count']} archivos locales"
+    gcs_meta = {}
+    try:
+        from media_storage import storage_status
+
+        gcs_meta = storage_status()
+        if gcs_meta.get("gcs_bucket"):
+            message += f" · GCS {gcs_meta['gcs_bucket']}"
+            if not gcs_meta.get("gcs_active"):
+                return {
+                    "status": "degraded",
+                    "latency_ms": latency,
+                    "message": message + " (cliente GCS no listo)",
+                    "gcs": gcs_meta,
+                }
+    except Exception:
+        pass
+    return {"status": "healthy", "latency_ms": latency, "message": message, "gcs": gcs_meta or None}
 
 
 def _check_smtp(email_config: dict) -> dict:

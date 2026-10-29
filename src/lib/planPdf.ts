@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { generatePatientPlanPdf } from "@/lib/planPatientPdf";
 
 /**
  * Generador de PDF profesional para un plan nutricional.
@@ -30,6 +31,7 @@ export interface WeeklyMenuData {
   week_number?: number;
   week?: Array<{
     day: string;
+    week?: number;
     meals: Array<Record<string, any>>;
   }>;
 }
@@ -38,6 +40,11 @@ export interface PlanPdfOptions {
   nutritionistName?: string;
   patientName?: string;
   weeklyMenu?: WeeklyMenuData;
+  /** Menú con recetas e ingredientes (mismo formato que enrichedMenu en PlanDetailsDialog). */
+  enrichedWeeklyMenu?: WeeklyMenuData;
+  ingredientesF4?: Record<string, unknown>;
+  /** `patient` = documento para entregar al paciente; `clinical` = PDF técnico completo. */
+  mode?: "patient" | "clinical";
   licenseTo?: string;
   specialty?: string;
   generatedAt?: string;
@@ -136,6 +143,10 @@ function transformFase1Value(key: string, value: any): string {
 }
 
 export function generatePlanPdf(plan: PlanPdfData, opts: PlanPdfOptions = {}): void {
+  if (opts.mode !== "clinical") {
+    generatePatientPlanPdf(plan, opts);
+    return;
+  }
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 40;

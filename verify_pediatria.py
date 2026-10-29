@@ -28,14 +28,14 @@ base = (ger2 + growth) * 1.15
 catch = 10 * 3 * 5
 print(f"Lactante LM 7kg Activo +10g Triplicar: GER={ger2:.1f} base={base:.0f} catch={catch} total={base+catch:.0f}")
 
-# Braquial
-perim = 160
+# Braquial (perímetro cm, pliegue mm)
+perim = 16
 tri = 10
-pmb = perim - 3.14159 * tri
+pmb = perim - 3.14159 * (tri / 10)
 amb = (pmb ** 2) / (4 * 3.14159)
 atb = (3.14159 / 4) * ((perim / 3.14159) ** 2)
 agb = atb - amb
-print(f"Braquial: PMB={pmb:.1f} AMB={amb:.1f} AGB={agb:.1f}")
+print(f"Braquial: PMB={pmb:.2f} cm AMB={amb:.2f} cm² AGB={agb:.2f} cm²")
 
 assert abs(ger - 1612.25) < 0.1
 assert abs(req - 1612.25) < 0.1
@@ -43,6 +43,6 @@ assert abs(ger2 - 497.6) < 0.1
 assert abs(base - 630) < 1
 assert catch == 150
 assert abs((base + catch) - 780) < 1
-assert abs(pmb - 128.6) < 0.1
+assert abs(pmb - 12.858) < 0.05
 assert ger_1_18(25, mujer=False) > ger  # boys higher GER at same weight in this band
 print("ALL OK")

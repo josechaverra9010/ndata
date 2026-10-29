@@ -129,6 +129,7 @@ export default function SuperadminBilling() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [delinquents, setDelinquents] = useState<{ invoices: Invoice[]; subscriptions: Subscription[] } | null>(null);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
+  const [subTypeFilter, setSubTypeFilter] = useState<"all" | "organization" | "nutritionist" | "patient">("all");
   const [subDialog, setSubDialog] = useState(false);
   const [newSub, setNewSub] = useState({
     plan_id: "",
@@ -449,10 +450,25 @@ export default function SuperadminBilling() {
                   <CardContent className="space-y-2 text-sm">
                     <p className="text-2xl font-bold">{formatCop(p.price_monthly_cop)}<span className="text-xs font-normal text-muted-foreground">/mes</span></p>
                     <p className="flex items-center gap-2 text-muted-foreground">
-                      {p.billing_unit === "organization" ? <Building2 className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-                      Por {p.billing_unit === "organization" ? "organización" : "nutricionista"}
+                      {p.billing_unit === "organization" ? (
+                        <Building2 className="h-4 w-4" />
+                      ) : (
+                        <Users className="h-4 w-4" />
+                      )}
+                      Por{" "}
+                      {p.billing_unit === "organization"
+                        ? "organización"
+                        : p.billing_unit === "patient"
+                          ? "paciente"
+                          : "nutricionista"}
                     </p>
-                    <p>Hasta {p.max_patients} pacientes · {p.max_nutritionists} nutricionista(s)</p>
+                    {p.billing_unit === "patient" ? (
+                      <p>Suscripción individual del paciente</p>
+                    ) : (
+                      <p>
+                        Hasta {p.max_patients} pacientes · {p.max_nutritionists} nutricionista(s)
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -461,19 +477,49 @@ export default function SuperadminBilling() {
 
           <TabsContent value="subscriptions">
             <div className="space-y-3">
-              {subscriptions.map((s) => (
+              <div className="flex flex-wrap items-center gap-2">
+                <Label className="text-sm text-muted-foreground">Filtrar</Label>
+                <Select
+                  value={subTypeFilter}
+                  onValueChange={(v) =>
+                    setSubTypeFilter(v as "all" | "organization" | "nutritionist" | "patient")
+                  }
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="patient">Pacientes</SelectItem>
+                    <SelectItem value="nutritionist">Nutricionistas</SelectItem>
+                    <SelectItem value="organization">Organizaciones</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Badge variant="secondary">
+                  {
+                    subscriptions.filter(
+                      (s) => subTypeFilter === "all" || s.subscriber_type === subTypeFilter
+                    ).length
+                  }{" "}
+                  suscripción(es)
+                </Badge>
+              </div>
+              {subscriptions
+                .filter((s) => subTypeFilter === "all" || s.subscriber_type === subTypeFilter)
+                .map((s) => (
                 <Card key={s.id}>
                   <CardContent className="p-4 flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <p className="font-semibold">{s.subscriber_name}</p>
                         <Badge className={STATUS_COLORS[s.status] || ""}>{s.status}</Badge>
+                        <Badge variant="outline">{s.subscriber_type}</Badge>
                         <Badge variant="outline">{s.payment_provider}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {s.plan_name} · {s.billing_cycle} · MRR {formatCop(s.mrr_cop)}
                       </p>
-                      {s.usage && s.limits && (
+                      {s.usage && s.limits && s.subscriber_type !== "patient" && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Uso: {s.usage.patients}/{s.limits.max_patients} pac · {s.usage.nutritionists}/{s.limits.max_nutritionists} nutri
                         </p>
@@ -493,7 +539,9 @@ export default function SuperadminBilling() {
                   </CardContent>
                 </Card>
               ))}
-              {subscriptions.length === 0 && (
+              {subscriptions.filter(
+                (s) => subTypeFilter === "all" || s.subscriber_type === subTypeFilter
+              ).length === 0 && (
                 <p className="text-center text-muted-foreground py-12">Sin suscripciones — crea una desde el botón superior</p>
               )}
             </div>
@@ -592,6 +640,7 @@ export default function SuperadminBilling() {
                 <SelectContent>
                   <SelectItem value="organization">Organización (EPS)</SelectItem>
                   <SelectItem value="nutritionist">Nutricionista</SelectItem>
+                  <SelectItem value="patient">Paciente</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -608,9 +657,11 @@ export default function SuperadminBilling() {
                 </Select>
               </div>
             )}
-            {newSub.subscriber_type === "nutritionist" && (
+            {(newSub.subscriber_type === "nutritionist" || newSub.subscriber_type === "patient") && (
               <div className="space-y-2">
-                <Label>ID nutricionista (user id)</Label>
+                <Label>
+                  ID {newSub.subscriber_type === "patient" ? "paciente" : "nutricionista"} (user id)
+                </Label>
                 <Input value={newSub.subscriber_id} onChange={(e) => setNewSub({ ...newSub, subscriber_id: e.target.value })} />
               </div>
             )}

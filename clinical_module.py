@@ -257,7 +257,7 @@ def register_clinical_routes(app, deps: dict):
 
 def register_specialty_routes(app, deps: dict):
     get_db = deps["get_db"]
-    require_admin_or_superadmin = deps["require_admin_or_superadmin"]
+    get_current_user = deps["get_current_user"]
     authorize_patient_access = deps["authorize_patient_access"]
     UserDB = deps["UserDB"]
     PatientMealPlanDB = deps["PatientMealPlanDB"]
@@ -265,7 +265,7 @@ def register_specialty_routes(app, deps: dict):
     ProgressMetricDB = deps["ProgressMetricDB"]
 
     @app.get("/api/specialty/patient/{patient_id}")
-    def get_specialty_patient(patient_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin_or_superadmin)):
+    def get_specialty_patient(patient_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
         authorize_patient_access(patient_id, current_user, db)
         patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
         active = db.query(PatientMealPlanDB).filter(PatientMealPlanDB.patient_id == patient_id, PatientMealPlanDB.status == "active").first()
@@ -297,7 +297,7 @@ def register_specialty_routes(app, deps: dict):
         }
 
     @app.patch("/api/specialty/patient/{patient_id}/tracking")
-    def patch_specialty_tracking(patient_id: int, body: TrackingPatch, db: Session = Depends(get_db), current_user=Depends(require_admin_or_superadmin)):
+    def patch_specialty_tracking(patient_id: int, body: TrackingPatch, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
         authorize_patient_access(patient_id, current_user, db)
         patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
         dc = getattr(patient, "datos_clinicos", None) or {}

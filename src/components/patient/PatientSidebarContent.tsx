@@ -13,41 +13,35 @@ import {
   HelpCircle,
   Target,
   Bell,
-  BookOpen,
-  ShoppingCart,
-  FileText,
-  Trophy,
-  GraduationCap,
   Building2,
-  HeartPulse,
   Camera,
-  ArrowRightLeft,
+  CreditCard,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/use-theme";
-import { fetchPatientFeatureFlags, isRouteEnabled, subscribeFeatureFlagRefresh } from "@/lib/featureFlags";
+import {
+  defaultFlags,
+  fetchPatientFeatureFlags,
+  isRouteEnabled,
+  subscribeFeatureFlagRefresh,
+} from "@/lib/featureFlags";
 
+/** Solo módulos visibles para el paciente (sin fases 2–4 ocultas). */
 const menuItems = [
   { icon: LayoutDashboard, label: "Mi Dashboard", path: "/patient" },
   { icon: Utensils, label: "Mis Comidas", path: "/patient/meals" },
+  { icon: Camera, label: "Diario fotográfico", path: "/patient/food-diary" },
   { icon: Apple, label: "Mi Plan Nutricional", path: "/patient/my-plan" },
   { icon: Target, label: "Mi Adherencia", path: "/patient/adherence" },
-  { icon: BookOpen, label: "Recomendaciones", path: "/patient/recommendations" },
-  { icon: ShoppingCart, label: "Lista de Compras", path: "/patient/shopping-list" },
-  { icon: FileText, label: "Mis Documentos", path: "/patient/documents" },
-  { icon: Trophy, label: "Retos y Logros", path: "/patient/challenges" },
-  { icon: GraduationCap, label: "Aprender", path: "/patient/learn" },
-  { icon: HeartPulse, label: "Bienestar", path: "/patient/habits" },
-  { icon: Camera, label: "Diario Fotográfico", path: "/patient/food-diary" },
-  { icon: ArrowRightLeft, label: "Sustituciones", path: "/patient/substitutions" },
   { icon: Building2, label: "Mi Programa", path: "/patient/program" },
   { icon: ChefHat, label: "Recetas", path: "/patient/recipes" },
   { icon: TrendingUp, label: "Mi Progreso", path: "/patient/progress" },
   { icon: Calendar, label: "Mis Citas", path: "/patient/appointments" },
   { icon: Bell, label: "Notificaciones", path: "/patient/notifications" },
   { icon: MessageSquare, label: "Mensajes", path: "/patient/messages" },
+  { icon: CreditCard, label: "Suscripción", path: "/patient/billing" },
   { icon: User, label: "Mi Perfil", path: "/patient/profile" },
   { icon: HelpCircle, label: "Ayuda", path: "/patient/help" },
 ];
@@ -59,7 +53,7 @@ const bottomMenuItems = [
 export function PatientSidebarContent() {
   const { logout } = useAuth();
   const { theme } = useTheme();
-  const [flags, setFlags] = useState<Record<string, boolean> | null>(null);
+  const [flags, setFlags] = useState<Record<string, boolean>>(() => defaultFlags());
 
   useEffect(() => {
     const token = localStorage.getItem("userToken");
@@ -67,10 +61,7 @@ export function PatientSidebarContent() {
     return subscribeFeatureFlagRefresh(fetchPatientFeatureFlags, setFlags);
   }, []);
 
-  const visibleMenu = menuItems.filter((item) => {
-    if (!flags) return true;
-    return isRouteEnabled(item.path, flags);
-  });
+  const visibleMenu = menuItems.filter((item) => isRouteEnabled(item.path, flags));
 
   return (
     <div className="flex h-full flex-col bg-sidebar">

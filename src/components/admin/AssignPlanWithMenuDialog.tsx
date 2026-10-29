@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarIcon, ChefHat, Users, Plus } from "lucide-react";
+import { Calendar as CalendarIcon, ChefHat, Users, Plus, Sparkles, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { API_URL } from "@/config/api";
@@ -53,6 +53,7 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
     const [selectedPlanId, setSelectedPlanId] = useState<string>("");
     const [startDate, setStartDate] = useState<Date>(new Date());
     const [loading, setLoading] = useState(false);
+    const [generatingAi, setGeneratingAi] = useState(false);
     const [createMenuOpen, setCreateMenuOpen] = useState(false);
 
     useEffect(() => {
@@ -139,6 +140,93 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
         });
         setSelectedMenu(String(normalized.id));
         setCreateMenuOpen(false);
+    };
+
+    const selectedPlan = mealPlans.find((p) => p.id.toString() === selectedPlanId);
+    const selectedPatientObj = patients.find((p) => p.id.toString() === selectedPatient);
+    const targetKcalLabel = selectedPlan?.calories
+        ? `${selectedPlan.calories} kcal/día del plan`
+        : "kcal del plan del paciente";
+
+    const handleGenerateAiMenu = async () => {
+        if (!selectedPlanId) {
+            toast({
+                title: "Selecciona un plan",
+                description: "El menú usa las calorías y macros del plan nutricional del paciente.",
+                variant: "destructive",
+            });
+            return;
+        }
+        if (!selectedPatient) {
+            toast({
+                title: "Selecciona un paciente",
+                description: "La IA arma el menú con las kcal del paciente y los ingredientes de la plataforma.",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        setGeneratingAi(true);
+        try {
+            const token = localStorage.getItem("userToken");
+            const response = await fetch(`${API_URL}/weekly-menus/generate-ai`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                    meal_plan_id: parseInt(selectedPlanId, 10),
+                    patient_id: parseInt(selectedPatient, 10),
+                    category: selectedPlan?.category || "Mantenimiento",
+                }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+                const detail = result.detail;
+                throw new Error(
+                    typeof detail === "string"
+                        ? detail
+                        : Array.isArray(detail)
+                          ? detail.map((d: { msg?: string }) => d.msg).join(", ")
+                          : "No se pudo generar el menú con IA"
+                );
+            }
+
+            const menu = result.menu;
+            if (menu?.id) {
+                handleMenuCreated({
+                    id: menu.id,
+                    name: menu.name,
+                    description: menu.description,
+                    category: menu.category,
+                    total_calories: menu.total_calories,
+                    assigned_patients: menu.assigned_patients || 0,
+                });
+            }
+
+            const kcal = result.targets?.calories || selectedPlan?.calories;
+            const patientLabel =
+                result.targets?.patient_name ||
+                (selectedPatientObj
+                    ? `${selectedPatientObj.nombres} ${selectedPatientObj.apellidos}`
+                    : "paciente");
+            toast({
+                title: result.ai_enabled ? "Menú creado con IA" : "Menú automático creado",
+                description: result.ai_enabled
+                    ? `"${menu?.name || "Menú"}" para ${patientLabel}${kcal ? ` · ~${kcal} kcal/día` : ""}. Usa ingredientes/recetas de la plataforma.`
+                    : `Menú básico ~${kcal || "—"} kcal (configura OPENAI_API_KEY para IA completa).`,
+            });
+        } catch (error) {
+            console.error("Error generating AI menu:", error);
+            toast({
+                title: "Error al generar menú",
+                description: error instanceof Error ? error.message : "Intenta de nuevo o créalo manualmente.",
+                variant: "destructive",
+            });
+        } finally {
+            setGeneratingAi(false);
+        }
     };
 
     const handleAssign = async () => {
@@ -260,32 +348,85 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
                         </div>
 
                         <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <Label htmlFor="menu" className="flex items-center gap-2">
                                     <ChefHat className="h-4 w-4" />
                                     Menú Semanal
                                 </Label>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8"
-                                    onClick={() => setCreateMenuOpen(true)}
-                                >
-                                    <Plus className="h-3.5 w-3.5 mr-1" />
-                                    Crear menú
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-8"
+                                        disabled={generatingAi || !selectedPlanId || !selectedPatient}
+                                        onClick={handleGenerateAiMenu}
+                                        title="Usa ingredientes de la plataforma y las kcal del paciente"
+                                    >
+                                        {generatingAi ? (
+                                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                        ) : (
+                                            <Sparkles className="h-3.5 w-3.5 mr-1" />
+                                        )}
+                                        {generatingAi ? "Generando…" : "Menú IA (ingredientes + kcal)"}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8"
+                                        disabled={generatingAi}
+                                        onClick={() => setCreateMenuOpen(true)}
+                                    >
+                                        <Plus className="h-3.5 w-3.5 mr-1" />
+                                        Crear menú
+                                    </Button>
+                                </div>
                             </div>
 
+                            {(selectedPlanId || selectedPatient) && (
+                                <p className="text-[11px] text-muted-foreground -mt-1 mb-1">
+                                    La IA arma el menú con recetas/ingredientes de la plataforma
+                                    {selectedPatientObj
+                                        ? ` para ${selectedPatientObj.nombres} ${selectedPatientObj.apellidos}`
+                                        : ""}
+                                    {selectedPlan?.calories != null ? ` · objetivo ${targetKcalLabel}` : ""}.
+                                </p>
+                            )}
                             {weeklyMenus.length === 0 ? (
                                 <div className="rounded-lg border border-dashed p-4 text-center space-y-3 bg-muted/20">
                                     <p className="text-sm text-muted-foreground">
-                                        No hay menús semanales. Crea uno para continuar con la asignación.
+                                        No hay menús semanales. Genera uno con IA (ingredientes de la plataforma + kcal del
+                                        paciente) o créalo manualmente.
                                     </p>
-                                    <Button type="button" onClick={() => setCreateMenuOpen(true)}>
-                                        <Plus className="h-4 w-4 mr-1.5" />
-                                        Crear menú semanal
-                                    </Button>
+                                    <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                                        <Button
+                                            type="button"
+                                            disabled={generatingAi || !selectedPlanId || !selectedPatient}
+                                            onClick={handleGenerateAiMenu}
+                                        >
+                                            {generatingAi ? (
+                                                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                                            ) : (
+                                                <Sparkles className="h-4 w-4 mr-1.5" />
+                                            )}
+                                            {generatingAi ? "Generando menú…" : "Crear menú con IA"}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            disabled={generatingAi}
+                                            onClick={() => setCreateMenuOpen(true)}
+                                        >
+                                            <Plus className="h-4 w-4 mr-1.5" />
+                                            Crear manualmente
+                                        </Button>
+                                    </div>
+                                    {(!selectedPlanId || !selectedPatient) && (
+                                        <p className="text-xs text-amber-700">
+                                            Selecciona plan y paciente para generar el menú con sus kcal.
+                                        </p>
+                                    )}
                                 </div>
                             ) : (
                                 <Select value={selectedMenu} onValueChange={setSelectedMenu}>
@@ -367,7 +508,7 @@ export function AssignPlanWithMenuDialog({ plan, open, onOpenChange, onAssignSuc
                         </Button>
                         <Button
                             onClick={handleAssign}
-                            disabled={loading || !selectedMenu}
+                            disabled={loading || generatingAi || !selectedMenu}
                             className="gradient-primary border-0"
                         >
                             {loading ? "Asignando..." : "Asignar Plan y Menú"}

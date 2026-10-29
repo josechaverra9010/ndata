@@ -1,4 +1,5 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
+import AOS from "aos";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LOADING_MIN_DURATION_MS, useLoadingGate } from "@/hooks/useLoadingGate";
 
@@ -23,16 +24,32 @@ export function LoadingGate({
 }: LoadingGateProps) {
   const { showLoading, markAnimationComplete } = useLoadingGate(loading, minDurationMs);
 
+  useEffect(() => {
+    if (showLoading) return;
+    const t = window.setTimeout(() => {
+      try {
+        AOS.refresh();
+      } catch {
+        /* AOS puede no estar listo aún */
+      }
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [showLoading]);
+
   if (showLoading) {
     return (
       <LoadingScreen
+        fullscreen
         message={message}
-        className={className}
+        /* No pasar min-h del contenido: rompe el overlay fullscreen */
         onAnimationComplete={markAnimationComplete}
         minDurationMs={minDurationMs}
       />
     );
   }
 
+  if (className) {
+    return <div className={className}>{children}</div>;
+  }
   return <>{children}</>;
 }

@@ -53,6 +53,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { resolveMediaUrl } from "@/lib/media";
 import { startImpersonation } from "@/lib/impersonation";
 import {
   Select,
@@ -92,6 +93,7 @@ interface Nutritionist {
   specialty: string | null;
   patients: number;
   rating: number;
+  phone?: string | null;
   status: string;
   avatar?: string;
   joinedAt: string;
@@ -103,6 +105,9 @@ interface Nutritionist {
   license_alert?: string | null;
   invite_expires_at?: string | null;
   onboarding?: Onboarding;
+  lastLogin?: string | null;
+  lastSeen?: string | null;
+  lastOnline?: string | null;
 }
 
 interface NutritionistDetails extends Nutritionist {
@@ -118,6 +123,7 @@ interface OrganizationOption {
 
 import { API_URL } from "@/config/api";
 import { STAFF_ROLE_LABELS, StaffRole } from "@/lib/staffPermissions";
+import { formatUserLastOnline } from "@/lib/timezone";
 
 export default function SuperadminNutritionists() {
   const [nutritionists, setNutritionists] = useState<Nutritionist[]>([]);
@@ -228,6 +234,7 @@ export default function SuperadminNutritionists() {
     try {
       const response = await fetch(`${API_URL}/superadmin/nutritionists/${id}`, {
         method: "DELETE",
+        headers: authHeaders(),
       });
 
       if (response.ok) {
@@ -245,7 +252,9 @@ export default function SuperadminNutritionists() {
 
   const handleViewDetails = async (id: number) => {
     try {
-      const response = await fetch(`${API_URL}/superadmin/nutritionists/${id}`);
+      const response = await fetch(`${API_URL}/superadmin/nutritionists/${id}`, {
+        headers: authHeaders(),
+      });
       const data = await response.json();
       setSelectedNutritionist(data);
       setIsDetailsOpen(true);
@@ -327,18 +336,43 @@ export default function SuperadminNutritionists() {
     }
   };
 
-  const handleEdit = (nutritionist: Nutritionist) => {
+  const handleEdit = async (nutritionist: Nutritionist) => {
+    setIsEditOpen(true);
     setSelectedNutritionist(nutritionist as NutritionistDetails);
     setEditData({
       name: nutritionist.name,
       email: nutritionist.email,
+      phone: nutritionist.phone || "",
       specialty: nutritionist.specialty || "",
       staff_role: nutritionist.staff_role || "nutritionist",
       license: nutritionist.license || "",
       license_expiry: nutritionist.license_expiry || "",
       organization_id: nutritionist.organization_id ?? undefined,
+      bio: "",
     });
-    setIsEditOpen(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      const res = await fetch(`${API_URL}/superadmin/nutritionists/${nutritionist.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const details = (await res.json()) as NutritionistDetails;
+        setSelectedNutritionist(details);
+        setEditData({
+          name: details.name,
+          email: details.email,
+          phone: details.phone || "",
+          specialty: details.specialty || "",
+          staff_role: details.staff_role || "nutritionist",
+          license: details.license || "",
+          license_expiry: details.license_expiry || "",
+          organization_id: details.organization_id ?? undefined,
+          bio: details.bio || "",
+        });
+      }
+    } catch (e) {
+      console.error("Error loading nutritionist details:", e);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -422,11 +456,11 @@ export default function SuperadminNutritionists() {
 
   const handleImpersonate = async (id: number) => {
     const reason = window.prompt(
-      "Motivo de impersonación (mín. 5 caracteres — queda en auditoría):"
+      "Motivo de impersonación (mín. 3 caracteres — queda en auditoría):"
     );
     if (!reason?.trim()) return;
-    const ok = await startImpersonation(id, reason.trim());
-    if (!ok) toast.error("No se pudo iniciar impersonación. Verifica el motivo (mín. 5 caracteres).");
+    const result = await startImpersonation(id, reason.trim());
+    if (!result.ok) toast.error(result.error);
   };
 
   const runBulkAction = async (action: string, extra?: Record<string, unknown>) => {
@@ -486,6 +520,7 @@ export default function SuperadminNutritionists() {
     try {
       const response = await fetch(`${API_URL}/superadmin/users/${id}/toggle-status`, {
         method: "PATCH",
+        headers: authHeaders(),
       });
 
       if (response.ok) {
@@ -493,11 +528,18 @@ export default function SuperadminNutritionists() {
         toast.success(`Nutricionista ${data.status === "activo" ? "activado" : "desactivado"}`);
         fetchNutritionists();
       } else {
-        throw new Error("Error al cambiar estado");
+        const data = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : response.status === 401
+              ? "Sesión expirada. Inicia sesión de nuevo."
+              : "Error al cambiar estado"
+        );
       }
     } catch (error) {
       console.error("Error:", error);
-      toast.error("Error al cambiar estado");
+      toast.error(error instanceof Error ? error.message : "Error al cambiar estado");
     }
   };
 
@@ -634,7 +676,7 @@ export default function SuperadminNutritionists() {
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <Avatar className="h-12 w-12">
-                      <AvatarImage src={nutritionist.avatar} />
+                      <AvatarImage src={resolveMediaUrl(nutritionist.avatar)} />
                       <AvatarFallback className="bg-primary/10 text-primary">
                         {nutritionist.name.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
@@ -750,6 +792,17 @@ export default function SuperadminNutritionists() {
                     </span>
                     <span className="font-medium text-foreground">
                       {nutritionist.rating > 0 ? nutritionist.rating.toFixed(2) : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <LogIn className="h-4 w-4" />
+                      Última vez en línea
+                    </span>
+                    <span className="text-foreground text-xs text-right max-w-[55%]">
+                      {formatUserLastOnline(
+                        nutritionist.lastOnline || nutritionist.lastSeen || nutritionist.lastLogin
+                      )}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
@@ -873,7 +926,7 @@ export default function SuperadminNutritionists() {
               {/* Header con Avatar */}
               <div className="flex items-start gap-4 pb-4 border-b">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src={selectedNutritionist.avatar} />
+                  <AvatarImage src={resolveMediaUrl(selectedNutritionist.avatar)} />
                   <AvatarFallback className="bg-primary/10 text-primary text-2xl">
                     {selectedNutritionist.name.split(' ').map(n => n[0]).join('')}
                   </AvatarFallback>
@@ -988,6 +1041,14 @@ export default function SuperadminNutritionists() {
                     <CardContent className="pt-4 text-center">
                       <Calendar className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
                       <p className="text-xs text-muted-foreground">{selectedNutritionist.joinedAt}</p>
+                      <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                        En línea:{" "}
+                        {formatUserLastOnline(
+                          selectedNutritionist.lastOnline ||
+                            selectedNutritionist.lastSeen ||
+                            selectedNutritionist.lastLogin
+                        )}
+                      </p>
                     </CardContent>
                   </Card>
                 </div>

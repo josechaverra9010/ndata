@@ -4,8 +4,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { List, Utensils, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Clock, Flame, List, Utensils, Loader2 } from "lucide-react";
+import {
+  parseIngredientForDisplay,
+  sumMealNutritionFromIngredients,
+  resolveMealCalories,
+  type IngredientInput,
+} from "@/lib/mealIngredientDisplay";
 
 export interface MealDetail {
   meal?: string;
@@ -15,9 +21,19 @@ export interface MealDetail {
   description?: string;
   calories?: number;
   calorias?: number;
-  ingredients?: (string | { name?: string; portion?: string; grams?: string; cantidad?: string; amount?: string; quantity?: string })[];
+  time?: string;
+  ingredients?: IngredientInput[];
   instructions?: string[];
   image?: string;
+  recipes?: {
+    recipe_id?: number;
+    recipe_name?: string;
+    calories?: number;
+    protein?: number;
+    carbs?: number;
+    fat?: number;
+    image?: string;
+  }[];
 }
 
 interface MealDetailDialogProps {
@@ -27,6 +43,7 @@ interface MealDetailDialogProps {
   /** Si se pasa, se usa para construir la URL de la imagen (ej. path relativo -> URL completa) */
   getImageUrl?: (imagePath: string | undefined) => string;
   loading?: boolean;
+  showCloseFooter?: boolean;
 }
 
 function normalizeList<T>(val: unknown, stringKeys?: string[]): T[] {
@@ -48,24 +65,28 @@ export function MealDetailDialog({
   meal,
   getImageUrl,
   loading = false,
+  showCloseFooter = false,
 }: MealDetailDialogProps) {
   const title = meal?.receta ?? meal?.food ?? meal?.name ?? meal?.description ?? "Detalle de comida";
-  const kcal = meal?.calories ?? meal?.calorias ?? 0;
+  const ingredients = Array.isArray(meal?.ingredients)
+    ? meal.ingredients
+    : normalizeList<IngredientInput>(
+        (meal as Record<string, unknown>)?.ingredients ?? (meal as Record<string, unknown>)?.ingredientes
+      );
+  const nutritionSum = sumMealNutritionFromIngredients(ingredients);
+  const kcal = resolveMealCalories(ingredients, meal?.calories ?? meal?.calorias ?? 0);
   const imgSrc = meal?.image
     ? (getImageUrl ? getImageUrl(meal.image) : meal.image)
     : "";
-  const ingredients = Array.isArray(meal?.ingredients)
-    ? meal.ingredients
-    : normalizeList((meal as Record<string, unknown>)?.ingredients ?? (meal as Record<string, unknown>)?.ingredientes);
   const instructions = Array.isArray(meal?.instructions)
     ? meal.instructions
     : normalizeList<string>((meal as Record<string, unknown>)?.instructions ?? (meal as Record<string, unknown>)?.instrucciones ?? (meal as Record<string, unknown>)?.steps);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md lg:max-w-2xl h-[90vh] sm:h-[85vh] overflow-hidden flex flex-col p-0 border-none sm:rounded-3xl">
+      <DialogContent className="flex h-[min(90dvh,90vh)] w-full max-w-md flex-col gap-0 overflow-hidden border-border/70 p-0 sm:rounded-2xl lg:max-w-2xl">
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 rounded-3xl">
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-background/80">
             <div className="flex flex-col items-center gap-2">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="text-sm text-muted-foreground">Cargando receta...</p>
@@ -75,136 +96,182 @@ export function MealDetailDialog({
 
         {meal && (
           <>
-            <div className="relative h-32 shrink-0 bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b border-border/50">
-              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#6366f1_1px,transparent_1px)] [background-size:16px_16px]" />
-              <div className="absolute bottom-6 left-6 right-6">
-                <div className="flex items-end justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider mb-1">
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                      {meal.meal ?? "Comida"}
-                    </div>
-                    <DialogTitle className="text-2xl font-extrabold tracking-tight text-foreground line-clamp-1">
-                      {title}
-                    </DialogTitle>
+            <div className="relative shrink-0 border-b border-border/50 bg-gradient-to-br from-primary/15 via-primary/5 to-background px-5 pb-5 pt-4 sm:px-6">
+              <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-primary/15 blur-2xl" />
+              <div className="flex items-end justify-between gap-4">
+                <div className="min-w-0 space-y-1">
+                  <div className="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-primary">
+                    <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                    {meal.meal ?? "Comida"}
                   </div>
-                  <Badge variant="secondary" className="mb-1 font-bold bg-primary/10 text-primary border-primary/20 px-3 py-1">
-                    {kcal} kcal
-                  </Badge>
+                  <DialogTitle className="text-xl font-extrabold tracking-tight text-foreground sm:text-2xl sm:leading-tight">
+                    {title}
+                  </DialogTitle>
                 </div>
+                <Badge className="mb-0.5 shrink-0 rounded-full border-0 bg-orange-500/15 px-3 py-1 font-bold text-orange-700 dark:text-orange-300">
+                  <Flame className="mr-1 inline h-3 w-3" />
+                  {kcal} kcal
+                </Badge>
               </div>
             </div>
 
-            <ScrollArea className="flex-1 min-h-0 px-6">
-              <div className="space-y-8 py-6 pb-10">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="w-full min-w-0 space-y-6 px-5 py-5 pb-8 sm:px-6">
+                {meal.recipes && meal.recipes.length > 1 && (
+                  <div className="space-y-2 rounded-2xl border border-border/50 bg-muted/20 p-4">
+                    <p className="text-sm font-semibold text-foreground">Opciones para esta comida</p>
+                    <ul className="space-y-2">
+                      {meal.recipes.map((r, idx) => (
+                        <li key={r.recipe_id ?? idx} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="min-w-0 truncate font-medium">{r.recipe_name}</span>
+                          <span className="shrink-0 text-muted-foreground">{r.calories ?? 0} kcal</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-muted-foreground">
+                      Puedes elegir cualquiera de estas recetas; los totales del slot suman {kcal} kcal.
+                    </p>
+                  </div>
+                )}
+
                 {imgSrc && (
-                  <div className="group relative rounded-2xl overflow-hidden border border-border/50 shadow-2xl transition-all duration-500 hover:shadow-primary/10">
-                    <div className="aspect-video w-full">
+                  <div data-meal-photo className="overflow-hidden rounded-2xl border border-border/60 bg-muted/20 shadow-md">
+                    <div className="relative aspect-[16/10] w-full min-h-[9.5rem] sm:min-h-[11rem]">
                       <img
                         src={imgSrc}
                         alt={title}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                        className="absolute inset-0 h-full w-full object-cover"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).parentElement?.parentElement?.style.setProperty("display", "none");
+                          (e.target as HTMLImageElement).closest("[data-meal-photo]")?.style.setProperty("display", "none");
                         }}
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                     </div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                      <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600">
+                {meal.time && (
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5 text-primary" />
+                    Horario sugerido: {meal.time}
+                  </div>
+                )}
+
+                {nutritionSum.matched > 0 && (
+                  <div className="flex flex-wrap gap-2 rounded-2xl border border-border/50 bg-muted/25 px-3 py-2.5 text-xs">
+                    <span className="font-semibold text-foreground">
+                      Total calculado: {nutritionSum.kcal} kcal
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="text-muted-foreground">
+                      P {nutritionSum.protein}g · C {nutritionSum.carbs}g · G {nutritionSum.fat}g
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex w-full min-w-0 flex-col gap-8 lg:flex-row lg:items-start lg:gap-8">
+                  <section className="min-w-0 flex-1 space-y-4 lg:max-w-[50%]">
+                    <div className="flex items-center gap-3 border-b border-border/50 pb-2">
+                      <div className="rounded-xl bg-orange-500/10 p-2 text-orange-600 dark:text-orange-400">
                         <List className="h-5 w-5" />
                       </div>
-                      <h3 className="font-bold text-foreground tracking-tight">Ingredientes</h3>
+                      <h3 className="font-bold tracking-tight text-foreground">Ingredientes</h3>
                     </div>
 
-                    {meal.ingredients && meal.ingredients.length > 0 ? (
-                      <div className="grid gap-2.5">
-                        {meal.ingredients.map((ingredient, idx) => {
-                          const isObject = typeof ingredient === "object" && ingredient !== null;
-                          let name: string;
-                          let amount: string | null = null;
-                          if (isObject) {
-                            const ing = ingredient as { name?: string; portion?: string; grams?: string; cantidad?: string; amount?: string; quantity?: string };
-                            name = ing.name ?? "";
-                            amount = ing.portion ?? ing.grams ?? ing.cantidad ?? ing.amount ?? ing.quantity ?? null;
-                          } else {
-                            const str = String(ingredient ?? "").trim();
-                            const colonIdx = str.indexOf(":");
-                            if (colonIdx > 0) {
-                              name = str.slice(0, colonIdx).trim();
-                              amount = str.slice(colonIdx + 1).trim() || null;
-                            } else {
-                              name = str;
-                            }
-                          }
+                    {ingredients.length > 0 ? (
+                      <ul className="m-0 grid list-none gap-2.5 p-0">
+                        {ingredients.map((ingredient, idx) => {
+                          const row = parseIngredientForDisplay(ingredient);
                           return (
-                            <div
+                            <li
                               key={idx}
-                              className="flex items-center justify-between p-3.5 rounded-xl bg-muted/30 border border-border/20 hover:border-primary/30 hover:bg-primary/5 transition-all duration-300 group"
+                              className="grid grid-cols-[1fr_auto] items-start gap-x-2 gap-y-1 rounded-xl border border-border/40 bg-muted/30 p-3"
                             >
-                              <div className="flex items-center gap-3">
-                                <div className="h-1.5 w-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors" />
-                                <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground capitalize leading-tight">
-                                  {name}
-                                </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold capitalize leading-snug text-foreground/90">
+                                  {row.name}
+                                </p>
+                                {row.porcionLabel && (
+                                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                                    Porción: {row.porcionLabel}
+                                  </p>
+                                )}
                               </div>
-                              {amount && (
-                                <Badge variant="outline" className="text-[10px] uppercase font-black px-2 py-0 border-primary/20 text-primary bg-primary/10 shadow-sm">
-                                  {amount}
-                                </Badge>
-                              )}
-                            </div>
+                              <div className="flex shrink-0 flex-col items-end gap-1">
+                                {row.gramsLabel && (
+                                  <Badge
+                                    variant="outline"
+                                    className="whitespace-nowrap border-primary/20 bg-primary/10 px-2 py-0 text-[10px] font-bold text-primary"
+                                  >
+                                    {row.gramsLabel}
+                                  </Badge>
+                                )}
+                                {row.matchedTable && row.kcal > 0 && (
+                                  <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                                    ~{Math.round(row.kcal)} kcal
+                                  </span>
+                                )}
+                              </div>
+                            </li>
                           );
                         })}
-                      </div>
+                      </ul>
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-10 bg-muted/20 rounded-2xl border-2 border-dashed border-border/50 text-center px-4">
-                        <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
+                      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/20 px-4 py-10 text-center">
+                        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
                           <List className="h-6 w-6 text-muted-foreground/60" />
                         </div>
                         <p className="text-sm font-medium text-muted-foreground">No hay ingredientes listados.</p>
                       </div>
                     )}
-                  </div>
+                  </section>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+                  <section className="min-w-0 flex-1 space-y-4 lg:max-w-[50%]">
+                    <div className="flex items-center gap-3 border-b border-border/50 pb-2">
+                      <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
                         <Utensils className="h-5 w-5" />
                       </div>
-                      <h3 className="font-bold text-foreground tracking-tight">Preparación</h3>
+                      <h3 className="font-bold tracking-tight text-foreground">Preparación</h3>
                     </div>
 
                     {instructions.length > 0 ? (
-                      <div className="space-y-4">
+                      <ol className="m-0 flex list-none flex-col gap-4 p-0">
                         {instructions.map((step, idx) => (
-                          <div key={idx} className="flex gap-4 group">
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary text-xs font-black shadow-sm group-hover:bg-primary group-hover:text-white transition-colors">
+                          <li
+                            key={idx}
+                            className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-0"
+                          >
+                            <span
+                              className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary"
+                              aria-hidden
+                            >
                               {idx + 1}
                             </span>
-                            <p className="text-sm leading-relaxed text-muted-foreground group-hover:text-foreground transition-colors pt-0.5 font-medium">
+                            <p className="min-w-0 pt-0.5 text-sm font-medium leading-relaxed text-muted-foreground">
                               {typeof step === "string" ? step : String(step)}
                             </p>
-                          </div>
+                          </li>
                         ))}
-                      </div>
+                      </ol>
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-10 bg-muted/20 rounded-2xl border-2 border-dashed border-border/50 text-center px-4">
-                        <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
+                      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/20 px-4 py-10 text-center">
+                        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
                           <Utensils className="h-6 w-6 text-muted-foreground/60" />
                         </div>
                         <p className="text-sm font-medium text-muted-foreground">No hay pasos disponibles.</p>
                       </div>
                     )}
-                  </div>
+                  </section>
                 </div>
               </div>
-            </ScrollArea>
+            </div>
+
+            {showCloseFooter && (
+              <div className="flex shrink-0 justify-end border-t border-border bg-background/95 p-4">
+                <Button className="rounded-full px-6" type="button" onClick={() => onOpenChange(false)}>
+                  Cerrar
+                </Button>
+              </div>
+            )}
           </>
         )}
       </DialogContent>

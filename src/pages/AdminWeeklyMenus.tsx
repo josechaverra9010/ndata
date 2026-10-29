@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { API_URL } from "@/config/api";
 import { MEAL_SCHEDULE } from "@/config/mealSchedule";
 import { AdminLayout } from "@/layouts/AdminLayout";
@@ -15,8 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
     Search, Plus, Calendar, ChefHat, Clock, Flame, LayoutGrid,
     Edit, Trash2, Copy, MoreVertical, Apple, Coffee, Sandwich,
-    Moon, Filter, Check, Beef, Wheat, Droplets, X, Users, Eye
+    Moon, Filter, Check, Beef, Wheat, Droplets, X, Users, Eye, Sparkles, Loader2
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -34,6 +35,17 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BulkAssignMenuDialog } from "@/components/admin/BulkAssignMenuDialog";
+import {
+    MAX_RECIPES_PER_MEAL,
+    buildMealSlotFromRecipes,
+    hasMealRecipes,
+    hydrateMealSlot,
+    mealRecipeEntries,
+    recipeFromCatalog,
+    syncMealSlotMacros,
+    toggleRecipeSelection,
+    type WeeklyMealSlot,
+} from "@/lib/weeklyMenuMeals";
 
 // El API_URL se importa desde @/config/api
 
@@ -51,21 +63,7 @@ interface Recipe {
     instructions?: string[];
 }
 
-interface MealSlot {
-    type: "desayuno" | "almuerzo" | "comida" | "merienda" | "cena";
-    recipe_id?: number;
-    recipe_name: string;
-    calories: number;
-    protein: number;
-    carbs: number;
-    fat: number;
-    time: string;
-    notes?: string;
-    image?: string;
-    imagen?: string; // compatibilidad con API
-    ingredients?: string[];
-    instructions?: string[];
-}
+type MealSlot = WeeklyMealSlot & { imagen?: string };
 
 interface DayMenu {
     day: string;
@@ -123,6 +121,7 @@ const mealTypes = MEAL_SCHEDULE.map((m) => ({
 }));
 
 const AdminWeeklyMenus = () => {
+    const { toast } = useToast();
     const [weeklyMenus, setWeeklyMenus] = useState<WeeklyMenu[]>([]);
     const [recipes, setRecipes] = useState<Recipe[]>([]);
     const [loading, setLoading] = useState(true);
@@ -139,6 +138,26 @@ const AdminWeeklyMenus = () => {
     const [addMealDialogOpen, setAddMealDialogOpen] = useState(false);
     const [assignMenuOpen, setAssignMenuOpen] = useState(false);
     const [menuToAssign, setMenuToAssign] = useState<WeeklyMenu | null>(null);
+    const [aiMenuOpen, setAiMenuOpen] = useState(false);
+    const [generatingAi, setGeneratingAi] = useState(false);
+    const [aiPatients, setAiPatients] = useState<{ id: number; nombres: string; apellidos: string }[]>([]);
+    const [aiPatientId, setAiPatientId] = useState("");
+    const [aiWeeks, setAiWeeks] = useState("4");
+    const [aiInstructions, setAiInstructions] = useState("");
+    const [aiCategory, setAiCategory] = useState<string>("Mantenimiento");
+    const [aiPatientCtx, setAiPatientCtx] = useState<{
+        calories?: number;
+        protein?: number;
+        carbs?: number;
+        fat?: number;
+        food_rejections?: string;
+        allergies?: string;
+        plan_name?: string;
+        kcal_source?: string;
+        weight?: number | null;
+        activity?: string | null;
+    } | null>(null);
+    const [loadingAiCtx, setLoadingAiCtx] = useState(false);
 
     // Selected data
     const [selectedMenu, setSelectedMenu] = useState<WeeklyMenu | null>(null);
@@ -153,8 +172,10 @@ const AdminWeeklyMenus = () => {
         category: "Pérdida de peso",
     });
 
-    const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+    const [selectedRecipes, setSelectedRecipes] = useState<Recipe[]>([]);
+    const [recipeSearch, setRecipeSearch] = useState("");
     const [mealNotes, setMealNotes] = useState("");
+    const [currentWeekTab, setCurrentWeekTab] = useState("1");
 
     const getImageUrl = (imagePath: string | undefined | null) => {
         if (!imagePath || typeof imagePath !== "string") return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
@@ -192,6 +213,20 @@ const AdminWeeklyMenus = () => {
     };
 
     const [currentWeek, setCurrentWeek] = useState<DayMenu[]>(createEmptyWeek());
+
+    const recipeCatalogMap = useMemo(
+        () => new Map(recipes.map((r) => [r.id, r])),
+        [recipes]
+    );
+
+    const syncWeekMeals = useCallback(
+        (week: DayMenu[]) =>
+            week.map((day) => ({
+                ...day,
+                meals: day.meals.map((m) => syncMealSlotMacros(m, recipeCatalogMap)),
+            })),
+        [recipeCatalogMap]
+    );
 
     // Load data
     useEffect(() => {
@@ -282,9 +317,9 @@ const AdminWeeklyMenus = () => {
         weeklyMenus.forEach(menu => {
             menu.week.forEach(day => {
                 day.meals.forEach(meal => {
-                    if (meal.recipe_id) {
-                        uniqueRecipes.add(meal.recipe_id);
-                    }
+                    mealRecipeEntries(meal).forEach((e) => {
+                        if (e.recipe_id) uniqueRecipes.add(e.recipe_id);
+                    });
                 });
             });
         });
@@ -299,26 +334,25 @@ const AdminWeeklyMenus = () => {
 
     // Calcular totales automáticamente
     const calculateWeekTotals = (week: DayMenu[]) => {
+        const syncedWeek = syncWeekMeals(week);
         let totalCalories = 0;
         let totalProtein = 0;
         let totalCarbs = 0;
         let totalFat = 0;
-        let mealCount = 0;
 
-        week.forEach(day => {
+        syncedWeek.forEach(day => {
             day.meals.forEach(meal => {
-                if (meal.recipe_name) {
+                if (hasMealRecipes(meal)) {
                     totalCalories += meal.calories;
                     totalProtein += meal.protein;
                     totalCarbs += meal.carbs;
                     totalFat += meal.fat;
-                    mealCount++;
                 }
             });
         });
 
-        const daysWithMeals = week.filter(day =>
-            day.meals.some(meal => meal.recipe_name)
+        const daysWithMeals = syncedWeek.filter(day =>
+            day.meals.some(meal => hasMealRecipes(meal))
         ).length;
 
         return {
@@ -337,11 +371,12 @@ const AdminWeeklyMenus = () => {
 
         const totals = calculateWeekTotals(currentWeek);
 
+        const syncedWeek = syncWeekMeals(currentWeek);
         const menuData = {
             name: menuForm.name,
             description: menuForm.description,
             category: menuForm.category,
-            week: currentWeek
+            week: syncedWeek,
         };
 
         try {
@@ -374,11 +409,12 @@ const AdminWeeklyMenus = () => {
     const handleUpdateMenu = async () => {
         if (!selectedMenu) return;
 
+        const syncedWeek = syncWeekMeals(currentWeek);
         const updateData = {
             name: menuForm.name,
             description: menuForm.description,
             category: menuForm.category,
-            week: currentWeek
+            week: syncedWeek,
         };
 
         try {
@@ -407,15 +443,50 @@ const AdminWeeklyMenus = () => {
     };
 
     const handleAddMeal = (day: string, mealType: MealSlot["type"]) => {
+        const weekNum = parseInt(currentWeekTab);
+        const existing = currentWeek.find((d) => d.day === day && d.week === weekNum)?.meals.find((m) => m.type === mealType);
+        const hydrated = existing ? hydrateMealSlot(existing) : null;
         setCurrentDay(day);
         setCurrentMealType(mealType);
+        setSelectedRecipes(
+            hydrated
+                ? mealRecipeEntries(hydrated)
+                      .map((e) => {
+                          const found = recipes.find((r) => r.id === e.recipe_id);
+                          if (found) return found;
+                          if (!e.recipe_name) return null;
+                          return {
+                              id: e.recipe_id || 0,
+                              name: e.recipe_name,
+                              calories: e.calories,
+                              protein: e.protein,
+                              carbs: e.carbs,
+                              fat: e.fat,
+                              prepTime: 0,
+                              image: e.image || "",
+                          } as Recipe;
+                      })
+                      .filter((r): r is Recipe => !!r)
+                : []
+        );
+        setMealNotes(hydrated?.notes || "");
+        setRecipeSearch("");
         setAddMealDialogOpen(true);
     };
 
-    const [currentWeekTab, setCurrentWeekTab] = useState("1");
+    const filteredRecipes = useMemo(() => {
+        const q = recipeSearch.trim().toLowerCase();
+        if (!q) return recipes;
+        return recipes.filter((r) => {
+            const name = (r.name || "").toLowerCase();
+            const category = (r.category || "").toLowerCase();
+            return name.includes(q) || category.includes(q);
+        });
+    }, [recipes, recipeSearch]);
 
     const handleConfirmAddMeal = () => {
-        if (!selectedRecipe || !currentDay || !currentMealType) return;
+        if (selectedRecipes.length === 0 || !currentDay || !currentMealType) return;
+        const entries = selectedRecipes.map(recipeFromCatalog);
 
         setCurrentWeek(prev => prev.map(dayMenu => {
             if (dayMenu.day === currentDay && dayMenu.week === parseInt(currentWeekTab)) {
@@ -423,20 +494,7 @@ const AdminWeeklyMenus = () => {
                     ...dayMenu,
                     meals: dayMenu.meals.map(meal => {
                         if (meal.type === currentMealType) {
-                            return {
-                                type: meal.type,
-                                recipe_id: selectedRecipe.id,
-                                recipe_name: selectedRecipe.name,
-                                calories: selectedRecipe.calories,
-                                protein: selectedRecipe.protein,
-                                carbs: selectedRecipe.carbs,
-                                fat: selectedRecipe.fat,
-                                time: meal.time,
-                                notes: mealNotes,
-                                image: selectedRecipe.image,
-                                ingredients: selectedRecipe.ingredients,
-                                instructions: selectedRecipe.instructions
-                            };
+                            return buildMealSlotFromRecipes(meal.type, meal.time, entries, mealNotes);
                         }
                         return meal;
                     }),
@@ -446,7 +504,7 @@ const AdminWeeklyMenus = () => {
         }));
 
         setAddMealDialogOpen(false);
-        setSelectedRecipe(null);
+        setSelectedRecipes([]);
         setMealNotes("");
     };
 
@@ -467,6 +525,7 @@ const AdminWeeklyMenus = () => {
                                 fat: 0,
                                 time: mealTypeInfo?.time || meal.time,
                                 notes: "",
+                                recipes: [],
                             };
                         }
                         return meal;
@@ -552,7 +611,10 @@ const AdminWeeklyMenus = () => {
             if (foundDay) {
                 return {
                     ...foundDay,
-                    week: emptyDay.week // Ensure week is set correctly
+                    week: emptyDay.week,
+                    meals: foundDay.meals.map((m) =>
+                        syncMealSlotMacros(hydrateMealSlot(m), recipeCatalogMap)
+                    ),
                 };
             }
             return emptyDay;
@@ -566,6 +628,7 @@ const AdminWeeklyMenus = () => {
         setMenuForm({ name: "", description: "", category: "Pérdida de peso" });
         setCurrentWeek(createEmptyWeek());
         setSelectedMenu(null);
+        setRecipeSearch("");
     };
 
     const filteredMenus = Array.isArray(weeklyMenus) ? weeklyMenus.filter(menu => {
@@ -595,21 +658,21 @@ const AdminWeeklyMenus = () => {
                             <div className="text-left text-xs rounded-xl bg-muted/50 border p-3 space-y-1">
                                 <p className="font-medium">Verifica que:</p>
                                 <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                                    <li>El backend esté corriendo en {API_URL}</li>
-                                    <li>La tabla weekly_menus_complete exista</li>
+                                <li>El backend esté corriendo en {API_URL}</li>
+                                <li>La tabla weekly_menus_complete exista</li>
                                     <li>Los endpoints estén configurados</li>
-                                </ul>
-                            </div>
+                            </ul>
                         </div>
+                    </div>
                         <Button
                             className="rounded-full"
                             onClick={() => {
-                                setError(null);
-                                fetchWeeklyMenus();
+                        setError(null);
+                        fetchWeeklyMenus();
                             }}
                         >
-                            Reintentar
-                        </Button>
+                        Reintentar
+                    </Button>
                     </CardContent>
                 </Card>
                 </LoadingGate>
@@ -622,7 +685,10 @@ const AdminWeeklyMenus = () => {
             <LoadingGate loading={loading} message="Cargando menús semanales">
             <div className="space-y-6">
                 {/* Header */}
-                <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-violet-500/5 p-5 sm:p-6">
+                <div
+                    data-aos="fade-up"
+                    className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-violet-500/5 p-5 sm:p-6"
+                >
                     <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/10 blur-2xl" />
                     <div className="absolute -left-6 bottom-0 h-24 w-24 rounded-full bg-violet-500/10 blur-2xl" />
                     <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -630,7 +696,7 @@ const AdminWeeklyMenus = () => {
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-sm ring-1 ring-primary/20">
                                 <Calendar className="h-6 w-6" />
                             </div>
-                            <div>
+                    <div>
                                 <h1 className="text-2xl font-bold tracking-tight text-foreground">Menú semanal</h1>
                                 <p className="text-sm text-muted-foreground mt-0.5">
                                     Planes de 4 semanas para asignar a pacientes
@@ -638,15 +704,38 @@ const AdminWeeklyMenus = () => {
                                         <span className="font-medium text-foreground/80"> · {filteredMenus.length} mostrados</span>
                                     )}
                                 </p>
-                            </div>
+                    </div>
                         </div>
-                        <Button
-                            className="rounded-full shadow-md hover:shadow-lg transition-shadow shrink-0 gap-2"
-                            onClick={() => setNewMenuOpen(true)}
-                        >
-                            <Plus className="h-4 w-4" />
-                            Nuevo menú
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            <Button
+                                variant="secondary"
+                                className="rounded-full shadow-sm gap-2"
+                                onClick={async () => {
+                                    setAiMenuOpen(true);
+                                    setAiPatientCtx(null);
+                                    try {
+                                        const token = localStorage.getItem("userToken");
+                                        const headers = {
+                                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                        };
+                                        const pRes = await fetch(`${API_URL}/patients`, { headers });
+                                        if (pRes.ok) setAiPatients(await pRes.json());
+                                    } catch {
+                                        /* ignore */
+                                    }
+                                }}
+                            >
+                                <Sparkles className="h-4 w-4" />
+                                Generar con IA
+                            </Button>
+                            <Button
+                                className="rounded-full shadow-md hover:shadow-lg transition-shadow gap-2"
+                                onClick={() => setNewMenuOpen(true)}
+                            >
+                                <Plus className="h-4 w-4" />
+                                Nuevo menú
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
@@ -704,11 +793,11 @@ const AdminWeeklyMenus = () => {
                 <Card className="rounded-2xl border-border/80 shadow-sm">
                     <CardContent className="p-4 space-y-3">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                            <div className="relative flex-1">
+                    <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                                <Input
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
+                        <Input
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                                     placeholder="Buscar por nombre o descripción..."
                                     className="pl-10 h-11 rounded-xl bg-muted/30 border-border focus-visible:ring-2 focus-visible:ring-primary/20"
                                 />
@@ -721,20 +810,20 @@ const AdminWeeklyMenus = () => {
                                         <X className="h-4 w-4" />
                                     </button>
                                 )}
-                            </div>
-                            <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? null : v)}>
+                    </div>
+                    <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? null : v)}>
                                 <SelectTrigger className="w-full sm:w-[220px] h-11 rounded-xl">
                                     <Filter className="h-4 w-4 mr-2 shrink-0" />
-                                    <SelectValue placeholder="Categoría" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">Todas las categorías</SelectItem>
+                            <SelectValue placeholder="Categoría" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todas las categorías</SelectItem>
                                     {menuCategories.map((cat) => (
                                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                                     ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        </SelectContent>
+                    </Select>
+                </div>
 
                         <div className="flex flex-wrap gap-2">
                             <button
@@ -762,7 +851,7 @@ const AdminWeeklyMenus = () => {
                                     {cat}
                                 </button>
                             ))}
-                        </div>
+                            </div>
 
                         {(searchQuery || categoryFilter) && (
                             <div className="flex flex-wrap items-center gap-2">
@@ -796,8 +885,8 @@ const AdminWeeklyMenus = () => {
                                 </Button>
                             </div>
                         )}
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
 
                 {/* Menus Grid */}
                 {filteredMenus.length === 0 ? (
@@ -840,7 +929,8 @@ const AdminWeeklyMenus = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredMenus.map((menu) => {
                             const filledMeals = menu.week?.reduce(
-                                (sum, day) => sum + (day.meals?.filter((m) => m.recipe_name).length || 0),
+                                (sum, day) =>
+                                    sum + (day.meals?.filter((m) => hasMealRecipes(m)).length || 0),
                                 0
                             ) || 0;
                             const totalSlots = 4 * 7 * 5;
@@ -873,40 +963,40 @@ const AdminWeeklyMenus = () => {
                                                             Activo
                                                         </Badge>
                                                     )}
-                                                </div>
+                            </div>
                                                 <h3 className="font-semibold text-base tracking-tight line-clamp-1">{menu.name}</h3>
                                                 <p className="text-sm text-muted-foreground line-clamp-2 mt-1 min-h-[2.5rem]">
                                                     {menu.description || "Sin descripción"}
                                                 </p>
-                                            </div>
+                            </div>
                                             <div onClick={(e) => e.stopPropagation()}>
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
                                                             className="h-8 w-8 rounded-full opacity-60 group-hover:opacity-100"
                                                         >
-                                                            <MoreVertical className="h-4 w-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
+                                                <MoreVertical className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="w-52 rounded-xl">
-                                                        <DropdownMenuItem onClick={() => {
-                                                            setSelectedMenu(menu);
-                                                            setViewMenuOpen(true);
-                                                        }}>
+                                            <DropdownMenuItem onClick={() => {
+                                                setSelectedMenu(menu);
+                                                setViewMenuOpen(true);
+                                            }}>
                                                             <Eye className="h-4 w-4 mr-2" />
                                                             Ver menú
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => handleEditMenu(menu)}>
-                                                            <Edit className="h-4 w-4 mr-2" />
-                                                            Editar
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => handleDuplicateMenu(menu)}>
-                                                            <Copy className="h-4 w-4 mr-2" />
-                                                            Duplicar
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleEditMenu(menu)}>
+                                                <Edit className="h-4 w-4 mr-2" />
+                                                Editar
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleDuplicateMenu(menu)}>
+                                                <Copy className="h-4 w-4 mr-2" />
+                                                Duplicar
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
                                                             onClick={() => {
                                                                 setMenuToAssign(menu);
                                                                 setAssignMenuOpen(true);
@@ -917,43 +1007,43 @@ const AdminWeeklyMenus = () => {
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             className="text-destructive focus:text-destructive"
-                                                            onClick={() => {
-                                                                setMenuToDelete(menu);
-                                                                setDeleteDialogOpen(true);
-                                                            }}
-                                                        >
-                                                            <Trash2 className="h-4 w-4 mr-2" />
-                                                            Eliminar
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
+                                                onClick={() => {
+                                                    setMenuToDelete(menu);
+                                                    setDeleteDialogOpen(true);
+                                                }}
+                                            >
+                                                <Trash2 className="h-4 w-4 mr-2" />
+                                                Eliminar
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                             </div>
-                                        </div>
+                                </div>
 
                                         <div className="grid grid-cols-3 gap-2">
                                             <div className="rounded-xl border bg-amber-500/5 border-amber-500/20 px-2 py-2 text-center">
                                                 <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-0.5">
                                                     <Flame className="h-3 w-3" />
                                                     Kcal
-                                                </div>
+                                    </div>
                                                 <p className="text-sm font-semibold tabular-nums text-amber-700 dark:text-amber-300">
                                                     {menu.total_calories}
                                                 </p>
-                                            </div>
+                                    </div>
                                             <div className="rounded-xl border bg-primary/5 border-primary/20 px-2 py-2 text-center">
                                                 <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-primary mb-0.5">
                                                     <Beef className="h-3 w-3" />
                                                     Prot
-                                                </div>
+                                    </div>
                                                 <p className="text-sm font-semibold tabular-nums text-primary">{menu.avg_protein}g</p>
-                                            </div>
+                                </div>
                                             <div className="rounded-xl border bg-violet-500/5 border-violet-500/20 px-2 py-2 text-center">
                                                 <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-violet-700 dark:text-violet-300 mb-0.5">
                                                     <LayoutGrid className="h-3 w-3" />
                                                     Sem
-                                                </div>
+                                        </div>
                                                 <p className="text-sm font-semibold tabular-nums">4</p>
-                                            </div>
+                                        </div>
                                         </div>
 
                                         <div className="flex items-center justify-between text-[11px] text-muted-foreground rounded-xl bg-muted/40 px-3 py-2 ring-1 ring-border/50">
@@ -975,25 +1065,25 @@ const AdminWeeklyMenus = () => {
                                                     className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all duration-500"
                                                     style={{ width: `${fillPct}%` }}
                                                 />
-                                            </div>
-                                        </div>
+                                    </div>
+                                </div>
 
                                         <div
                                             className="grid grid-cols-2 gap-2 pt-1"
                                             onClick={(e) => e.stopPropagation()}
                                         >
-                                            <Button
+                                <Button
                                                 size="sm"
-                                                variant="outline"
+                                    variant="outline"
                                                 className="rounded-full h-8 text-xs"
-                                                onClick={() => {
-                                                    setSelectedMenu(menu);
-                                                    setViewMenuOpen(true);
-                                                }}
-                                            >
+                                    onClick={() => {
+                                        setSelectedMenu(menu);
+                                        setViewMenuOpen(true);
+                                    }}
+                                >
                                                 <Eye className="h-3.5 w-3.5 mr-1" />
                                                 Ver
-                                            </Button>
+                                </Button>
                                             <Button
                                                 size="sm"
                                                 className="rounded-full h-8 text-xs"
@@ -1003,8 +1093,8 @@ const AdminWeeklyMenus = () => {
                                                 Editar
                                             </Button>
                                         </div>
-                                    </CardContent>
-                                </Card>
+                            </CardContent>
+                        </Card>
                             );
                         })}
                     </div>
@@ -1024,11 +1114,11 @@ const AdminWeeklyMenus = () => {
                                         <Calendar className="h-4.5 w-4.5 h-[18px] w-[18px]" />
                                     </span>
                                     {editMenuOpen ? "Editar menú semanal" : "Crear menú semanal"}
-                                </DialogTitle>
+                            </DialogTitle>
                                 <DialogDescription>
                                     Define datos generales y asigna recetas a cada comida de las 4 semanas.
                                 </DialogDescription>
-                            </DialogHeader>
+                        </DialogHeader>
 
                             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 <div className="rounded-xl border bg-background/80 backdrop-blur-sm px-3 py-2.5 shadow-sm">
@@ -1070,7 +1160,7 @@ const AdminWeeklyMenus = () => {
                                         <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
                                             <ChefHat className="h-4 w-4" />
                                         </div>
-                                        <div>
+                                    <div>
                                             <h3 className="font-semibold text-sm">Información general</h3>
                                             <p className="text-xs text-muted-foreground">Nombre, categoría y descripción del menú</p>
                                         </div>
@@ -1078,27 +1168,27 @@ const AdminWeeklyMenus = () => {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-2 sm:col-span-1">
                                             <Label htmlFor="menu-name">Nombre del menú</Label>
-                                            <Input
+                                        <Input
                                                 id="menu-name"
                                                 placeholder="Ej. Menú hipocalórico 1800 kcal"
-                                                value={menuForm.name}
-                                                onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
+                                            value={menuForm.name}
+                                            onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
                                                 className="h-10"
-                                            />
-                                        </div>
+                                        />
+                                    </div>
                                         <div className="space-y-2">
-                                            <Label>Categoría</Label>
-                                            <Select value={menuForm.category} onValueChange={(v) => setMenuForm({ ...menuForm, category: v })}>
+                                        <Label>Categoría</Label>
+                                        <Select value={menuForm.category} onValueChange={(v) => setMenuForm({ ...menuForm, category: v })}>
                                                 <SelectTrigger className="h-10">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
                                                     {menuCategories.map((cat) => (
                                                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                                                     ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                         <div className="space-y-2 sm:col-span-2">
                                             <Label htmlFor="menu-desc">Descripción</Label>
                                             <Textarea
@@ -1109,7 +1199,7 @@ const AdminWeeklyMenus = () => {
                                                 rows={2}
                                                 className="resize-none"
                                             />
-                                        </div>
+                                </div>
                                     </div>
                                 </section>
 
@@ -1119,7 +1209,7 @@ const AdminWeeklyMenus = () => {
                                         <div className="h-8 w-8 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center">
                                             <LayoutGrid className="h-4 w-4" />
                                         </div>
-                                        <div>
+                                <div>
                                             <h3 className="font-semibold text-sm">Plan semanal</h3>
                                             <p className="text-xs text-muted-foreground">4 semanas · 7 días · 5 tiempos de comida</p>
                                         </div>
@@ -1144,7 +1234,7 @@ const AdminWeeklyMenus = () => {
                                                     <TabsList className="flex w-full h-auto flex-wrap gap-1 p-1 rounded-xl bg-muted/50 justify-start">
                                                         {daysOfWeek.map(day => {
                                                             const dayMenu = currentWeek.find(d => d.day === day && d.week === weekNum);
-                                                            const filled = dayMenu?.meals.filter(m => m.recipe_name).length || 0;
+                                                            const filled = dayMenu?.meals.filter(m => hasMealRecipes(m)).length || 0;
                                                             return (
                                                                 <TabsTrigger
                                                                     key={day}
@@ -1157,13 +1247,13 @@ const AdminWeeklyMenus = () => {
                                                                             {filled}/5
                                                                         </span>
                                                                     </span>
-                                                                </TabsTrigger>
+                                                            </TabsTrigger>
                                                             );
                                                         })}
                                                     </TabsList>
                                                     {daysOfWeek.map(day => {
                                                         const dayMenu = currentWeek.find(d => d.day === day && d.week === weekNum);
-                                                        const filledCount = dayMenu?.meals.filter(m => m.recipe_name).length || 0;
+                                                        const filledCount = dayMenu?.meals.filter(m => hasMealRecipes(m)).length || 0;
                                                         const dayKcal = dayMenu?.meals.reduce((s, m) => s + (m.calories || 0), 0) || 0;
                                                         return (
                                                             <TabsContent key={day} value={day} className="space-y-4 mt-4">
@@ -1181,9 +1271,13 @@ const AdminWeeklyMenus = () => {
                                                                 </div>
                                                                 <div className="space-y-3">
                                                                     {mealTypes.map(mealType => {
-                                                                        const meal = dayMenu?.meals.find(m => m.type === mealType.type);
+                                                                        const rawMeal = dayMenu?.meals.find(m => m.type === mealType.type);
+                                                                        const meal = rawMeal
+                                                                            ? syncMealSlotMacros(rawMeal, recipeCatalogMap)
+                                                                            : undefined;
                                                                         const MealIcon = mealType.icon;
-                                                                        const hasRecipe = !!meal?.recipe_name;
+                                                                        const entries = mealRecipeEntries(meal);
+                                                                        const hasRecipe = entries.length > 0;
                                                                         return (
                                                                             <div
                                                                                 key={mealType.type}
@@ -1199,25 +1293,25 @@ const AdminWeeklyMenus = () => {
                                                                                         <div className="flex items-center gap-3 min-w-0">
                                                                                             <div className={`p-2.5 rounded-xl ring-1 ${mealType.colors.bg} ${mealType.colors.ring}`}>
                                                                                                 <MealIcon className={`h-4 w-4 ${mealType.colors.text}`} />
-                                                                                            </div>
+                                                                                        </div>
                                                                                             <div className="min-w-0">
                                                                                                 <p className="font-semibold text-sm">{mealType.label}</p>
                                                                                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                                                                                     <Clock className="h-3 w-3" />
                                                                                                     {"timeRange" in mealType ? mealType.timeRange : mealType.time}
                                                                                                 </p>
-                                                                                            </div>
                                                                                         </div>
-                                                                                        <Button
-                                                                                            size="sm"
+                                                                                    </div>
+                                                                                    <Button
+                                                                                        size="sm"
                                                                                             variant={hasRecipe ? "outline" : "default"}
                                                                                             className="shrink-0 rounded-full"
-                                                                                            onClick={() => handleAddMeal(day, mealType.type)}
-                                                                                        >
+                                                                                        onClick={() => handleAddMeal(day, mealType.type)}
+                                                                                    >
                                                                                             {hasRecipe ? (
                                                                                                 <>
                                                                                                     <Edit className="h-3.5 w-3.5 mr-1.5" />
-                                                                                                    Cambiar
+                                                                                                    Editar ({entries.length})
                                                                                                 </>
                                                                                             ) : (
                                                                                                 <>
@@ -1225,44 +1319,43 @@ const AdminWeeklyMenus = () => {
                                                                                                     Agregar
                                                                                                 </>
                                                                                             )}
+                                                                                    </Button>
+                                                                                </div>
+                                                                                    {hasRecipe && meal ? (
+                                                                                        <div className="space-y-2 rounded-xl bg-muted/40 p-3 ring-1 ring-border/60">
+                                                                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                                                <p className="text-xs font-medium text-muted-foreground">
+                                                                                                    {entries.length > 1 ? `${entries.length} opciones` : "Receta asignada"}
+                                                                                                </p>
+                                                                                                <Badge variant="secondary" className="rounded-md text-[10px] font-medium px-1.5 py-0">
+                                                                                                    {meal.calories} kcal total
+                                                                                                </Badge>
+                                                                                            </div>
+                                                                                            {entries.map((entry, idx) => (
+                                                                                                <div key={`${entry.recipe_id ?? idx}-${entry.recipe_name}`} className="flex items-center gap-3">
+                                                                                                    <img
+                                                                                                        src={getImageUrl(entry.image ?? meal.image)}
+                                                                                                        alt={entry.recipe_name}
+                                                                                                        className="w-12 h-12 rounded-lg object-cover bg-muted"
+                                                                                                    />
+                                                                                                    <p className="flex-1 text-sm font-medium truncate">{entry.recipe_name}</p>
+                                                                                                    <span className="text-xs text-muted-foreground shrink-0">{entry.calories} kcal</span>
+                                                                                            </div>
+                                                                                            ))}
+                                                                                            {meal.notes && (
+                                                                                                <p className="text-xs text-muted-foreground line-clamp-2">{meal.notes}</p>
+                                                                                            )}
+                                                                                            <div className="flex justify-end pt-1">
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            variant="ghost"
+                                                                                                    className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                                                            onClick={() => handleRemoveMeal(day, mealType.type)}
+                                                                                        >
+                                                                                                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                                                                                    Quitar todo
                                                                                         </Button>
                                                                                     </div>
-                                                                                    {hasRecipe ? (
-                                                                                        <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-3 ring-1 ring-border/60">
-                                                                                            <img
-                                                                                                src={getMealImageUrl(meal)}
-                                                                                                alt={meal!.recipe_name}
-                                                                                                className="w-16 h-16 rounded-xl object-cover bg-muted shadow-sm"
-                                                                                                onError={(e) => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400"; }}
-                                                                                            />
-                                                                                            <div className="flex-1 min-w-0">
-                                                                                                <p className="font-medium text-sm truncate">{meal!.recipe_name}</p>
-                                                                                                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                                                                                    <Badge variant="secondary" className="rounded-md text-[10px] font-medium px-1.5 py-0">
-                                                                                                        {meal!.calories} kcal
-                                                                                                    </Badge>
-                                                                                                    <Badge variant="secondary" className="rounded-md text-[10px] font-medium px-1.5 py-0">
-                                                                                                        P {meal!.protein}g
-                                                                                                    </Badge>
-                                                                                                    <Badge variant="secondary" className="rounded-md text-[10px] font-medium px-1.5 py-0">
-                                                                                                        C {meal!.carbs}g
-                                                                                                    </Badge>
-                                                                                                    <Badge variant="secondary" className="rounded-md text-[10px] font-medium px-1.5 py-0">
-                                                                                                        G {meal!.fat}g
-                                                                                                    </Badge>
-                                                                                                </div>
-                                                                                                {meal!.notes && (
-                                                                                                    <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{meal!.notes}</p>
-                                                                                                )}
-                                                                                            </div>
-                                                                                            <Button
-                                                                                                size="icon"
-                                                                                                variant="ghost"
-                                                                                                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                                                                onClick={() => handleRemoveMeal(day, mealType.type)}
-                                                                                            >
-                                                                                                <Trash2 className="h-4 w-4" />
-                                                                                            </Button>
                                                                                         </div>
                                                                                     ) : (
                                                                                         <button
@@ -1286,17 +1379,17 @@ const AdminWeeklyMenus = () => {
                                         ))}
                                     </Tabs>
                                 </section>
+                                </div>
                             </div>
-                        </div>
 
                         <DialogFooter className="shrink-0 border-t bg-muted/30 px-6 py-4 gap-2 sm:gap-2">
                             <Button
                                 variant="outline"
                                 className="rounded-full"
                                 onClick={() => {
-                                    setNewMenuOpen(false);
-                                    setEditMenuOpen(false);
-                                    resetForm();
+                                setNewMenuOpen(false);
+                                setEditMenuOpen(false);
+                                resetForm();
                                 }}
                             >
                                 Cancelar
@@ -1322,10 +1415,16 @@ const AdminWeeklyMenus = () => {
                 </Dialog>
 
                 {/* Add Meal Dialog */}
-                <Dialog open={addMealDialogOpen} onOpenChange={setAddMealDialogOpen}>
+                <Dialog
+                    open={addMealDialogOpen}
+                    onOpenChange={(open) => {
+                        setAddMealDialogOpen(open);
+                        if (!open) setRecipeSearch("");
+                    }}
+                >
                     <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 overflow-hidden !flex !flex-col">
                         <div className="shrink-0 border-b bg-gradient-to-br from-primary/10 via-background to-background px-6 pt-6 pb-4">
-                            <DialogHeader>
+                        <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2">
                                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
                                         <ChefHat className="h-4 w-4" />
@@ -1333,29 +1432,47 @@ const AdminWeeklyMenus = () => {
                                     Seleccionar receta
                                 </DialogTitle>
                                 <DialogDescription>
-                                    Elige una receta para {currentMealType || "esta comida"}
+                                    Elige hasta {MAX_RECIPES_PER_MEAL} recetas para {currentMealType || "esta comida"}
                                     {currentDay ? ` · ${currentDay}` : ""}
+                                    {selectedRecipes.length > 0 ? ` · ${selectedRecipes.length} seleccionada(s)` : ""}
                                 </DialogDescription>
-                            </DialogHeader>
+                        </DialogHeader>
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4 space-y-4 max-h-[calc(90vh-11rem)]">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Buscar receta..."
+                            <Input
+                                placeholder="Buscar receta..."
                                     className="pl-9 h-10 rounded-xl"
-                                />
+                                    value={recipeSearch}
+                                    onChange={(e) => setRecipeSearch(e.target.value)}
+                            />
                             </div>
-                            <div className="space-y-2">
-                                    {recipes.map(recipe => (
+                                <div className="space-y-2">
+                                    {filteredRecipes.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground text-center py-8">
+                                            {recipeSearch.trim()
+                                                ? `No hay recetas que coincidan con “${recipeSearch.trim()}”.`
+                                                : "No hay recetas disponibles. Crea recetas primero en el módulo de Recetas."}
+                                        </p>
+                                    ) : (
+                                    filteredRecipes.map(recipe => {
+                                        const isSelected = selectedRecipes.some((r) => r.id === recipe.id);
+                                        const atMax = selectedRecipes.length >= MAX_RECIPES_PER_MEAL && !isSelected;
+                                        return (
                                         <div
                                             key={recipe.id}
                                             className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
-                                                selectedRecipe?.id === recipe.id
+                                                isSelected
                                                     ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20"
-                                                    : "hover:bg-muted/50 hover:border-muted-foreground/20"
+                                                    : atMax
+                                                      ? "opacity-50 cursor-not-allowed"
+                                                      : "hover:bg-muted/50 hover:border-muted-foreground/20"
                                             }`}
-                                            onClick={() => setSelectedRecipe(recipe)}
+                                            onClick={() => {
+                                                if (atMax) return;
+                                                setSelectedRecipes((prev) => toggleRecipeSelection(prev, recipe));
+                                            }}
                                         >
                                             <img
                                                 src={getImageUrl(recipe.image)}
@@ -1380,14 +1497,16 @@ const AdminWeeklyMenus = () => {
                                                     <Badge variant="secondary" className="text-[10px] rounded-md px-1.5 py-0">G {recipe.fat}g</Badge>
                                                 </div>
                                             </div>
-                                            {selectedRecipe?.id === recipe.id && (
+                                            {isSelected && (
                                                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
                                                     <Check className="h-4 w-4" />
                                                 </span>
                                             )}
                                         </div>
-                                    ))}
-                            </div>
+                                    );
+                                    })
+                                    )}
+                                </div>
                             <div className="space-y-2">
                                 <Label>Notas (opcional)</Label>
                                 <Textarea
@@ -1402,14 +1521,14 @@ const AdminWeeklyMenus = () => {
                         <DialogFooter className="shrink-0 border-t bg-muted/30 px-6 py-4">
                             <Button variant="outline" className="rounded-full" onClick={() => {
                                 setAddMealDialogOpen(false);
-                                setSelectedRecipe(null);
+                                setSelectedRecipes([]);
                                 setMealNotes("");
                             }}>
                                 Cancelar
                             </Button>
-                            <Button className="rounded-full" onClick={handleConfirmAddMeal} disabled={!selectedRecipe}>
+                            <Button className="rounded-full" onClick={handleConfirmAddMeal} disabled={selectedRecipes.length === 0}>
                                 <Plus className="h-4 w-4 mr-1.5" />
-                                Agregar receta
+                                Guardar {selectedRecipes.length > 0 ? `(${selectedRecipes.length})` : ""}
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -1418,7 +1537,7 @@ const AdminWeeklyMenus = () => {
                 {/* View Menu Dialog */}
                 <Dialog open={viewMenuOpen} onOpenChange={setViewMenuOpen}>
                     <DialogContent className="max-w-6xl w-[calc(100%-2rem)] max-h-[92vh] p-0 gap-0 overflow-hidden !flex !flex-col">
-                        {selectedMenu && (
+                            {selectedMenu && (
                             <>
                                 <div className="shrink-0 border-b bg-gradient-to-br from-primary/10 via-background to-violet-500/5 px-6 pt-6 pb-4">
                                     <DialogHeader className="pr-8 space-y-2 text-left">
@@ -1488,7 +1607,7 @@ const AdminWeeklyMenus = () => {
                                             </p>
                                         </div>
                                     </div>
-                                </div>
+                                    </div>
 
                                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 max-h-[calc(92vh-14rem)]">
                                     <Tabs defaultValue="1" className="w-full">
@@ -1532,7 +1651,7 @@ const AdminWeeklyMenus = () => {
                                                                             {filled}/5
                                                                         </span>
                                                                     </span>
-                                                                </TabsTrigger>
+                                                            </TabsTrigger>
                                                             );
                                                         })}
                                                     </TabsList>
@@ -1546,7 +1665,7 @@ const AdminWeeklyMenus = () => {
                                                                 0
                                                             ) || 0;
                                                         const filledCount =
-                                                            dayMenu?.meals.filter((m) => m.recipe_name).length || 0;
+                                                            dayMenu?.meals.filter((m) => hasMealRecipes(m)).length || 0;
                                                         return (
                                                             <TabsContent key={day} value={day} className="space-y-4 mt-4">
                                                                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/30 px-3 py-2.5">
@@ -1567,15 +1686,19 @@ const AdminWeeklyMenus = () => {
                                                                         }`}
                                                                     >
                                                                         {filledCount}/5 comidas
-                                                                    </Badge>
+                                                                        </Badge>
                                                                 </div>
                                                                 <div className="space-y-3">
                                                                     {mealTypes.map((mealType) => {
-                                                                        const meal = dayMenu?.meals.find(
+                                                                        const rawMeal = dayMenu?.meals.find(
                                                                             (m) => m.type === mealType.type
                                                                         );
+                                                                        const meal = rawMeal
+                                                                            ? syncMealSlotMacros(rawMeal, recipeCatalogMap)
+                                                                            : undefined;
                                                                         const MealIcon = mealType.icon;
-                                                                        const hasRecipe = !!meal?.recipe_name;
+                                                                        const entries = mealRecipeEntries(meal);
+                                                                        const hasRecipe = entries.length > 0;
                                                                         return (
                                                                             <div
                                                                                 key={mealType.type}
@@ -1609,55 +1732,22 @@ const AdminWeeklyMenus = () => {
                                                                                             </p>
                                                                                         </div>
                                                                                     </div>
-                                                                                    {hasRecipe ? (
-                                                                                        <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-3 ring-1 ring-border/60">
-                                                                                            <img
-                                                                                                src={getMealImageUrl(meal)}
-                                                                                                alt={meal!.recipe_name}
-                                                                                                className="w-16 h-16 rounded-xl object-cover bg-muted shadow-sm"
-                                                                                                onError={(e) => {
-                                                                                                    (
-                                                                                                        e.target as HTMLImageElement
-                                                                                                    ).src =
-                                                                                                        "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
-                                                                                                }}
-                                                                                            />
-                                                                                            <div className="flex-1 min-w-0">
-                                                                                                <p className="font-medium text-sm truncate">
-                                                                                                    {meal!.recipe_name}
-                                                                                                </p>
-                                                                                                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                                                                                    <Badge
-                                                                                                        variant="secondary"
-                                                                                                        className="rounded-md text-[10px] font-medium px-1.5 py-0"
-                                                                                                    >
-                                                                                                        {meal!.calories} kcal
-                                                                                                    </Badge>
-                                                                                                    <Badge
-                                                                                                        variant="secondary"
-                                                                                                        className="rounded-md text-[10px] font-medium px-1.5 py-0"
-                                                                                                    >
-                                                                                                        P {meal!.protein}g
-                                                                                                    </Badge>
-                                                                                                    <Badge
-                                                                                                        variant="secondary"
-                                                                                                        className="rounded-md text-[10px] font-medium px-1.5 py-0"
-                                                                                                    >
-                                                                                                        C {meal!.carbs}g
-                                                                                                    </Badge>
-                                                                                                    <Badge
-                                                                                                        variant="secondary"
-                                                                                                        className="rounded-md text-[10px] font-medium px-1.5 py-0"
-                                                                                                    >
-                                                                                                        G {meal!.fat}g
-                                                                                                    </Badge>
-                                                                                                </div>
-                                                                                                {meal!.notes && (
-                                                                                                    <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">
-                                                                                                        {meal!.notes}
-                                                                                                    </p>
-                                                                                                )}
-                                                                                            </div>
+                                                                                    {hasRecipe && meal ? (
+                                                                                        <div className="space-y-2 rounded-xl bg-muted/40 p-3 ring-1 ring-border/60">
+                                                                                            {entries.map((entry, idx) => (
+                                                                                                <div key={`${entry.recipe_id ?? idx}-${entry.recipe_name}`} className="flex items-center gap-3">
+                                                                                                    <img
+                                                                                                        src={getImageUrl(entry.image ?? meal.image)}
+                                                                                                        alt={entry.recipe_name}
+                                                                                                        className="w-12 h-12 rounded-lg object-cover bg-muted"
+                                                                                                    />
+                                                                                                    <p className="flex-1 text-sm font-medium truncate">{entry.recipe_name}</p>
+                                                                                                    <span className="text-xs text-muted-foreground">{entry.calories} kcal</span>
+                                                                                                    </div>
+                                                                                            ))}
+                                                                                            <p className="text-xs text-muted-foreground pt-1">
+                                                                                                Total slot: {meal.calories} kcal · P {meal.protein}g
+                                                                                            </p>
                                                                                         </div>
                                                                                     ) : (
                                                                                         <p className="rounded-xl border border-dashed border-muted-foreground/25 py-5 text-center text-sm text-muted-foreground">
@@ -1727,6 +1817,219 @@ const AdminWeeklyMenus = () => {
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
+
+                <Dialog
+                    open={aiMenuOpen}
+                    onOpenChange={(o) => {
+                        setAiMenuOpen(o);
+                        if (!o) {
+                            setAiPatientId("");
+                            setAiPatientCtx(null);
+                            setAiInstructions("");
+                            setAiWeeks("4");
+                        }
+                    }}
+                >
+                    <DialogContent className="sm:max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Sparkles className="h-5 w-5 text-primary" />
+                                Generar menú con IA
+                            </DialogTitle>
+                            <DialogDescription>
+                                Elige el paciente: se usarán sus kcal y rechazos alimenticios de la última información
+                                registrada. Indica semanas e instrucciones.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-2">
+                            <div className="space-y-2">
+                                <Label>Paciente</Label>
+                                <Select
+                                    value={aiPatientId}
+                                    onValueChange={async (id) => {
+                                        setAiPatientId(id);
+                                        setAiPatientCtx(null);
+                                        if (!id) return;
+                                        setLoadingAiCtx(true);
+                                        try {
+                                            const token = localStorage.getItem("userToken");
+                                            const res = await fetch(
+                                                `${API_URL}/weekly-menus/ai-patient-context/${id}`,
+                                                {
+                                                    headers: {
+                                                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                                    },
+                                                }
+                                            );
+                                            if (res.ok) setAiPatientCtx(await res.json());
+                                        } catch {
+                                            /* ignore */
+                                        } finally {
+                                            setLoadingAiCtx(false);
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Selecciona paciente" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {aiPatients.map((p) => (
+                                            <SelectItem key={p.id} value={String(p.id)}>
+                                                {p.nombres} {p.apellidos}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {(loadingAiCtx || aiPatientCtx) && (
+                                <div className="rounded-xl border bg-muted/40 p-3 text-sm space-y-1.5">
+                                    {loadingAiCtx ? (
+                                        <p className="text-muted-foreground flex items-center gap-2">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            Cargando datos del paciente…
+                                        </p>
+                                    ) : (
+                                        <>
+                                            <p className="font-medium text-foreground">
+                                                {aiPatientCtx?.calories ?? "—"} kcal/día
+                                                {aiPatientCtx?.plan_name ? (
+                                                    <span className="font-normal text-muted-foreground">
+                                                        {" "}
+                                                        · {aiPatientCtx.plan_name}
+                                                    </span>
+                                                ) : null}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                Macros: P {aiPatientCtx?.protein ?? "—"}g · C {aiPatientCtx?.carbs ?? "—"}g ·
+                                                G {aiPatientCtx?.fat ?? "—"}g
+                                                {aiPatientCtx?.kcal_source
+                                                    ? ` · fuente: ${aiPatientCtx.kcal_source}`
+                                                    : ""}
+                                            </p>
+                                            <p>
+                                                <span className="text-muted-foreground">Rechazos / disgustos: </span>
+                                                {aiPatientCtx?.food_rejections?.trim()
+                                                    ? aiPatientCtx.food_rejections
+                                                    : "Ninguno registrado"}
+                                            </p>
+                                            {aiPatientCtx?.allergies?.trim() ? (
+                                                <p>
+                                                    <span className="text-muted-foreground">Alergias: </span>
+                                                    {aiPatientCtx.allergies}
+                                                </p>
+                                            ) : null}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="space-y-2">
+                                <Label>Semanas del menú</Label>
+                                <Select value={aiWeeks} onValueChange={setAiWeeks}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="1">1 semana</SelectItem>
+                                        <SelectItem value="2">2 semanas</SelectItem>
+                                        <SelectItem value="3">3 semanas</SelectItem>
+                                        <SelectItem value="4">4 semanas</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Instrucciones para la IA</Label>
+                                <Textarea
+                                    value={aiInstructions}
+                                    onChange={(e) => setAiInstructions(e.target.value)}
+                                    placeholder="Ej: priorizar pollo y pescado, comidas fáciles de preparar, sin frituras, incluir más verduras…"
+                                    rows={3}
+                                    className="resize-none"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Categoría</Label>
+                                <Select value={aiCategory} onValueChange={setAiCategory}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {menuCategories.map((c) => (
+                                            <SelectItem key={c} value={c}>
+                                                {c}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        <DialogFooter className="gap-2">
+                            <Button variant="outline" className="rounded-full" onClick={() => setAiMenuOpen(false)}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                className="rounded-full gap-2"
+                                disabled={generatingAi || !aiPatientId}
+                                onClick={async () => {
+                                    setGeneratingAi(true);
+                                    try {
+                                        const token = localStorage.getItem("userToken");
+                                        const res = await fetch(`${API_URL}/weekly-menus/generate-ai`, {
+                                            method: "POST",
+                                            headers: {
+                                                "Content-Type": "application/json",
+                                                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                            },
+                                            body: JSON.stringify({
+                                                patient_id: parseInt(aiPatientId, 10),
+                                                weeks: parseInt(aiWeeks, 10) || 4,
+                                                instructions: aiInstructions.trim() || null,
+                                                category: aiCategory,
+                                            }),
+                                        });
+                                        const result = await res.json().catch(() => ({}));
+                                        if (!res.ok || !result.success) {
+                                            throw new Error(
+                                                typeof result.detail === "string"
+                                                    ? result.detail
+                                                    : "No se pudo generar el menú"
+                                            );
+                                        }
+                                        toast({
+                                            title: result.ai_enabled ? "Menú creado con IA" : "Menú automático creado",
+                                            description:
+                                                result.message ||
+                                                `"${result.menu?.name || "Menú"}" listo (~${result.targets?.calories || "—"} kcal/día).`,
+                                        });
+                                        setAiMenuOpen(false);
+                                        setAiPatientId("");
+                                        setAiPatientCtx(null);
+                                        setAiInstructions("");
+                                        await fetchWeeklyMenus();
+                                    } catch (e) {
+                                        toast({
+                                            title: "Error",
+                                            description: e instanceof Error ? e.message : "Error al generar",
+                                            variant: "destructive",
+                                        });
+                                    } finally {
+                                        setGeneratingAi(false);
+                                    }
+                                }}
+                            >
+                                {generatingAi ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Sparkles className="h-4 w-4" />
+                                )}
+                                {generatingAi ? "Generando…" : "Crear menú"}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 <BulkAssignMenuDialog
                     open={assignMenuOpen}

@@ -220,12 +220,12 @@ const ArticleDetail = () => {
               </div>
             </div>
           </div>
-
+          
           <div className="w-full max-w-5xl mx-auto px-4 mb-12">
             <div className="aspect-video rounded-2xl overflow-hidden shadow-lg">
-              <img
-                src={article.image}
-                alt={article.title}
+              <img 
+                src={article.image} 
+                alt={article.title} 
                 className="w-full h-full object-cover"
               />
             </div>
@@ -235,19 +235,19 @@ const ArticleDetail = () => {
         <article className="container mx-auto px-4 pb-20">
           <div className="max-w-3xl mx-auto">
             <ArticleContentView html={article.content} className="text-muted-foreground" />
-
+            
             {related.length > 0 && (
-              <div className="mt-16 pt-12 border-t border-border">
+            <div className="mt-16 pt-12 border-t border-border">
                 <h2 className="text-2xl font-bold text-foreground mb-8">
                   También te puede interesar
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {related.map((relatedArticle) => (
                     <Link key={relatedArticle.id} to={articlePath(relatedArticle)}>
                       <Card className="hover:border-primary/20 transition-all hover:shadow-md cursor-pointer h-full">
                         <div className="aspect-video overflow-hidden rounded-t-xl">
-                          <img
-                            src={relatedArticle.image}
+                          <img 
+                            src={relatedArticle.image} 
                             alt={relatedArticle.title}
                             className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                           />
@@ -279,8 +279,8 @@ const ArticleDetail = () => {
                       </Card>
                     </Link>
                   ))}
-                </div>
               </div>
+            </div>
             )}
           </div>
         </article>
@@ -293,15 +293,15 @@ const ArticleDetail = () => {
                 <span className="text-lg font-semibold text-foreground">NutriData</span>
               </div>
               <div className="flex gap-8 text-sm text-muted-foreground">
-                <a href="#" className="hover:text-foreground transition-colors">
+                <Link to="/terminos" className="hover:text-foreground transition-colors">
                   Términos de Servicio
-                </a>
-                <a href="#" className="hover:text-foreground transition-colors">
+                </Link>
+                <Link to="/privacidad" className="hover:text-foreground transition-colors">
                   Política de Privacidad
-                </a>
-                <a href="#" className="hover:text-foreground transition-colors">
+                </Link>
+                <Link to="/auth" className="hover:text-foreground transition-colors">
                   Contacto
-                </a>
+                </Link>
               </div>
             </div>
             <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">

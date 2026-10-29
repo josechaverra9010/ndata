@@ -25,11 +25,49 @@ import {
   Save,
   Moon,
   Sun,
-  Loader2
+  Loader2,
+  Clock,
+  Plus,
+  Trash2,
+  CalendarOff,
 } from "lucide-react";
 
 import { API_URL } from "@/config/api";
 import { resolveMediaUrl } from "@/lib/media";
+
+const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+type WeekdayKey = (typeof WEEKDAY_KEYS)[number];
+
+const WEEKDAY_LABELS: Record<WeekdayKey, string> = {
+  mon: "Lunes",
+  tue: "Martes",
+  wed: "Miércoles",
+  thu: "Jueves",
+  fri: "Viernes",
+  sat: "Sábado",
+  sun: "Domingo",
+};
+
+type DayWindow = { start: string; end: string };
+type WeeklyHours = Record<WeekdayKey, DayWindow[]>;
+
+type BlockedSlot = {
+  id: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+  reason?: string | null;
+};
+
+const DEFAULT_WEEKLY_HOURS: WeeklyHours = {
+  mon: [{ start: "08:00", end: "19:00" }],
+  tue: [{ start: "08:00", end: "19:00" }],
+  wed: [{ start: "08:00", end: "19:00" }],
+  thu: [{ start: "08:00", end: "19:00" }],
+  fri: [{ start: "08:00", end: "19:00" }],
+  sat: [],
+  sun: [],
+};
 
 const AdminSettings = () => {
   const [loading, setLoading] = useState(true);
@@ -99,6 +137,56 @@ const AdminSettings = () => {
     confirmPassword: ""
   });
 
+  const [schedule, setSchedule] = useState({
+    timezone: "America/Bogota",
+    slotIntervalMinutes: 30,
+    defaultDurationMinutes: 30,
+    weeklyHours: DEFAULT_WEEKLY_HOURS as WeeklyHours,
+  });
+  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
+  const [newBlock, setNewBlock] = useState({
+    date: "",
+    startTime: "12:00",
+    endTime: "13:00",
+    reason: "",
+  });
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
+  const authHeaders = (): HeadersInit => {
+    const token = localStorage.getItem("userToken");
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
+  const loadSchedule = async () => {
+    if (!userId) return;
+
+    try {
+      const response = await fetch(`${API_URL}/admin/schedule/${userId}`, {
+        method: "GET",
+        headers: authHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error("Error al cargar horarios");
+      }
+
+      const data = await response.json();
+      setSchedule({
+        timezone: data.timezone || "America/Bogota",
+        slotIntervalMinutes: data.slotIntervalMinutes ?? 30,
+        defaultDurationMinutes: data.defaultDurationMinutes ?? 30,
+        weeklyHours: { ...DEFAULT_WEEKLY_HOURS, ...(data.weeklyHours || {}) },
+      });
+      setBlockedSlots(data.blockedSlots || []);
+    } catch (error) {
+      console.error("Error al cargar horarios:", error);
+      toast.error("No se pudieron cargar los horarios");
+    }
+  };
+
   // Cargar configuración al montar el componente
   useEffect(() => {
     if (userId) {
@@ -147,6 +235,8 @@ const AdminSettings = () => {
       if (data.appearance.theme) {
         setTheme(data.appearance.theme);
       }
+
+      await loadSchedule();
     } catch (error) {
       console.error("Error al cargar configuración:", error);
       toast.error("Error al cargar la configuración");
@@ -348,6 +438,150 @@ const AdminSettings = () => {
     }
   };
 
+  const updateDayWindow = (
+    day: WeekdayKey,
+    index: number,
+    field: "start" | "end",
+    value: string
+  ) => {
+    setSchedule((prev) => {
+      const windows = [...prev.weeklyHours[day]];
+      windows[index] = { ...windows[index], [field]: value };
+      return {
+        ...prev,
+        weeklyHours: { ...prev.weeklyHours, [day]: windows },
+      };
+    });
+  };
+
+  const addDayWindow = (day: WeekdayKey) => {
+    setSchedule((prev) => ({
+      ...prev,
+      weeklyHours: {
+        ...prev.weeklyHours,
+        [day]: [...prev.weeklyHours[day], { start: "09:00", end: "17:00" }],
+      },
+    }));
+  };
+
+  const removeDayWindow = (day: WeekdayKey, index: number) => {
+    setSchedule((prev) => ({
+      ...prev,
+      weeklyHours: {
+        ...prev.weeklyHours,
+        [day]: prev.weeklyHours[day].filter((_, i) => i !== index),
+      },
+    }));
+  };
+
+  const toggleDayOff = (day: WeekdayKey, off: boolean) => {
+    setSchedule((prev) => ({
+      ...prev,
+      weeklyHours: {
+        ...prev.weeklyHours,
+        [day]: off ? [] : [{ start: "08:00", end: "19:00" }],
+      },
+    }));
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!userId) {
+      toast.error("Usuario no identificado");
+      return;
+    }
+
+    try {
+      setSavingSchedule(true);
+      const response = await fetch(`${API_URL}/admin/schedule/${userId}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          timezone: schedule.timezone,
+          slot_interval_minutes: schedule.slotIntervalMinutes,
+          default_duration_minutes: schedule.defaultDurationMinutes,
+          weekly_hours: schedule.weeklyHours,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Error al guardar horarios");
+      }
+
+      toast.success("Horarios guardados correctamente");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al guardar horarios";
+      toast.error(message);
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const handleAddBlockedSlot = async () => {
+    if (!userId) return;
+    if (!newBlock.date) {
+      toast.error("Selecciona una fecha para el bloqueo");
+      return;
+    }
+    if (newBlock.startTime >= newBlock.endTime) {
+      toast.error("La hora de fin debe ser posterior a la de inicio");
+      return;
+    }
+
+    try {
+      setSavingSchedule(true);
+      const response = await fetch(`${API_URL}/admin/schedule/${userId}/blocked-slots`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          date: newBlock.date,
+          start_time: newBlock.startTime,
+          end_time: newBlock.endTime,
+          reason: newBlock.reason || null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Error al crear bloqueo");
+      }
+
+      setBlockedSlots((prev) => [data.blockedSlot, ...prev]);
+      setNewBlock({ date: "", startTime: "12:00", endTime: "13:00", reason: "" });
+      toast.success("Bloqueo agregado");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al agregar bloqueo";
+      toast.error(message);
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const handleDeleteBlockedSlot = async (slotId: number) => {
+    if (!userId) return;
+
+    try {
+      setSavingSchedule(true);
+      const response = await fetch(
+        `${API_URL}/admin/schedule/${userId}/blocked-slots/${slotId}`,
+        { method: "DELETE", headers: authHeaders() }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Error al eliminar bloqueo");
+      }
+
+      setBlockedSlots((prev) => prev.filter((s) => s.id !== slotId));
+      toast.success("Bloqueo eliminado");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error al eliminar bloqueo";
+      toast.error(message);
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
   const handleSaveAppearance = async () => {
     if (!userId) {
       toast.error("Usuario no identificado");
@@ -430,10 +664,14 @@ const AdminSettings = () => {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-auto lg:inline-grid">
             <TabsTrigger value="profile" className="gap-2">
               <User className="h-4 w-4" />
               Perfil
+            </TabsTrigger>
+            <TabsTrigger value="schedule" className="gap-2">
+              <Clock className="h-4 w-4" />
+              Horarios
             </TabsTrigger>
             <TabsTrigger value="notifications" className="gap-2">
               <Bell className="h-4 w-4" />
@@ -616,6 +854,254 @@ const AdminSettings = () => {
                     "Cambiar contraseña"
                   )}
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Schedule Tab */}
+          <TabsContent value="schedule" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Horario semanal de atención
+                </CardTitle>
+                <CardDescription>
+                  Define los días y franjas en que aceptas citas. Los pacientes solo verán horarios disponibles dentro de estas ventanas.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Intervalo entre citas</Label>
+                    <Select
+                      value={String(schedule.slotIntervalMinutes)}
+                      onValueChange={(v) =>
+                        setSchedule({ ...schedule, slotIntervalMinutes: Number(v) })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="15">15 minutos</SelectItem>
+                        <SelectItem value="30">30 minutos</SelectItem>
+                        <SelectItem value="45">45 minutos</SelectItem>
+                        <SelectItem value="60">60 minutos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Duración predeterminada de cita</Label>
+                    <Select
+                      value={String(schedule.defaultDurationMinutes)}
+                      onValueChange={(v) =>
+                        setSchedule({ ...schedule, defaultDurationMinutes: Number(v) })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="15">15 minutos</SelectItem>
+                        <SelectItem value="30">30 minutos</SelectItem>
+                        <SelectItem value="45">45 minutos</SelectItem>
+                        <SelectItem value="60">60 minutos</SelectItem>
+                        <SelectItem value="90">90 minutos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  {WEEKDAY_KEYS.map((day) => {
+                    const windows = schedule.weeklyHours[day];
+                    const isOff = windows.length === 0;
+                    return (
+                      <div
+                        key={day}
+                        className="rounded-lg border p-4 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <p className="font-medium min-w-[100px]">{WEEKDAY_LABELS[day]}</p>
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={!isOff}
+                                onCheckedChange={(checked) => toggleDayOff(day, !checked)}
+                              />
+                              <span className="text-sm text-muted-foreground">
+                                {isOff ? "No atiende" : "Atiende"}
+                              </span>
+                            </div>
+                          </div>
+                          {!isOff && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              onClick={() => addDayWindow(day)}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              Franja
+                            </Button>
+                          )}
+                        </div>
+
+                        {!isOff && (
+                          <div className="space-y-2">
+                            {windows.map((window, index) => (
+                              <div
+                                key={`${day}-${index}`}
+                                className="flex flex-wrap items-end gap-3"
+                              >
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Desde</Label>
+                                  <Input
+                                    type="time"
+                                    value={window.start}
+                                    onChange={(e) =>
+                                      updateDayWindow(day, index, "start", e.target.value)
+                                    }
+                                    className="w-[130px]"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Hasta</Label>
+                                  <Input
+                                    type="time"
+                                    value={window.end}
+                                    onChange={(e) =>
+                                      updateDayWindow(day, index, "end", e.target.value)
+                                    }
+                                    className="w-[130px]"
+                                  />
+                                </div>
+                                {windows.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeDayWindow(day, index)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  onClick={handleSaveSchedule}
+                  className="gap-2"
+                  disabled={savingSchedule}
+                >
+                  {savingSchedule ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Guardar horarios
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarOff className="h-5 w-5" />
+                  Bloqueos puntuales
+                </CardTitle>
+                <CardDescription>
+                  Bloquea fechas u horas específicas (vacaciones, reuniones, etc.). Esos horarios no aparecerán disponibles para agendar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label>Fecha</Label>
+                    <Input
+                      type="date"
+                      value={newBlock.date}
+                      onChange={(e) => setNewBlock({ ...newBlock, date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Desde</Label>
+                    <Input
+                      type="time"
+                      value={newBlock.startTime}
+                      onChange={(e) => setNewBlock({ ...newBlock, startTime: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Hasta</Label>
+                    <Input
+                      type="time"
+                      value={newBlock.endTime}
+                      onChange={(e) => setNewBlock({ ...newBlock, endTime: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Motivo (opcional)</Label>
+                    <Input
+                      value={newBlock.reason}
+                      onChange={(e) => setNewBlock({ ...newBlock, reason: e.target.value })}
+                      placeholder="Ej. Vacaciones"
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleAddBlockedSlot}
+                  disabled={savingSchedule}
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar bloqueo
+                </Button>
+
+                {blockedSlots.length > 0 ? (
+                  <div className="space-y-2 pt-2">
+                    {blockedSlots.map((slot) => (
+                      <div
+                        key={slot.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <span className="font-medium">{slot.date}</span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · {slot.startTime} – {slot.endTime}
+                          </span>
+                          {slot.reason && (
+                            <span className="text-muted-foreground"> · {slot.reason}</span>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteBlockedSlot(slot.id)}
+                          disabled={savingSchedule}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay bloqueos registrados.</p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

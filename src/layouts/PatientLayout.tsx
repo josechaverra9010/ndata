@@ -10,6 +10,8 @@ import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 import { useAuth } from "@/hooks/useAuth";
 import { usePlatformAnalytics } from "@/hooks/usePlatformAnalytics";
 import { NpsSurveyPrompt } from "@/components/patient/NpsSurveyPrompt";
+import { SubscriptionPaywallBanner } from "@/components/patient/SubscriptionPaywallBanner";
+import { SubscriptionRouteGuard } from "@/components/patient/SubscriptionRouteGuard";
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 import { useOrgBranding } from "@/hooks/useOrgBranding";
 
@@ -55,6 +57,8 @@ export function PatientLayout({ children }: PatientLayoutProps) {
         <PatientHeader />
         <main className="p-4 pb-20 lg:p-6 lg:pb-6 space-y-4">
           <OfflineBanner online={online} pending={pending} syncing={syncing} onSync={sync} />
+          <SubscriptionRouteGuard />
+          <SubscriptionPaywallBanner />
           {children}
         </main>
       </div>

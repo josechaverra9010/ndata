@@ -2,7 +2,10 @@
  * Catálogo de suplementación nutricional MIPRESS.
  * Valores por porción según ficha; rangos se toman en punto medio.
  * Fuente: Suplementación Nutricional - Mipress.
+ * Incluye catálogo «Suplementos deportivos» (plan deportista EVANUT).
  */
+
+export const MIPRESS_CATEGORIA_SUPLEMENTOS_DEPORTIVOS = "Suplementos deportivos";
 
 export type MipressSuplemento = {
   id: string;
@@ -149,6 +152,113 @@ export const MIPRESS_SUPLEMENTOS: MipressSuplemento[] = [
   { id: "prowhey", nombre: "Prowhey", codigo: "1601", categoria: "1601 – Módulos de proteína, carbohidratos y lípidos", porcion: "84 g polvo + 180 ml agua", kcal: 360, prot: 19, chos: 39, grasa: 14, fd: 1.3, gs: 3, gm: 7, gp: 4 },
   { id: "wipro_90", nombre: "Wipro-90", codigo: "1601", categoria: "1601 – Módulos de proteína, carbohidratos y lípidos", porcion: "84 g polvo + 180 ml agua", kcal: 360, prot: 20, chos: 39, grasa: 14, fd: 1.3, gs: 3, gm: 7, gp: 4 },
   { id: "wipi", nombre: "Wipi", codigo: "1601", categoria: "1601 – Módulos de proteína, carbohidratos y lípidos", porcion: "84 g polvo + 180 ml agua", kcal: 360, prot: 20, chos: 39, grasa: 14, fd: 1.3, gs: 3, gm: 7, gp: 4 },
+
+  // ── Suplementos deportivos (catálogo EVANUT / plan deportista) ──
+  {
+    id: "whey_gold_standard",
+    nombre: "Whey Gold Standard",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Proteína baja en calorías · 1 porción (polvo)",
+    kcal: 120,
+    prot: 24,
+    chos: 3,
+    grasa: 1.3,
+    fd: 0,
+    gs: 0.8,
+    gm: 0.5,
+    gp: 0,
+  },
+  {
+    id: "iso_100",
+    nombre: "ISO 100",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Proteína baja en calorías · 1 porción (polvo)",
+    kcal: 110,
+    prot: 25,
+    chos: 1,
+    grasa: 0.8,
+    fd: 0,
+    gs: 0.5,
+    gm: 0.3,
+    gp: 0,
+  },
+  {
+    id: "isolate_sacha_fitness",
+    nombre: "Isolate Sacha Fitness",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Proteína baja en calorías · 1 porción (polvo)",
+    kcal: 110,
+    prot: 25,
+    chos: 1,
+    grasa: 0.8,
+    fd: 0,
+    gs: 0.5,
+    gm: 0.3,
+    gp: 0,
+  },
+  {
+    id: "bipro",
+    nombre: "BiPro",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Proteína baja en calorías · 1 porción (polvo)",
+    kcal: 93,
+    prot: 20,
+    chos: 1.2,
+    grasa: 0.9,
+    fd: 0,
+    gs: 0.5,
+    gm: 0.4,
+    gp: 0,
+  },
+  {
+    id: "ganador_masa_1260",
+    nombre: "Ganador de masa (1260 kcal)",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Alta en calorías y proteína · 1 porción (polvo)",
+    kcal: 1260,
+    prot: 50,
+    chos: 253,
+    grasa: 4,
+    fd: 0,
+    gs: 2,
+    gm: 2,
+    gp: 0,
+  },
+  {
+    id: "super_mass_gainer",
+    nombre: "Súper Mass Gainer",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Alta en calorías y proteína · 1 porción (polvo)",
+    kcal: 1280,
+    prot: 52,
+    chos: 245,
+    grasa: 10,
+    fd: 0,
+    gs: 4,
+    gm: 6,
+    gp: 0,
+  },
+  {
+    id: "smart_mass",
+    nombre: "Smart",
+    codigo: "DEPORT",
+    categoria: "Suplementos deportivos",
+    porcion: "Alta en calorías y proteína · 1 porción (polvo)",
+    kcal: 910,
+    prot: 44,
+    chos: 165,
+    grasa: 8,
+    fd: 0,
+    gs: 3,
+    gm: 5,
+    gp: 0,
+  },
 ];
 
 export const MIPRESS_CATEGORIAS: string[] = Array.from(
@@ -171,4 +281,13 @@ export function filterMipressSuplementos(categoria?: string | null, query?: stri
       s.categoria.toLowerCase().includes(q)
     );
   });
+}
+
+/** Catálogo MIPRESS completo (incluye Suplementos deportivos) en todos los tipos de plan. */
+export function getMipressCatalogForPlanTipo(_tipoPlan?: string | null): MipressSuplemento[] {
+  return MIPRESS_SUPLEMENTOS;
+}
+
+export function getMipressCategoriasForPlanTipo(_tipoPlan?: string | null): string[] {
+  return MIPRESS_CATEGORIAS;
 }

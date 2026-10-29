@@ -247,10 +247,16 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
                   {patient.nombres} {patient.apellidos}
                 </p>
               </div>
-              {assignments.length >= 2 && (
-                <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)}>
+              {assignments.length >= 1 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 border-teal-300 text-teal-800 hover:bg-teal-50"
+                  onClick={() => setCompareOpen(true)}
+                  title="Historial de fases F1–F4 y comparación de todos los controles de progreso"
+                >
                   <GitCompare className="h-4 w-4 mr-1" />
-                  Comparar
+                  Historial y comparar
                 </Button>
               )}
             </div>
@@ -409,6 +415,7 @@ export function PatientPlansDialog({ patient, open, onOpenChange, onAssignPlan }
         plan={selectedSummaryPlan}
         open={summaryOpen}
         onOpenChange={setSummaryOpen}
+        patientName={`${patient.nombres} ${patient.apellidos}`.trim()}
       />
 
       <PlanComparatorDialog

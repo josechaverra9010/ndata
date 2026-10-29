@@ -674,15 +674,14 @@ def register_patient_phase2_routes(app, deps: dict):
         safe_name = sanitize_filename(file.filename) if sanitize_filename else (file.filename or "file")
         ext = os.path.splitext(safe_name)[1].lower() or ".bin"
         file_name = f"msg_{current_user.id}_{uuid.uuid4().hex[:12]}{ext}"
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_path = os.path.join(UPLOAD_DIR, file_name)
         contents = await file.read()
         if len(contents) > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="Archivo demasiado grande (máx. 5MB)")
-        with open(file_path, "wb") as buffer:
-            buffer.write(contents)
+        from media_storage import persist_upload_bytes
 
-        url = f"/uploads/{file_name}"
+        url = persist_upload_bytes(
+            file_name, contents, content_type=file.content_type, upload_dir=UPLOAD_DIR
+        )
         msg_type = "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else "file"
         return {
             "success": True,

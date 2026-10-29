@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, JSON, func, or_
 from sqlalchemy.orm import Session
 
+from legal_content import PRIVACY_POLICY_V2_MD, TERMS_V2_MD, COOKIES_POLICY_V2_MD
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import DeclarativeBase
 
@@ -44,51 +46,21 @@ LEGAL_DOC_TYPES = {
 DEFAULT_LEGAL_DOCS = [
     {
         "doc_type": "privacy_policy",
-        "version": "1.0",
+        "version": "2.0",
         "title": "Política de privacidad NutriData — Ley 1581",
-        "content_md": """# Política de privacidad
-
-NutriData actúa como **Responsable del tratamiento** de datos personales conforme a la **Ley 1581 de 2012** y el Decreto 1377 de 2013 (Habeas Data Colombia).
-
-## Datos que tratamos
-- Identificación y contacto (nombre, documento, email, teléfono)
-- Datos de salud y nutrición (planes, adherencia, bioquímicos, MIPRESS)
-- Datos de uso de la plataforma
-
-## Finalidades
-- Prestación del servicio de acompañamiento nutricional
-- Cumplimiento de obligaciones legales en salud (RIPS/MIPRESS cuando aplique)
-- Mejora del servicio y comunicaciones autorizadas
-
-## Derechos del titular
-Acceso, rectificación, actualización, supresión y revocación del consentimiento.
-
-Contacto: soporte@nutridata.com
-""",
+        "content_md": PRIVACY_POLICY_V2_MD,
     },
     {
         "doc_type": "terms",
-        "version": "1.0",
-        "title": "Términos y condiciones de uso",
-        "content_md": """# Términos y condiciones
-
-Al usar NutriData usted acepta estos términos. El servicio es proporcionado por profesionales de nutrición y organizaciones de salud aliadas.
-
-- Usted es responsable de la veracidad de la información suministrada.
-- La plataforma no reemplaza consulta médica de urgencias.
-- El uso indebido puede resultar en suspensión de cuenta.
-""",
+        "version": "2.0",
+        "title": "Términos y condiciones de uso NutriData",
+        "content_md": TERMS_V2_MD,
     },
     {
         "doc_type": "cookies_policy",
-        "version": "1.0",
-        "title": "Política de cookies",
-        "content_md": """# Política de cookies
-
-Utilizamos cookies esenciales para sesión y autenticación. Con su consentimiento, cookies analíticas para mejorar la experiencia.
-
-Puede gestionar preferencias desde configuración o revocar consentimiento contactando soporte.
-""",
+        "version": "2.0",
+        "title": "Política de cookies NutriData",
+        "content_md": COOKIES_POLICY_V2_MD,
     },
 ]
 
@@ -263,27 +235,65 @@ def migrate_compliance_schema(engine, inspect_fn, text_fn, LegalDocumentModel):
         print(f"[MIGRATE] compliance: {exc}")
 
 
+def _version_tuple(version: str) -> tuple:
+    try:
+        return tuple(int(part) for part in str(version).split("."))
+    except (TypeError, ValueError):
+        return (0,)
+
+
+def _is_newer_version(candidate: str, current: str) -> bool:
+    return _version_tuple(candidate) > _version_tuple(current)
+
+
 def _ensure_default_legal_docs(db: Session, now_co: Callable):
+    """Inserta documentos legales incorporados si no existen o si hay versión más reciente."""
     if LegalDocumentDB is None:
         return
-    existing = db.query(LegalDocumentDB).count()
-    if existing > 0:
-        return
     ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    changed = False
     for doc in DEFAULT_LEGAL_DOCS:
-        db.add(
-            LegalDocumentDB(
-                doc_type=doc["doc_type"],
-                version=doc["version"],
-                title=doc["title"],
-                content_md=doc["content_md"],
-                is_current=1,
-                effective_at=ts,
-                published_at=ts,
-                created_at=ts,
+        current = (
+            db.query(LegalDocumentDB)
+            .filter(
+                LegalDocumentDB.doc_type == doc["doc_type"],
+                LegalDocumentDB.is_current == 1,
             )
+            .order_by(LegalDocumentDB.id.desc())
+            .first()
         )
-    db.commit()
+        if current is None:
+            db.add(
+                LegalDocumentDB(
+                    doc_type=doc["doc_type"],
+                    version=doc["version"],
+                    title=doc["title"],
+                    content_md=doc["content_md"],
+                    is_current=1,
+                    effective_at=ts,
+                    published_at=ts,
+                    created_at=ts,
+                )
+            )
+            changed = True
+            continue
+        if _is_newer_version(doc["version"], current.version):
+            current.is_current = 0
+            db.add(
+                LegalDocumentDB(
+                    doc_type=doc["doc_type"],
+                    version=doc["version"],
+                    title=doc["title"],
+                    content_md=doc["content_md"],
+                    is_current=1,
+                    effective_at=ts,
+                    published_at=ts,
+                    created_at=ts,
+                )
+            )
+            changed = True
+    if changed:
+        db.commit()
 
 
 def log_clinical_access(
@@ -562,18 +572,24 @@ def register_compliance_routes(app, deps: dict):
     def _user_label(u) -> str:
         return f"{u.nombres or ''} {u.apellidos or ''}".strip() or u.email or f"#{u.id}"
 
-    @app.get("/api/public/legal/current")
-    def public_current_legal(
-        doc_type: str = Query(...),
-        db: Session = Depends(get_db),
-    ):
-        if doc_type not in LEGAL_DOC_TYPES:
+    def _resolve_public_legal_doc(doc_type: str, db: Session) -> dict:
+        normalized = {
+            "privacy": "privacy_policy",
+            "privacy-policy": "privacy_policy",
+            "privacidad": "privacy_policy",
+            "terms": "terms",
+            "terminos": "terms",
+            "cookies": "cookies_policy",
+            "cookies-policy": "cookies_policy",
+        }.get(doc_type, doc_type)
+        if normalized not in LEGAL_DOC_TYPES:
             raise HTTPException(status_code=400, detail="Tipo de documento inválido")
         if LegalDocumentDB is None:
             raise HTTPException(status_code=503, detail="Documentos legales no disponibles")
+        _ensure_default_legal_docs(db, now_co)
         row = (
             db.query(LegalDocumentDB)
-            .filter(LegalDocumentDB.doc_type == doc_type, LegalDocumentDB.is_current == 1)
+            .filter(LegalDocumentDB.doc_type == normalized, LegalDocumentDB.is_current == 1)
             .order_by(LegalDocumentDB.id.desc())
             .first()
         )
@@ -587,6 +603,25 @@ def register_compliance_routes(app, deps: dict):
             "effectiveAt": row.effective_at,
             "publishedAt": row.published_at,
         }
+
+    @app.get("/api/public/legal/{doc_type}")
+    def public_legal_by_type(
+        doc_type: str,
+        db: Session = Depends(get_db),
+    ):
+        return _resolve_public_legal_doc(doc_type, db)
+
+    @app.get("/api/public/legal/current")
+    def public_current_legal(
+        doc_type: Optional[str] = Query(None, alias="doc_type"),
+        db: Session = Depends(get_db),
+    ):
+        if not doc_type:
+            raise HTTPException(
+                status_code=400,
+                detail="Indica doc_type (privacy_policy, terms o cookies_policy) o usa /api/public/legal/{doc_type}",
+            )
+        return _resolve_public_legal_doc(doc_type, db)
 
     @app.get("/api/patient/consents")
     def patient_list_consents(

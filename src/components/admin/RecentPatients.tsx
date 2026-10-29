@@ -265,9 +265,10 @@ export function RecentPatients({ patients = [], loading = false, onRefresh }: Re
           if (!open) setSelectedPatient(null);
         }}
         onUpdate={onRefresh}
-        onEdit={() => {
-          if (selectedPatient) {
-            navigate(`/patients?patientId=${selectedPatient.id}&action=edit`);
+        onEdit={(patient) => {
+          const p = patient || selectedPatient;
+          if (p) {
+            navigate(`/patients?patientId=${p.id}&action=edit`);
           }
         }}
         onViewPlans={() => {

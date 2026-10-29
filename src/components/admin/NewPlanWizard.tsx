@@ -56,14 +56,32 @@ import { cn } from "@/lib/utils";
 import { API_URL } from "@/config/api";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEMENTOS_GRUPO, SUPLEMENTO_EXTRA_PREFIX, makeSuplementoExtraKey, isSuplementoGrupoKey, listSuplementoKeys, getCompositionRowForIngredient, getFoodNutrientsForGroup, getPediatriaRienTargets, getAtalahClass, getTrimestreFromSemana, getGestanteExtraKcal, getGestanteExpectedGainKg, getGestanteDebioGanar, getGestanteRienTargets, getGestAdolesZClass, getGestAdolesExpectedGainKg, getGestAdolesExtraKcal, getGestAdolesDailyGainG, getGestAdolesBaseReq } from "@/lib/foodNutrients";
+import { FOOD_NUTRIENTS, EVANUT_GRUPOS_ALIMENTOS, getEvanutGruposForTipo, SUPLEMENTOS_GRUPO, SUPLEMENTOS_GRUPO_DEPORTISTA, SUPLEMENTO_EXTRA_PREFIX, makeSuplementoExtraKey, isSuplementoGrupoKey, isPrimarySuplementoGrupoKey, listSuplementoKeys, listSuplementoGrupoRowsForTipo, resolveSuplementosGrupoKey, getCompositionRowForIngredient, kcalForIngredientAtGrams, parseLocaleNumberInput, normalizeCompositionIngredientList, stripIngredientPortionSuffix, getFoodNutrientsForGroup, getPediatriaRienTargets, getAtalahClass, getTrimestreFromSemana, getGestanteExtraKcal, getGestanteExpectedGainKg, getGestanteDebioGanar, getGestanteRienTargets, getGestAdolesZClass, getGestAdolesExpectedGainKg, getGestAdolesExtraKcal, getGestAdolesDailyGainG, getGestAdolesBaseReq } from "@/lib/foodNutrients";
+import {
+  enrichMealForPlanWizard,
+  forEachPlanMealIngredient,
+  mealIngredientStorageKey,
+  planMealRecipeOptions,
+} from "@/lib/weeklyMenuMeals";
+import { suggestBalancedFase3Portions, fase3TargetsFromForm } from "@/lib/suggestFase3Portions";
 import {
   MIPRESS_CATEGORIAS,
-  MIPRESS_SUPLEMENTOS,
+  getMipressCatalogForPlanTipo,
+  getMipressCategoriasForPlanTipo,
   getMipressSuplementoById,
 } from "@/lib/mipressSuplementos";
 import { todayInColombiaISO, addDaysColombiaISO } from "@/lib/timezone";
 import { PediatricGrowthPanel } from "@/components/pediatria/PediatricGrowthPanel";
+import { SomatoChart } from "@/components/specialty/SomatoChart";
+import { AtalahChart } from "@/components/specialty/AtalahChart";
+import {
+  DEPORTISTA_PLIEGUES_ENDOMORFIA,
+  PEDIATRIA_PERIMETROS,
+  PEDIATRIA_PLIEGUES,
+  calcBraquialAreasFromCm,
+  calcPerimetroMuscularBrazoCm,
+  readPerimBrazoCm,
+} from "@/lib/specialtyModule";
 
 const isGestanteTipo = (tipo?: string) => tipo === "gestante" || tipo === "gestante_adolescente";
 const isGestAdoles = (tipo?: string) => tipo === "gestante_adolescente";
@@ -972,7 +990,7 @@ function getDefaultFormData() {
     pediatria_kcal_por_gramo: "5",
     pediatria_actividad: "Moderado", // Sedentario | Moderado | Activo
     pediatria_deficit: "Ninguno", // Ninguno | Duplicar | Triplicar
-    pediatria_perim_brazo_mm: "",
+    pediatria_perim_brazo_cm: "",
     pediatria_pliegue_tricipital_mm: "",
     pediatria_pliegue_subescapular_mm: "",
     pediatria_perimetro_cefalico: "",
@@ -987,7 +1005,7 @@ function getDefaultFormData() {
     gestante_imc_deseado: "",
     gestante_pal: "1.53",
     gestante_extra_normal_variant: "a", // a=85/285/475 ; b=-/360/475
-    gestante_perim_brazo_mm: "",
+    gestante_perim_brazo_cm: "",
     gestante_pliegue_tricipital_mm: "",
     gestante_pliegue_subescapular_mm: "",
     // Campos extra Ges Adoles
@@ -1060,14 +1078,12 @@ function calculateGestanteEnergia(fd: Record<string, any>) {
   const requerimientoFinal = reqBase + extra;
   const rien = getGestanteRienTargets(atalah);
 
-  // Braquial
-  const perimBrazo = parseFloat(fd.gestante_perim_brazo_mm) || 0;
+  // Braquial (perímetro en cm, pliegues en mm)
+  const perimBrazo = readPerimBrazoCm(fd, 'gestante');
   const pliegueTri = parseFloat(fd.gestante_pliegue_tricipital_mm) || 0;
   const pliegueSub = parseFloat(fd.gestante_pliegue_subescapular_mm) || 0;
-  const perimMuscularBrazo = perimBrazo > 0 ? perimBrazo - Math.PI * pliegueTri : 0;
-  const areaMuscularBrazo = perimMuscularBrazo > 0 ? Math.pow(perimMuscularBrazo, 2) / (4 * Math.PI) : 0;
-  const areaTotalBrazo = perimBrazo > 0 ? (Math.PI / 4) * Math.pow(perimBrazo / Math.PI, 2) : 0;
-  const areaGrasaBrazo = areaTotalBrazo - areaMuscularBrazo;
+  const perimMuscularBrazo = calcPerimetroMuscularBrazoCm(perimBrazo, pliegueTri);
+  const { areaMuscularBrazo, areaTotalBrazo, areaGrasaBrazo } = calcBraquialAreasFromCm(perimBrazo, perimMuscularBrazo);
 
   return {
     estM,
@@ -1251,14 +1267,12 @@ function calculatePediatriaEnergia(fd: Record<string, any>) {
   const catchUpKcal = factorDeficit > 0 ? ganancia * factorDeficit * 5 : 0;
   const requerimientoFinal = requerimientoBase + catchUpKcal;
 
-  // Antropometría braquial (mm)
-  const perimBrazo = parseFloat(fd.pediatria_perim_brazo_mm) || 0;
+  // Antropometría (perímetro braquial en cm, pliegues en mm)
+  const perimBrazo = readPerimBrazoCm(fd, 'pediatria');
   const pliegueTri = parseFloat(fd.pediatria_pliegue_tricipital_mm) || 0;
   const pliegueSub = parseFloat(fd.pediatria_pliegue_subescapular_mm) || 0;
-  const perimMuscularBrazo = perimBrazo > 0 ? perimBrazo - Math.PI * pliegueTri : 0;
-  const areaMuscularBrazo = perimMuscularBrazo > 0 ? Math.pow(perimMuscularBrazo, 2) / (4 * Math.PI) : 0;
-  const areaTotalBrazo = perimBrazo > 0 ? (Math.PI / 4) * Math.pow(perimBrazo / Math.PI, 2) : 0;
-  const areaGrasaBrazo = areaTotalBrazo - areaMuscularBrazo;
+  const perimMuscularBrazo = calcPerimetroMuscularBrazoCm(perimBrazo, pliegueTri);
+  const { areaMuscularBrazo, areaTotalBrazo, areaGrasaBrazo } = calcBraquialAreasFromCm(perimBrazo, perimMuscularBrazo);
   const adiposidad = pliegueTri + pliegueSub;
 
   const rien = getPediatriaRienTargets(ageYears || 1);
@@ -1651,10 +1665,14 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       .filter((k) => k.startsWith(SUPLEMENTO_EXTRA_PREFIX))
       .sort();
     if (!extras.length) return base;
+    const supRows = base.filter(
+      (g) => isSuplementoGrupoKey(g) && !g.startsWith(SUPLEMENTO_EXTRA_PREFIX)
+    );
+    const lastSupRow = supRows.length ? supRows[supRows.length - 1] : null;
     const out: string[] = [];
     for (const g of base) {
       out.push(g);
-      if (g === SUPLEMENTOS_GRUPO) out.push(...extras);
+      if (lastSupRow && g === lastSupRow) out.push(...extras);
     }
     return out;
   })();
@@ -2115,10 +2133,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         grupos_alimentos_f3: {
           ...buildGruposAlimentos("deportista"),
           ...prev.grupos_alimentos_f3,
-          [SUPLEMENTOS_GRUPO]: prev.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO] || {
-            ...emptyGrupoNutrients(),
-            manual: true,
-          },
+          [SUPLEMENTOS_GRUPO_DEPORTISTA]:
+            prev.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO_DEPORTISTA] ||
+            prev.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO] || {
+              ...emptyGrupoNutrients(),
+              manual: true,
+            },
         },
       }));
       toast({
@@ -2168,6 +2188,18 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         dc.perimetro_cefalico != null && dc.perimetro_cefalico !== ""
           ? String(dc.perimetro_cefalico)
           : "";
+      const perimBraquial =
+        dc.perimetro_braquial != null && dc.perimetro_braquial !== ""
+          ? String(dc.perimetro_braquial)
+          : "";
+      const pliegueTri =
+        dc.pliegue_tricipital != null && dc.pliegue_tricipital !== ""
+          ? String(dc.pliegue_tricipital)
+          : "";
+      const pliegueSub =
+        dc.pliegue_subescapular != null && dc.pliegue_subescapular !== ""
+          ? String(dc.pliegue_subescapular)
+          : "";
 
       const draft = {
         pediatria_sexo: sexo,
@@ -2178,6 +2210,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         pediatria_talla_cm: talla,
         pediatria_peso_referencia: peso,
         pediatria_perimetro_cefalico: perimetroCefalico,
+        pediatria_perim_brazo_cm: perimBraquial,
+        pediatria_pliegue_tricipital_mm: pliegueTri,
+        pediatria_pliegue_subescapular_mm: pliegueSub,
         pediatria_actividad: actividad,
         pediatria_kcal_por_gramo: "5",
         pediatria_deficit: "Ninguno",
@@ -2502,27 +2537,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
       const enrichedWeek = await Promise.all(menu.week.map(async (day: any) => {
         if (!day.meals || !Array.isArray(day.meals)) return day;
 
-        const enrichedMeals = await Promise.all(day.meals.map(async (meal: any) => {
-          // Soporte para ambos formatos de ID de receta
-          const rId = meal.recipe_id || meal.recipeId || meal.id_receta;
-          if (rId) {
-            console.log(`🧪 Buscando receta ${rId} para ${meal.type}...`);
-            const recipeDetails = await fetchRecipeById(rId);
-
-            // Asegurar que ingredients sea array
-            if (recipeDetails && typeof recipeDetails.ingredients === "string") {
-              try {
-                recipeDetails.ingredients = JSON.parse(recipeDetails.ingredients);
-              } catch (e) {
-                console.error(`Error parsing ingredients for recipe ${rId}:`, e);
-                recipeDetails.ingredients = [];
-              }
-            }
-
-            return { ...meal, recipe_id: rId, recipeDetails };
-          }
-          return meal;
-        }));
+        const enrichedMeals = await Promise.all(
+          day.meals.map(async (meal: any) => enrichMealForPlanWizard(meal, fetchRecipeById))
+        );
         return { ...day, meals: enrichedMeals };
       }));
 
@@ -2545,17 +2562,13 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         if (!initialIngredients[dayIdx]) initialIngredients[dayIdx] = {};
 
         day.meals.forEach((meal: any, mealIdx: number) => {
-          const mealKey = meal.type || mealIdx.toString();
-          if (!initialIngredients[dayIdx][mealKey]) initialIngredients[dayIdx][mealKey] = {};
-
-          if (meal.recipeDetails?.ingredients && Array.isArray(meal.recipeDetails.ingredients)) {
-            meal.recipeDetails.ingredients.forEach((ing: string) => {
-              const baseName = (ing && typeof ing === "string") ? ing.replace(/\s*:.*$/, "").trim() : String(ing);
-              const row = getCompositionRowForIngredient(ing) ?? getCompositionRowForIngredient(baseName);
-              const grams = row?.portion_grams != null ? String(row.portion_grams) : "";
-              initialIngredients[dayIdx][mealKey][ing] = grams;
-            });
-          }
+          forEachPlanMealIngredient(meal, mealIdx, ({ storageKey, ing }) => {
+            if (!initialIngredients[dayIdx][storageKey]) initialIngredients[dayIdx][storageKey] = {};
+            const baseName = stripIngredientPortionSuffix(typeof ing === "string" ? ing : String(ing));
+            const row = getCompositionRowForIngredient(ing) ?? getCompositionRowForIngredient(baseName);
+            const grams = row?.portion_grams != null ? String(row.portion_grams) : "";
+            initialIngredients[dayIdx][storageKey][ing] = grams;
+          });
         });
       });
 
@@ -2616,6 +2629,40 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         }
       }
     }));
+  };
+
+  const computeMealCaloriesFromIngredients = (
+    dayIdx: number,
+    meal: {
+      type?: string;
+      calories?: number;
+      recipeDetails?: { ingredients?: string[] };
+      recipeOptions?: { recipeDetails?: { ingredients?: string[] } }[];
+    },
+    mealIdx: number
+  ): number => {
+    const options = planMealRecipeOptions(meal);
+    if (options.length === 0) {
+      return Math.round(meal.calories || 0);
+    }
+    let totalKcal = 0;
+    let matched = 0;
+    forEachPlanMealIngredient(meal, mealIdx, ({ storageKey, ing }) => {
+      const gramsStr = formData.ingredientes_f4?.[dayIdx]?.[storageKey]?.[ing];
+      let grams = parseLocaleNumberInput(String(gramsStr ?? ""));
+      if (!Number.isFinite(grams)) {
+        const baseGrams = parseLocaleNumberInput(
+          String(baseIngredientsF4?.[dayIdx]?.[storageKey]?.[ing] ?? "")
+        );
+        const mult = ingredientMultipliers?.[dayIdx]?.[storageKey]?.[ing] ?? 1;
+        if (Number.isFinite(baseGrams)) grams = baseGrams * mult;
+      }
+      const kcal = kcalForIngredientAtGrams(ing, grams);
+      if (kcal > 0) matched += 1;
+      totalKcal += kcal;
+    });
+    if (matched === 0) return Math.round(meal.calories || 0);
+    return Math.round(totalKcal);
   };
 
   const calculateIMC = (pesoValue: string, alturaValue: string) => {
@@ -2905,37 +2952,40 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
   };
 
   // Manejar cambio en porciones de Fase 3
-  const handleFase3PorcionesChange = (nombre: string, value: string) => {
+  const buildGrupoWithPorciones = (nombre: string, value: string, prevGrupo: Record<string, any>) => {
     const porciones = parseFloat(value) || 0;
     const nutrients = getFoodNutrientsForGroup(nombre);
-    const prevGrupo = formData.grupos_alimentos_f3[nombre] || emptyGrupoNutrients();
 
-    let updatedGrupo: Record<string, any>;
     if (isSuplementoGrupoKey(nombre) || prevGrupo.manual || !nutrients) {
-      updatedGrupo = applyManualGrupoTotals(nombre, { ...prevGrupo, porciones: value });
-    } else {
-      updatedGrupo = {
-        ...prevGrupo,
-        porciones: value,
-        kcal: nutrients.kcal * porciones,
-        prot: nutrients.prot * porciones,
-        grasa: nutrients.grasa * porciones,
-        gs: nutrients.gs * porciones,
-        gm: nutrients.gm * porciones,
-        gp: nutrients.gp * porciones,
-        col: nutrients.col * porciones,
-        chos: nutrients.chos * porciones,
-        fd: nutrients.fd * porciones,
-        calcio: (nutrients.calcio || 0) * porciones,
-        p: (nutrients.p || 0) * porciones,
-        fe: (nutrients.fe || 0) * porciones,
-        na: (nutrients.na || 0) * porciones,
-        k: (nutrients.k || 0) * porciones,
-        mg: (nutrients.mg || 0) * porciones,
-        zn: (nutrients.zn || 0) * porciones,
-        cu: (nutrients.cu || 0) * porciones,
-      };
+      return applyManualGrupoTotals(nombre, { ...prevGrupo, porciones: value });
     }
+
+    return {
+      ...prevGrupo,
+      porciones: value,
+      kcal: nutrients.kcal * porciones,
+      prot: nutrients.prot * porciones,
+      grasa: nutrients.grasa * porciones,
+      gs: nutrients.gs * porciones,
+      gm: nutrients.gm * porciones,
+      gp: nutrients.gp * porciones,
+      col: nutrients.col * porciones,
+      chos: nutrients.chos * porciones,
+      fd: nutrients.fd * porciones,
+      calcio: (nutrients.calcio || 0) * porciones,
+      p: (nutrients.p || 0) * porciones,
+      fe: (nutrients.fe || 0) * porciones,
+      na: (nutrients.na || 0) * porciones,
+      k: (nutrients.k || 0) * porciones,
+      mg: (nutrients.mg || 0) * porciones,
+      zn: (nutrients.zn || 0) * porciones,
+      cu: (nutrients.cu || 0) * porciones,
+    };
+  };
+
+  const handleFase3PorcionesChange = (nombre: string, value: string) => {
+    const prevGrupo = formData.grupos_alimentos_f3[nombre] || emptyGrupoNutrients();
+    const updatedGrupo = buildGrupoWithPorciones(nombre, value, prevGrupo);
 
     const newGrupos = {
       ...formData.grupos_alimentos_f3,
@@ -2944,6 +2994,54 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
 
     handleChange("grupos_alimentos_f3", newGrupos);
     calculateFase3Totals(newGrupos);
+  };
+
+  const handleSuggestFase3Portions = () => {
+    const targets = fase3TargetsFromForm(formData);
+    if (!(targets.kcal > 0)) {
+      toast({
+        title: "Completa la Fase 2",
+        description: "Calcula primero el requerimiento calórico y de macronutrientes en la fase anterior.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const suggested = suggestBalancedFase3Portions(gruposFase3, targets);
+    if (!suggested) {
+      toast({
+        title: "No se pudo sugerir",
+        description: "Verifica que la Fase 2 tenga valores válidos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newGrupos = { ...formData.grupos_alimentos_f3 };
+    for (const grupo of gruposFase3) {
+      if (isSuplementoGrupoKey(grupo)) continue;
+      const prev = newGrupos[grupo] || emptyGrupoNutrients();
+      const porciones = suggested[grupo] ?? 0;
+      const value = porciones > 0 ? String(porciones) : "0";
+      newGrupos[grupo] = buildGrupoWithPorciones(grupo, value, prev);
+    }
+
+    handleChange("grupos_alimentos_f3", newGrupos);
+    calculateFase3Totals(newGrupos);
+
+    const totals = Object.values(newGrupos).reduce(
+      (acc: { kcal: number; prot: number; chos: number }, g: any) => ({
+        kcal: acc.kcal + (parseFloat(g.kcal) || 0),
+        prot: acc.prot + (parseFloat(g.prot) || 0),
+        chos: acc.chos + (parseFloat(g.chos) || 0),
+      }),
+      { kcal: 0, prot: 0, chos: 0 }
+    );
+
+    toast({
+      title: "Porciones sugeridas",
+      description: `Distribución automática según Fase 2: ${totals.kcal.toFixed(0)} kcal · ${totals.prot.toFixed(1)} g prot · ${totals.chos.toFixed(1)} g CHO. Ajusta manualmente si lo necesitas.`,
+    });
   };
 
   const handleSuplementoNutrientChange = (grupoKey: string, field: string, value: string) => {
@@ -3026,20 +3124,22 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
   };
 
   const handleRemoveSuplemento = (grupoKey: string) => {
-    if (grupoKey === SUPLEMENTOS_GRUPO) {
-      // El principal no se elimina: se limpia
-      const cleared = applyManualGrupoTotals(SUPLEMENTOS_GRUPO, {
+    if (
+      isPrimarySuplementoGrupoKey(grupoKey, formData.grupos_alimentos_f3, formData.tipo_plan)
+    ) {
+      // Filas EVANUT no se eliminan: se limpian
+      const cleared = applyManualGrupoTotals(grupoKey, {
         ...emptyGrupoNutrients(),
         manual: true,
         mipress_id: "",
         mipress_nombre: "",
         mipress_categoria: "",
         mipress_porcion: "",
-        mipress_categoria_filtro: formData.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO]?.mipress_categoria_filtro,
+        mipress_categoria_filtro: formData.grupos_alimentos_f3?.[grupoKey]?.mipress_categoria_filtro,
       });
       const newGrupos = {
         ...formData.grupos_alimentos_f3,
-        [SUPLEMENTOS_GRUPO]: cleared,
+        [grupoKey]: cleared,
       };
       handleChange("grupos_alimentos_f3", newGrupos);
       calculateFase3Totals(newGrupos);
@@ -3054,12 +3154,13 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
 
   const ensureSuplementosGrupoF3 = (grupos?: Record<string, any>) => {
     const base = grupos || formData.grupos_alimentos_f3 || {};
-    if (base[SUPLEMENTOS_GRUPO]) return base;
-    return {
-      ...buildGruposAlimentos(formData.tipo_plan),
-      ...base,
-      [SUPLEMENTOS_GRUPO]: { ...emptyGrupoNutrients(), manual: true },
-    };
+    const merged = { ...buildGruposAlimentos(formData.tipo_plan), ...base };
+    for (const rowKey of listSuplementoGrupoRowsForTipo(formData.tipo_plan)) {
+      if (!merged[rowKey]) {
+        merged[rowKey] = { ...emptyGrupoNutrients(), manual: true };
+      }
+    }
+    return merged;
   };
 
   const ensureDeportistaDefaultsForFase2 = () => {
@@ -3188,9 +3289,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         }
         ensureDeportistaDefaultsForFase2();
         // Asegurar grupo suplementos en Fase 3
-        if (!formData.grupos_alimentos_f3[SUPLEMENTOS_GRUPO]) {
-          handleChange("grupos_alimentos_f3", ensureSuplementosGrupoF3());
-        }
+        handleChange("grupos_alimentos_f3", ensureSuplementosGrupoF3());
       } else if (formData.tipo_plan === "pediatria") {
         if (!(parseFloat(formData.pediatria_peso) > 0) || !(parseFloat(formData.pediatria_talla_cm) > 0)) {
           toast({
@@ -3355,9 +3454,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
         return false;
       }
       // Al pasar a fórmula desarrollada, asegurar fila de suplementos MIPRESS
-      if (!formData.grupos_alimentos_f3?.[SUPLEMENTOS_GRUPO]) {
-        handleChange("grupos_alimentos_f3", ensureSuplementosGrupoF3());
-      }
+      handleChange("grupos_alimentos_f3", ensureSuplementosGrupoF3());
       return true;
     }
 
@@ -3542,7 +3639,8 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             pediatria_kcal_por_gramo: formData.pediatria_kcal_por_gramo,
             pediatria_actividad: formData.pediatria_actividad,
             pediatria_deficit: formData.pediatria_deficit,
-            pediatria_perim_brazo_mm: formData.pediatria_perim_brazo_mm,
+            pediatria_perim_brazo_cm: formData.pediatria_perim_brazo_cm,
+            pediatria_perimetro_cefalico: formData.pediatria_perimetro_cefalico,
             pediatria_pliegue_tricipital_mm: formData.pediatria_pliegue_tricipital_mm,
             pediatria_pliegue_subescapular_mm: formData.pediatria_pliegue_subescapular_mm,
             imc: p.imc,
@@ -3617,7 +3715,7 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
             gestante_imc_deseado: formData.gestante_imc_deseado,
             gestante_pal: formData.gestante_pal,
             gestante_extra_normal_variant: formData.gestante_extra_normal_variant,
-            gestante_perim_brazo_mm: formData.gestante_perim_brazo_mm,
+            gestante_perim_brazo_cm: formData.gestante_perim_brazo_cm,
             gestante_pliegue_tricipital_mm: formData.gestante_pliegue_tricipital_mm,
             gestante_pliegue_subescapular_mm: formData.gestante_pliegue_subescapular_mm,
             imc_pregestacional: g.imcPreg,
@@ -4196,9 +4294,20 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.deportista_peso} onChange={(e) => handleChange("deportista_peso", e.target.value)} /></div>
                       <div className="space-y-1"><Label>Estatura (cm)</Label><Input type="number" step="0.1" value={formData.deportista_estatura} onChange={(e) => handleChange("deportista_estatura", e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Tríceps (mm)</Label><Input type="number" step="0.1" value={formData.deportista_triceps} onChange={(e) => handleChange("deportista_triceps", e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Subescapular (mm)</Label><Input type="number" step="0.1" value={formData.deportista_subescapular} onChange={(e) => handleChange("deportista_subescapular", e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Supraespinal (mm)</Label><Input type="number" step="0.1" value={formData.deportista_supraespinal} onChange={(e) => handleChange("deportista_supraespinal", e.target.value)} /></div>
+                      {DEPORTISTA_PLIEGUES_ENDOMORFIA.map((pliegue) => (
+                        <div key={pliegue.key} className="space-y-1">
+                          <Label>
+                            {pliegue.label} (mm)
+                            <span className="block text-[10px] font-normal italic text-muted-foreground">{pliegue.apellido}</span>
+                          </Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData[pliegue.key]}
+                            onChange={(e) => handleChange(pliegue.key, e.target.value)}
+                          />
+                        </div>
+                      ))}
                       <div className="space-y-1"><Label>Diám. húmero (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_humero} onChange={(e) => handleChange("deportista_diametro_humero", e.target.value)} /></div>
                       <div className="space-y-1"><Label>Diám. fémur (cm)</Label><Input type="number" step="0.01" value={formData.deportista_diametro_femur} onChange={(e) => handleChange("deportista_diametro_femur", e.target.value)} /></div>
                       <div className="space-y-1"><Label>Perím. brazo tenso (cm)</Label><Input type="number" step="0.1" value={formData.deportista_perim_brazo_tenso} onChange={(e) => handleChange("deportista_perim_brazo_tenso", e.target.value)} /></div>
@@ -4221,6 +4330,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         <div className="rounded border p-2"><span className="text-muted-foreground block">X</span><p className="font-bold">{m.endomorfia || m.ectomorfia ? m.coordX.toFixed(2) : "—"}</p></div>
                         <div className="rounded border p-2"><span className="text-muted-foreground block">Y</span><p className="font-bold">{m.mesomorfia ? m.coordY.toFixed(2) : "—"}</p></div>
                       </div>
+                    </div>
+                    <div className="pt-2 border-t">
+                      <SomatoChart
+                        endomorfia={m.endomorfia}
+                        mesomorfia={m.mesomorfia}
+                        ectomorfia={m.ectomorfia}
+                        coordX={m.coordX}
+                        coordY={m.coordY}
+                        compact
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -4528,7 +4647,6 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     <div className="space-y-1"><Label>Edad (meses)</Label><Input type="number" min="0" max="11" value={formData.pediatria_edad_meses} onChange={(e) => syncReq({ pediatria_edad_meses: e.target.value })} /></div>
                     <div className="space-y-1"><Label>Peso (kg)</Label><Input type="number" step="0.1" value={formData.pediatria_peso} onChange={(e) => syncReq({ pediatria_peso: e.target.value, pediatria_peso_referencia: formData.pediatria_peso_referencia || e.target.value })} /></div>
                     <div className="space-y-1"><Label>Talla/Longitud (cm)</Label><Input type="number" step="0.1" value={formData.pediatria_talla_cm} onChange={(e) => syncReq({ pediatria_talla_cm: e.target.value })} /></div>
-                    <div className="space-y-1"><Label>Perímetro cefálico (cm)</Label><Input type="number" step="0.1" value={formData.pediatria_perimetro_cefalico} onChange={(e) => syncReq({ pediatria_perimetro_cefalico: e.target.value })} placeholder="Opcional" /></div>
                     <div className="space-y-1"><Label>Peso referencia (kg)</Label><Input type="number" step="0.1" value={formData.pediatria_peso_referencia} onChange={(e) => syncReq({ pediatria_peso_referencia: e.target.value })} /></div>
                     <div className="space-y-1"><Label>IMC deseado (opc.)</Label><Input type="number" step="0.1" value={formData.pediatria_imc_deseado} onChange={(e) => syncReq({ pediatria_imc_deseado: e.target.value })} placeholder="Ej. 17" /></div>
                     <div className="space-y-1">
@@ -4606,17 +4724,48 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                   />
 
                   <div>
-                    <h4 className="font-semibold mb-2">Antropometría braquial (opcional)</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <div className="space-y-1"><Label>Perímetro brazo (mm)</Label><Input type="number" step="0.1" value={formData.pediatria_perim_brazo_mm} onChange={(e) => handleChange("pediatria_perim_brazo_mm", e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Pliegue tricipital (mm)</Label><Input type="number" step="0.1" value={formData.pediatria_pliegue_tricipital_mm} onChange={(e) => handleChange("pediatria_pliegue_tricipital_mm", e.target.value)} /></div>
-                      <div className="space-y-1"><Label>Pliegue subescapular (mm)</Label><Input type="number" step="0.1" value={formData.pediatria_pliegue_subescapular_mm} onChange={(e) => handleChange("pediatria_pliegue_subescapular_mm", e.target.value)} /></div>
+                    <h4 className="font-semibold mb-1">Antropometría (opcional)</h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Perímetros en <strong>cm</strong> · Pliegues en <strong>mm</strong>
+                    </p>
+                    <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Perímetros (cm)</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 mb-4">
+                      {PEDIATRIA_PERIMETROS.map((campo) => (
+                        <div key={campo.key} className="space-y-1">
+                          <Label>{campo.label} ({campo.unit})</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData[campo.key]}
+                            onChange={(e) =>
+                              campo.key === 'pediatria_perimetro_cefalico'
+                                ? syncReq({ [campo.key]: e.target.value })
+                                : handleChange(campo.key, e.target.value)
+                            }
+                            placeholder="Opcional"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Pliegues (mm)</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
+                      {PEDIATRIA_PLIEGUES.map((campo) => (
+                        <div key={campo.key} className="space-y-1">
+                          <Label>{campo.label} ({campo.unit})</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={formData[campo.key]}
+                            onChange={(e) => handleChange(campo.key, e.target.value)}
+                          />
+                        </div>
+                      ))}
                     </div>
                     <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                      <div><span className="text-muted-foreground">PMB (mm)</span><p className="font-medium">{p.perimMuscularBrazo > 0 ? p.perimMuscularBrazo.toFixed(1) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">AMB (mm²)</span><p className="font-medium">{p.areaMuscularBrazo > 0 ? p.areaMuscularBrazo.toFixed(1) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">AGB (mm²)</span><p className="font-medium">{p.areaGrasaBrazo > 0 ? p.areaGrasaBrazo.toFixed(1) : "—"}</p></div>
-                      <div><span className="text-muted-foreground">Adiposidad</span><p className="font-medium">{p.adiposidad > 0 ? p.adiposidad.toFixed(1) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">PMB (cm)</span><p className="font-medium">{p.perimMuscularBrazo > 0 ? p.perimMuscularBrazo.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">AMB (cm²)</span><p className="font-medium">{p.areaMuscularBrazo > 0 ? p.areaMuscularBrazo.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">AGB (cm²)</span><p className="font-medium">{p.areaGrasaBrazo > 0 ? p.areaGrasaBrazo.toFixed(2) : "—"}</p></div>
+                      <div><span className="text-muted-foreground">Adiposidad (mm)</span><p className="font-medium">{p.adiposidad > 0 ? p.adiposidad.toFixed(1) : "—"}</p></div>
                     </div>
                   </div>
 
@@ -4935,20 +5084,47 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         <div className="sm:col-span-2"><span className="text-muted-foreground">Método · RIEN</span><p className="font-medium">{gAdult.metodoLabel} · {gAdult.rien.proteinas_kg} g prot/kg · grasa {gAdult.rien.grasas_amdr}% · fibra {gAdult.rien.fibra_g}g</p></div>
                       </div>
                       <div>
-                        <h4 className="font-semibold mb-2">Antropometría braquial (opcional)</h4>
+                        <h4 className="font-semibold mb-2">Antropometría (opcional)</h4>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                          <div className="space-y-1"><Label>Perímetro brazo (mm)</Label><Input type="number" step="0.1" value={formData.gestante_perim_brazo_mm} onChange={(e) => handleChange("gestante_perim_brazo_mm", e.target.value)} /></div>
+                          <div className="space-y-1"><Label>Perímetro braquial (cm)</Label><Input type="number" step="0.1" value={formData.gestante_perim_brazo_cm} onChange={(e) => handleChange("gestante_perim_brazo_cm", e.target.value)} /></div>
                           <div className="space-y-1"><Label>Pliegue tricipital (mm)</Label><Input type="number" step="0.1" value={formData.gestante_pliegue_tricipital_mm} onChange={(e) => handleChange("gestante_pliegue_tricipital_mm", e.target.value)} /></div>
                           <div className="space-y-1"><Label>Pliegue subescapular (mm)</Label><Input type="number" step="0.1" value={formData.gestante_pliegue_subescapular_mm} onChange={(e) => handleChange("gestante_pliegue_subescapular_mm", e.target.value)} /></div>
                         </div>
                         <div className="mt-3 rounded-lg border bg-muted/30 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                          <div><span className="text-muted-foreground">PMB</span><p className="font-medium">{gAdult.perimMuscularBrazo > 0 ? gAdult.perimMuscularBrazo.toFixed(1) : "—"}</p></div>
+                          <div><span className="text-muted-foreground">PMB (cm)</span><p className="font-medium">{gAdult.perimMuscularBrazo > 0 ? gAdult.perimMuscularBrazo.toFixed(2) : "—"}</p></div>
                           <div><span className="text-muted-foreground">AMB</span><p className="font-medium">{gAdult.areaMuscularBrazo > 0 ? gAdult.areaMuscularBrazo.toFixed(1) : "—"}</p></div>
                           <div><span className="text-muted-foreground">AGB</span><p className="font-medium">{gAdult.areaGrasaBrazo > 0 ? gAdult.areaGrasaBrazo.toFixed(1) : "—"}</p></div>
                           <div><span className="text-muted-foreground">Adiposidad</span><p className="font-medium">{gAdult.adiposidad > 0 ? gAdult.adiposidad.toFixed(1) : "—"}</p></div>
                         </div>
                       </div>
                     </>
+                  ) : null}
+
+                  {(adoles && gAd) || gAdult ? (
+                    <div className="pt-2 border-t">
+                      <AtalahChart
+                        variant={adoles ? "adolescent" : "adult"}
+                        imcPregestacional={adoles ? gAd!.imcPreg : gAdult!.imcPreg}
+                        atalahCategory={
+                          (adoles
+                            ? getAtalahClass(gAd!.imcPreg)
+                            : gAdult!.atalah) as "Bajo" | "Normal" | "Sobrepeso" | "Obesidad" | ""
+                        }
+                        semanaGestacional={parseFloat(formData.gestante_semana) || undefined}
+                        gananciaPresentada={
+                          formData.gestante_peso_actual
+                            ? adoles
+                              ? gAd!.gananciaPresentada
+                              : gAdult!.gananciaPresentada
+                            : undefined
+                        }
+                        t1Kg={adoles ? gAd!.gains.t1 : gAdult!.gains.t1}
+                        t23Kg={adoles ? gAd!.gains.t23 : gAdult!.gains.t23}
+                        zScore={adoles ? gAd!.z : undefined}
+                        zClass={adoles ? gAd!.zClass : undefined}
+                        compact
+                      />
+                    </div>
                   ) : null}
 
                   {renderAjusteCaloriasUI()}
@@ -6448,7 +6624,10 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
               </CardHeader>
               <CardContent className="space-y-4">
                 {(() => {
-                  const suplementoKeys = listSuplementoKeys(formData.grupos_alimentos_f3);
+                  const tipoPlan = formData.tipo_plan;
+                  const mipressCatalog = getMipressCatalogForPlanTipo(tipoPlan);
+                  const mipressCategorias = getMipressCategoriasForPlanTipo(tipoPlan);
+                  const suplementoKeys = listSuplementoKeys(formData.grupos_alimentos_f3, tipoPlan);
                   const fields = [
                     ["per_kcal", "Kcal"],
                     ["per_prot", "Prot"],
@@ -6464,9 +6643,12 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     <div className="rounded-lg border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 p-4 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <h4 className="font-semibold text-sm">Suplementos MIPRESS (por porción)</h4>
+                          <h4 className="font-semibold text-sm">
+                            Suplementos MIPRESS y deportivos (por porción)
+                          </h4>
                           <p className="text-xs text-muted-foreground">
-                            Agrega uno o más suplementos del catálogo MIPRESS. Cada uno aparece como fila en la fórmula desarrollada.
+                            Catálogo MIPRESS completo y suplementos deportivos. Cada uno aparece como fila en la
+                            fórmula desarrollada.
                           </p>
                         </div>
                         <Button
@@ -6487,10 +6669,15 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                           const categoriaFiltro = s.mipress_categoria_filtro || "__all__";
                           const suplementosFiltrados =
                             categoriaFiltro === "__all__"
-                              ? MIPRESS_SUPLEMENTOS
-                              : MIPRESS_SUPLEMENTOS.filter((x) => x.categoria === categoriaFiltro);
+                              ? mipressCatalog
+                              : mipressCatalog.filter((x) => x.categoria === categoriaFiltro);
+                          const isPrimarySup = isPrimarySuplementoGrupoKey(
+                            grupoKey,
+                            formData.grupos_alimentos_f3,
+                            tipoPlan
+                          );
                           const canRemove =
-                            grupoKey !== SUPLEMENTOS_GRUPO ||
+                            !isPrimarySup ||
                             Boolean(s.mipress_id || s.mipress_nombre || parseFloat(s.porciones) > 0 || parseFloat(s.per_kcal) > 0);
 
                           return (
@@ -6512,17 +6699,17 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                                     variant="ghost"
                                     className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={() => handleRemoveSuplemento(grupoKey)}
-                                    title={grupoKey === SUPLEMENTOS_GRUPO ? "Limpiar suplemento" : "Eliminar suplemento"}
+                                    title={isPrimarySup ? "Limpiar suplemento" : "Eliminar suplemento"}
                                   >
                                     <Trash2 className="h-4 w-4 mr-1" />
-                                    {grupoKey === SUPLEMENTOS_GRUPO ? "Limpiar" : "Quitar"}
+                                    {isPrimarySup ? "Limpiar" : "Quitar"}
                                   </Button>
                                 ) : null}
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Categoría MIPRESS</Label>
+                                  <Label className="text-xs">Categoría</Label>
                                   <Select
                                     value={categoriaFiltro}
                                     onValueChange={(v) => {
@@ -6541,11 +6728,13 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                                     </SelectTrigger>
                                     <SelectContent className="max-h-72">
                                       <SelectItem value="__all__">Todas las categorías</SelectItem>
-                                      {MIPRESS_CATEGORIAS.map((cat) => (
-                                        <SelectItem key={cat} value={cat}>
-                                          {cat}
-                                        </SelectItem>
-                                      ))}
+                                      {(mipressCategorias.length ? mipressCategorias : MIPRESS_CATEGORIAS).map(
+                                        (cat) => (
+                                          <SelectItem key={cat} value={cat}>
+                                            {cat}
+                                          </SelectItem>
+                                        )
+                                      )}
                                     </SelectContent>
                                   </Select>
                                 </div>
@@ -6600,6 +6789,26 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                     </div>
                   );
                 })()}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Distribución de porciones</p>
+                    <p className="text-xs text-muted-foreground">
+                      Objetivo Fase 2: {parseFloat(formData.total_calorias_f2 || "0").toFixed(0)} kcal ·{" "}
+                      {parseFloat(formData.proteinas_gramos_f2 || "0").toFixed(1)} g prot ·{" "}
+                      {parseFloat(formData.cho_gramos_f2 || "0").toFixed(1)} g CHO
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0 gap-2"
+                    onClick={handleSuggestFase3Portions}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Sugerir porciones balanceadas
+                  </Button>
+                </div>
                 <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
                   <table className="w-full border-collapse text-sm">
                     <thead>
@@ -6629,8 +6838,16 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                         const suplementoLabel = isSuplementoGrupoKey(grupo)
                           ? (grupoData.mipress_nombre
                               ? `Suplemento: ${grupoData.mipress_nombre}`
-                              : grupo === SUPLEMENTOS_GRUPO
-                                ? "Suplementos MIPRESS"
+                              : isPrimarySuplementoGrupoKey(
+                                    grupo,
+                                    formData.grupos_alimentos_f3,
+                                    formData.tipo_plan
+                                  )
+                                ? grupo === SUPLEMENTOS_GRUPO_DEPORTISTA
+                                  ? "Suplementos deportivos"
+                                  : grupo === SUPLEMENTOS_GRUPO
+                                    ? "Suplementos MIPRESS"
+                                    : "Suplementos"
                                 : "Suplemento adicional")
                           : grupo;
 
@@ -6774,7 +6991,9 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                               const label = isSuplementoGrupoKey(grupo)
                                 ? (formData.grupos_alimentos_f3[grupo]?.mipress_nombre
                                     ? `Suplemento: ${formData.grupos_alimentos_f3[grupo].mipress_nombre}`
-                                    : "Suplemento MIPRESS")
+                                    : grupo === SUPLEMENTOS_GRUPO_DEPORTISTA
+                                      ? "Suplementos deportivos"
+                                      : "Suplemento MIPRESS")
                                 : grupo;
                               return (
                                 <tr key={grupo} className="flex justify-between items-center py-1 border-b border-primary/5 last:border-0">
@@ -6927,92 +7146,119 @@ export function NewPlanWizard({ open, onOpenChange, onCreatePlan, patientId, ini
                                         <p className="text-xs text-muted-foreground font-medium">{meal.recipe_name}</p>
                                       </div>
                                       <Badge variant="secondary" className="text-[10px] font-bold">
-                                        {meal.calories} kcal
+                                        {computeMealCaloriesFromIngredients(dayIdx, meal, mealIdx)} kcal
                                       </Badge>
                                     </CardHeader>
-                                    <CardContent className="py-4 px-4 space-y-3">
-                                      {meal.recipeDetails?.ingredients && meal.recipeDetails.ingredients.length > 0 ? (
-                                        <div className="space-y-3">
-                                          <Label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                            <FileText className="h-3 w-3" />
-                                            Ingredientes y gramos (según receta / tabla de composición)
-                                          </Label>
-                                          <div className="grid gap-2">
-                                            {meal.recipeDetails.ingredients.map((ing: string, ingIdx: number) => {
-                                              const mealKey = meal.type || mealIdx.toString();
-                                              const baseGramsStr =
-                                                baseIngredientsF4?.[dayIdx]?.[mealKey]?.[ing] ??
-                                                baseIngredientsF4?.[dayIdx]?.[mealIdx]?.[ing] ??
-                                                "";
-                                              const baseGrams = parseFloat(String(baseGramsStr));
-                                              const currentMultiplier =
-                                                ingredientMultipliers?.[dayIdx]?.[mealKey]?.[ing] ?? 1;
-                                              const gramsValue =
-                                                formData.ingredientes_f4[dayIdx]?.[mealKey]?.[ing] ?? "";
+                                    <CardContent className="py-4 px-4 space-y-4">
+                                      {(() => {
+                                        const options = planMealRecipeOptions(meal);
+                                        const hasIngredients = options.some(
+                                          (o) => (o.recipeDetails?.ingredients?.length ?? 0) > 0
+                                        );
+                                        if (!hasIngredients) {
+                                          return (
+                                            <div className="text-center py-4 bg-muted/5 rounded flex flex-col items-center gap-2">
+                                              <AlertCircle className="h-4 w-4 text-muted-foreground opacity-30" />
+                                              <p className="text-[11px] text-muted-foreground">
+                                                No se encontraron ingredientes para esta comida
+                                              </p>
+                                            </div>
+                                          );
+                                        }
+                                        const multi = options.length > 1;
+                                        const mealType = meal.type || String(mealIdx);
+                                        return options.map((option, optIdx) => {
+                                          const ingredients = normalizeCompositionIngredientList(
+                                            option.recipeDetails?.ingredients || []
+                                          );
+                                          if (ingredients.length === 0) return null;
+                                          const storageKey = mealIngredientStorageKey(
+                                            mealType,
+                                            option.recipe_id,
+                                            optIdx,
+                                            multi
+                                          );
+                                          return (
+                                            <div key={`${option.recipe_id ?? optIdx}-${optIdx}`} className="space-y-2">
+                                              {multi && (
+                                                <p className="text-xs font-semibold text-primary border-b pb-1">
+                                                  {option.recipe_name || option.recipeDetails?.name}
+                                                </p>
+                                              )}
+                                              <Label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                                <FileText className="h-3 w-3" />
+                                                Ingredientes y gramos
+                                              </Label>
+                                              <div className="grid gap-2">
+                                                {ingredients.map((ing: string, ingIdx: number) => {
+                                                  const baseGramsStr =
+                                                    baseIngredientsF4?.[dayIdx]?.[storageKey]?.[ing] ??
+                                                    baseIngredientsF4?.[dayIdx]?.[mealType]?.[ing] ??
+                                                    "";
+                                                  const baseGrams = parseFloat(String(baseGramsStr));
+                                                  const currentMultiplier =
+                                                    ingredientMultipliers?.[dayIdx]?.[storageKey]?.[ing] ?? 1;
+                                                  const gramsValue =
+                                                    formData.ingredientes_f4[dayIdx]?.[storageKey]?.[ing] ?? "";
+                                                  const displayGrams =
+                                                    gramsValue ||
+                                                    (Number.isFinite(baseGrams)
+                                                      ? (baseGrams * currentMultiplier).toFixed(2)
+                                                      : "");
 
-                                              const displayGrams =
-                                                gramsValue ||
-                                                (Number.isFinite(baseGrams)
-                                                  ? (baseGrams * currentMultiplier).toFixed(2)
-                                                  : "");
+                                                  return (
+                                                    <div
+                                                      key={ingIdx}
+                                                      className="flex items-center gap-3 bg-muted/10 p-2 rounded border border-transparent"
+                                                    >
+                                                      <span className="text-xs flex-1 truncate font-medium">
+                                                        {stripIngredientPortionSuffix(ing) || ing}
+                                                      </span>
+                                                      <span className="text-[11px] text-muted-foreground w-10 text-right tabular-nums">
+                                                        {displayGrams ? `${displayGrams} g` : "—"}
+                                                      </span>
+                                                      <div className="flex items-center gap-1 shrink-0">
+                                                        <span className="text-[10px] text-muted-foreground">x</span>
+                                                        <Input
+                                                          type="number"
+                                                          step="0.1"
+                                                          className="h-7 w-16 text-[11px] text-center"
+                                                          value={currentMultiplier}
+                                                          onChange={(e) => {
+                                                            const raw = parseLocaleNumberInput(e.target.value);
+                                                            const safeMultiplier =
+                                                              Number.isFinite(raw) && raw >= 0 ? raw : 0;
 
-                                              return (
-                                                <div
-                                                  key={ingIdx}
-                                                  className="flex items-center gap-3 bg-muted/10 p-2 rounded border border-transparent"
-                                                >
-                                                  <span className="text-xs flex-1 truncate font-medium">
-                                                    {ing.replace(/\s*:.*$/, "").trim() || ing}
-                                                  </span>
-                                                  <span className="text-[11px] text-muted-foreground w-10 text-right tabular-nums">
-                                                    {displayGrams ? `${displayGrams} g` : "—"}
-                                                  </span>
-                                                  <div className="flex items-center gap-1 shrink-0">
-                                                    <span className="text-[10px] text-muted-foreground">x</span>
-                                                    <Input
-                                                      type="number"
-                                                      step="0.1"
-                                                      className="h-7 w-16 text-[11px] text-center"
-                                                      value={currentMultiplier}
-                                                      onChange={(e) => {
-                                                        const raw = parseFloat(e.target.value);
-                                                        const safeMultiplier =
-                                                          Number.isFinite(raw) && raw >= 0 ? raw : 0;
+                                                            setIngredientMultipliers((prev) => ({
+                                                              ...prev,
+                                                              [dayIdx]: {
+                                                                ...(prev[dayIdx] || {}),
+                                                                [storageKey]: {
+                                                                  ...(prev[dayIdx]?.[storageKey] || {}),
+                                                                  [ing]: safeMultiplier,
+                                                                },
+                                                              },
+                                                            }));
 
-                                                        setIngredientMultipliers(prev => ({
-                                                          ...prev,
-                                                          [dayIdx]: {
-                                                            ...(prev[dayIdx] || {}),
-                                                            [mealKey]: {
-                                                              ...(prev[dayIdx]?.[mealKey] || {}),
-                                                              [ing]: safeMultiplier,
-                                                            },
-                                                          },
-                                                        }));
-
-                                                        if (Number.isFinite(baseGrams)) {
-                                                          const scaled = baseGrams * safeMultiplier;
-                                                          updateIngredientGrams(
-                                                            dayIdx,
-                                                            mealKey,
-                                                            ing,
-                                                            scaled.toFixed(2)
-                                                          );
-                                                        }
-                                                      }}
-                                                    />
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="text-center py-4 bg-muted/5 rounded flex flex-col items-center gap-2">
-                                          <AlertCircle className="h-4 w-4 text-muted-foreground opacity-30" />
-                                          <p className="text-[11px] text-muted-foreground">No se encontraron ingredientes para esta receta</p>
-                                        </div>
-                                      )}
+                                                            if (Number.isFinite(baseGrams)) {
+                                                              updateIngredientGrams(
+                                                                dayIdx,
+                                                                storageKey,
+                                                                ing,
+                                                                (baseGrams * safeMultiplier).toFixed(2)
+                                                              );
+                                                            }
+                                                          }}
+                                                        />
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          );
+                                        });
+                                      })()}
                                     </CardContent>
                                   </Card>
                                 ))}

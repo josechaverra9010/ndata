@@ -24,7 +24,21 @@ PATIENT_PHASE_LABELS = {
     "patient_phase_4": "Fase 4 — Diario fotográfico y sustituciones",
 }
 
-DEFAULT_PATIENT_FEATURE_FLAGS = {k: True for k in PATIENT_PHASE_KEYS}
+DEFAULT_PATIENT_FEATURE_FLAGS = {
+    "patient_phase_1": True,
+    "patient_phase_2": False,
+    "patient_phase_3": False,
+    "patient_phase_4": False,
+}
+
+# Módulos desactivados por defecto (retos, diario offline, etc.)
+DEFAULT_MODULE_FEATURE_FLAGS = {
+    "clinical_colombia": True,
+    "pwa_offline": False,
+    "wearables": True,
+    "gamification": False,
+    "nutritionist_advanced_hub": True,
+}
 
 MODULE_FEATURE_KEYS = [
     "clinical_colombia",
@@ -143,7 +157,18 @@ def default_patient_flags() -> dict:
 
 
 def default_all_feature_flags() -> dict:
-    return {k: True for k in ALL_FEATURE_KEYS}
+    return {**DEFAULT_PATIENT_FEATURE_FLAGS, **DEFAULT_MODULE_FEATURE_FLAGS}
+
+
+def apply_hidden_patient_modules(flags: dict) -> dict:
+    """Fuerza ocultar módulos deshabilitados aunque la BD tenga fases activas."""
+    out = copy.deepcopy(flags)
+    out["patient_phase_2"] = False
+    out["patient_phase_3"] = False
+    out["patient_phase_4"] = False
+    out["gamification"] = False
+    out["pwa_offline"] = False
+    return out
 
 
 def default_runtime_config() -> dict:
@@ -303,10 +328,66 @@ def resolve_feature_flags(
     return merged
 
 
+def _apply_patient_subscription_flags(db: Session, user_id: int, flags: dict) -> dict:
+    """Combina flags globales/org con features del plan de suscripción del paciente."""
+    out = copy.deepcopy(flags)
+    try:
+        from billing_module import get_patient_plan_features
+    except Exception:
+        return out
+
+    try:
+        plan_feats = get_patient_plan_features(db, user_id)
+    except Exception:
+        return out
+
+    # Features de plan (menú / paywall frontend)
+    plan_keys = [
+        "dashboard",
+        "meals",
+        "my_plan",
+        "ai_meal_suggestions",
+        "profile",
+        "help",
+        "settings",
+        "billing",
+        "adherence",
+        "progress",
+        "appointments",
+        "recipes",
+        "notifications",
+        "program",
+        "messages",
+        "food_diary",
+    ]
+    for key in plan_keys:
+        out[key] = bool(plan_feats.get(key))
+
+    # Fases / módulos: el plan puede habilitar lo que apply_hidden había apagado
+    out["patient_phase_1"] = bool(
+        plan_feats.get("patient_phase_1")
+        or plan_feats.get("adherence")
+        or plan_feats.get("program")
+        or plan_feats.get("appointments")
+        or plan_feats.get("recipes")
+    )
+    out["patient_phase_2"] = bool(plan_feats.get("patient_phase_2")) and bool(out.get("patient_phase_2", False))
+    out["patient_phase_3"] = bool(plan_feats.get("patient_phase_3")) and bool(out.get("patient_phase_3", False))
+    out["patient_phase_4"] = bool(plan_feats.get("patient_phase_4") or plan_feats.get("food_diary"))
+    out["pwa_offline"] = bool(plan_feats.get("pwa_offline") or plan_feats.get("food_diary"))
+    out["gamification"] = bool(plan_feats.get("gamification")) and bool(out.get("gamification", False))
+    out["subscription_plan"] = plan_feats.get("_plan_code") or "patient_free"
+    out["subscription_status"] = plan_feats.get("_subscription_status") or "none"
+    out["subscription_degraded"] = bool(plan_feats.get("_degraded"))
+    return out
+
+
 def resolve_patient_feature_flags(
     db: Session, user_id: int, settings_row, OrganizationMemberDB, OrganizationDB
 ) -> dict:
-    return resolve_feature_flags(db, settings_row, OrganizationMemberDB, OrganizationDB, user_id=user_id)
+    flags = resolve_feature_flags(db, settings_row, OrganizationMemberDB, OrganizationDB, user_id=user_id)
+    flags = apply_hidden_patient_modules(flags)
+    return _apply_patient_subscription_flags(db, user_id, flags)
 
 
 def resolve_nutritionist_feature_flags(
@@ -496,21 +577,33 @@ def register_config_routes(app, deps: dict):
 
     @app.get("/api/public/platform-status")
     def public_platform_status(db: Session = Depends(get_db)):
-        settings = db.query(SystemSettingsDB).first()
-        refresh_runtime_cache(settings)
-        runtime = get_runtime_cache()
-        env = (runtime.get("environment") or os.getenv("ENVIRONMENT", "production")).lower()
-        return {
-            "maintenanceMode": bool(getattr(settings, "maintenance_mode", 0)) if settings else False,
-            "maintenanceMessage": (
-                getattr(settings, "maintenance_message", None) or "Plataforma en mantenimiento. Vuelve pronto."
-            )
-            if settings
-            else "",
-            "siteName": getattr(settings, "site_name", "NutriData") if settings else "NutriData",
-            "environment": env if env in PLATFORM_ENVIRONMENTS else "production",
-            "isSandbox": env == "sandbox",
-        }
+        try:
+            settings = db.query(SystemSettingsDB).first()
+            refresh_runtime_cache(settings)
+            runtime = get_runtime_cache()
+            env = (runtime.get("environment") or os.getenv("ENVIRONMENT", "production")).lower()
+            return {
+                "maintenanceMode": bool(getattr(settings, "maintenance_mode", 0)) if settings else False,
+                "maintenanceMessage": (
+                    getattr(settings, "maintenance_message", None) or "Plataforma en mantenimiento. Vuelve pronto."
+                )
+                if settings
+                else "",
+                "siteName": getattr(settings, "site_name", "NutriData") if settings else "NutriData",
+                "environment": env if env in PLATFORM_ENVIRONMENTS else "production",
+                "isSandbox": env == "sandbox",
+                "databaseOk": True,
+            }
+        except Exception:
+            env = (os.getenv("ENVIRONMENT", "production") or "production").lower()
+            return {
+                "maintenanceMode": False,
+                "maintenanceMessage": "",
+                "siteName": "NutriData",
+                "environment": env if env in PLATFORM_ENVIRONMENTS else "production",
+                "isSandbox": env == "sandbox",
+                "databaseOk": False,
+            }
 
     @app.get("/api/patient/feature-flags")
     def patient_feature_flags(

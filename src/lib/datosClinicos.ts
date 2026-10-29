@@ -20,6 +20,8 @@ export type DatosClinicos = {
   perimetro_cintura: string;
   pliegue_tricipital: string;
   pliegue_subescapular: string;
+  pliegue_muslo: string;
+  pliegue_pantorrilla: string;
   clasificacion_antropometrica: string;
   observaciones_antro: string;
   factores_riesgo: string;
@@ -55,6 +57,8 @@ export function emptyDatosClinicos(): DatosClinicos {
     perimetro_cintura: "",
     pliegue_tricipital: "",
     pliegue_subescapular: "",
+    pliegue_muslo: "",
+    pliegue_pantorrilla: "",
     clasificacion_antropometrica: "",
     observaciones_antro: "",
     factores_riesgo: "",

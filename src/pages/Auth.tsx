@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { API_URL } from "@/config/api";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Moon, Sun } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -20,9 +20,13 @@ import { getRedirectPath } from "@/lib/auth";
 import { useTheme } from "@/hooks/use-theme";
 import { NutriDataParticles } from "@/components/NutriDataParticles";
 
+const AUTH_SIDE_IMAGE =
+  "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1200&q=80";
+
 const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [sideImage, setSideImage] = useState(AUTH_SIDE_IMAGE);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [isResetting, setIsResetting] = useState(false);
@@ -111,8 +115,15 @@ const Auth = () => {
         console.log("Redirecting to:", path);
         navigate(path);
       } else {
-        toast.error("Error", {
-          description: data.detail || "Credenciales incorrectas"
+        const detail = data.detail;
+        const message =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join(". ")
+              : "Credenciales incorrectas";
+        toast.error("No se pudo iniciar sesión", {
+          description: message,
         });
       }
     } catch (error) {
@@ -219,11 +230,16 @@ const Auth = () => {
       {/* Left side - Form + puntos verdes que forman "NutriData" y se distorsionan con el mouse */}
       <div className="flex-1 flex items-center justify-center p-8 bg-background relative overflow-hidden">
         <NutriDataParticles className="opacity-90 max-lg:opacity-70" />
-        <div className="w-full max-w-md space-y-8 animate-login-entrance relative z-10 pointer-events-auto">
+        <div
+          className="w-full max-w-md space-y-8 relative z-10 pointer-events-auto"
+          data-aos="fade-up"
+          data-aos-duration="800"
+        >
           {/* Logo */}
           <div
-            className="flex flex-col items-center gap-4 animate-login-stagger"
-            style={{ animationDelay: "0.1s" }}
+            className="flex flex-col items-center gap-4"
+            data-aos="zoom-in"
+            data-aos-delay="80"
           >
             <img
               src="/logo.png"
@@ -238,8 +254,9 @@ const Auth = () => {
 
           {/* Header */}
           <div
-            className="space-y-2 animate-login-stagger"
-            style={{ animationDelay: "0.2s" }}
+            className="space-y-2"
+            data-aos="fade-up"
+            data-aos-delay="140"
           >
             <h2 className="text-3xl font-bold text-foreground">
               Bienvenida de nuevo
@@ -377,6 +394,13 @@ const Auth = () => {
                 </div>
               )}
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground pt-1">
+              ¿Eres paciente y aún no tienes cuenta?{" "}
+              <Link to="/register" className="text-primary font-medium hover:underline">
+                Regístrate aquí
+              </Link>
+            </p>
           </form>
           )}
 
@@ -387,9 +411,12 @@ const Auth = () => {
       {/* Right side - Image */}
       <div className="hidden lg:flex flex-1 relative overflow-hidden">
         <img
-          src="/uploads/nutri.jpg"
+          src={sideImage}
           alt="Nutrición Personalizada"
           className="w-full h-full object-cover"
+          onError={() => {
+            if (sideImage !== AUTH_SIDE_IMAGE) setSideImage(AUTH_SIDE_IMAGE);
+          }}
         />
       </div>
     </div>

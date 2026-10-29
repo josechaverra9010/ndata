@@ -27,6 +27,52 @@ SubscriptionDB = None
 InvoiceDB = None
 PaymentWebhookDB = None
 
+# Features del panel paciente (gates de menú/API)
+# Plan Gratis: calorías (quema + meta) + 2 sugerencias IA. Sin plan/recetas/comidas.
+PATIENT_FREE_FEATURES = [
+    "dashboard",
+    "ai_meal_suggestions",
+    "progress",
+    "notifications",
+    "profile",
+    "help",
+    "settings",
+    "billing",
+]
+# Trial 7 días = preview del plan Esencial (sin Plus).
+PATIENT_TRIAL_EXTRA_FEATURES = [
+    "meals",
+    "my_plan",
+    "adherence",
+    "appointments",
+    "recipes",
+    "program",
+    "patient_phase_1",
+]
+# Esencial: plan y comidas reales (no solo sugerencias IA del gratis).
+PATIENT_ESSENTIAL_FEATURES = [
+    "dashboard",
+    "meals",
+    "my_plan",
+    "progress",
+    "notifications",
+    "profile",
+    "help",
+    "settings",
+    "billing",
+    "adherence",
+    "appointments",
+    "recipes",
+    "program",
+    "patient_phase_1",
+]
+PATIENT_PLUS_FEATURES = PATIENT_ESSENTIAL_FEATURES + [
+    "messages",
+    "food_diary",
+    "patient_phase_4",
+    "pwa_offline",
+]
+
 DEFAULT_PLANS = [
     {
         "code": "basic",
@@ -61,7 +107,43 @@ DEFAULT_PLANS = [
         "features": ["all_modules", "organizations", "eps_dashboard", "priority_support"],
         "sort_order": 3,
     },
+    {
+        "code": "patient_free",
+        "name": "Gratis",
+        "billing_unit": "patient",
+        "price_monthly_cop": 0,
+        "price_yearly_cop": 0,
+        "max_patients": 1,
+        "max_nutritionists": 0,
+        "features": list(PATIENT_FREE_FEATURES),
+        "sort_order": 10,
+    },
+    {
+        "code": "patient_essential",
+        "name": "Esencial",
+        "billing_unit": "patient",
+        "price_monthly_cop": 29900,
+        "price_yearly_cop": 299000,
+        "max_patients": 1,
+        "max_nutritionists": 0,
+        "features": list(PATIENT_ESSENTIAL_FEATURES),
+        "sort_order": 11,
+    },
+    {
+        "code": "patient_plus",
+        "name": "Plus",
+        "billing_unit": "patient",
+        "price_monthly_cop": 49900,
+        "price_yearly_cop": 499000,
+        "max_patients": 1,
+        "max_nutritionists": 0,
+        "features": list(PATIENT_PLUS_FEATURES),
+        "sort_order": 12,
+    },
 ]
+
+PATIENT_PLAN_CODES = ("patient_free", "patient_essential", "patient_plus")
+PATIENT_TRIAL_DAYS = 7
 
 PAYMENT_PROVIDERS = ("stripe", "payu", "wompi", "manual")
 SUBSCRIPTION_STATUSES = ("trialing", "active", "past_due", "cancelled", "blocked")
@@ -94,12 +176,26 @@ class PlanUpdateSchema(BaseModel):
 
 class SubscriptionCreateSchema(BaseModel):
     plan_id: int
-    subscriber_type: str  # organization | nutritionist
+    subscriber_type: str  # organization | nutritionist | patient
     subscriber_id: int
     billing_cycle: str = "monthly"  # monthly | yearly
     payment_provider: str = "manual"
     status: str = "active"
     trial_days: int = 0
+
+
+class PatientSubscribeSchema(BaseModel):
+    plan_code: str  # patient_essential | patient_plus
+    billing_cycle: str = "monthly"  # monthly | yearly
+    provider: str = "wompi"
+    return_url: Optional[str] = None
+
+
+class PatientCheckoutSchema(BaseModel):
+    subscription_id: Optional[int] = None
+    invoice_id: Optional[int] = None
+    provider: str = "wompi"
+    return_url: Optional[str] = None
 
 
 class SubscriptionUpdateSchema(BaseModel):
@@ -205,25 +301,51 @@ def migrate_billing_schema(engine, inspect_fn, text_fn, BillingPlanDB):
 
 
 def _ensure_default_plans(db: Session, now_co: Callable) -> None:
-    if db.query(BillingPlanDB).count() > 0:
-        return
+    """Crea planes faltantes y sincroniza features/precios de planes paciente."""
     ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    by_code = {p.code: p for p in db.query(BillingPlanDB).all()}
+    dirty = False
     for p in DEFAULT_PLANS:
-        db.add(BillingPlanDB(
-            code=p["code"],
-            name=p["name"],
-            billing_unit=p["billing_unit"],
-            price_monthly_cop=p["price_monthly_cop"],
-            price_yearly_cop=p.get("price_yearly_cop"),
-            max_patients=p["max_patients"],
-            max_nutritionists=p["max_nutritionists"],
-            features=p.get("features", []),
-            is_active=1,
-            sort_order=p.get("sort_order", 0),
-            created_at=ts,
-            updated_at=ts,
-        ))
-    db.commit()
+        row = by_code.get(p["code"])
+        if not row:
+            db.add(
+                BillingPlanDB(
+                    code=p["code"],
+                    name=p["name"],
+                    billing_unit=p["billing_unit"],
+                    price_monthly_cop=p["price_monthly_cop"],
+                    price_yearly_cop=p.get("price_yearly_cop"),
+                    max_patients=p["max_patients"],
+                    max_nutritionists=p["max_nutritionists"],
+                    features=p.get("features", []),
+                    is_active=1,
+                    sort_order=p.get("sort_order", 0),
+                    created_at=ts,
+                    updated_at=ts,
+                )
+            )
+            dirty = True
+            continue
+        # Mantener features/precios de planes paciente alineados al código
+        if p["code"] in PATIENT_PLAN_CODES:
+            desired_feats = list(p.get("features") or [])
+            current_feats = list(row.features or [])
+            if (
+                current_feats != desired_feats
+                or row.name != p["name"]
+                or row.price_monthly_cop != p["price_monthly_cop"]
+                or (row.price_yearly_cop or None) != (p.get("price_yearly_cop") or None)
+                or row.sort_order != p.get("sort_order", 0)
+            ):
+                row.name = p["name"]
+                row.features = desired_feats
+                row.price_monthly_cop = p["price_monthly_cop"]
+                row.price_yearly_cop = p.get("price_yearly_cop")
+                row.sort_order = p.get("sort_order", 0)
+                row.updated_at = ts
+                dirty = True
+    if dirty:
+        db.commit()
 
 
 def _plan_mrr(plan, billing_cycle: str) -> int:
@@ -252,11 +374,215 @@ def _subscriber_name(db: Session, sub, OrganizationDB, UserDB) -> str:
     if sub.subscriber_type == "organization" and OrganizationDB:
         org = db.query(OrganizationDB).filter(OrganizationDB.id == sub.subscriber_id).first()
         return org.name if org else f"Org #{sub.subscriber_id}"
-    if sub.subscriber_type == "nutritionist" and UserDB:
+    if sub.subscriber_type in ("nutritionist", "patient") and UserDB:
         u = db.query(UserDB).filter(UserDB.id == sub.subscriber_id).first()
         if u:
             return f"{u.nombres or ''} {u.apellidos or ''}".strip() or u.email
     return f"{sub.subscriber_type} #{sub.subscriber_id}"
+
+
+def _parse_period_end(value: Optional[str]) -> Optional[date]:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _patient_subscription_is_valid(sub) -> bool:
+    if not sub:
+        return False
+    if sub.status == "blocked":
+        return False
+    if sub.status == "cancelled":
+        return False
+    if sub.status == "past_due":
+        return True  # acceso degradado se maneja aparte; sigue existiendo
+    if sub.status == "trialing":
+        end = _parse_period_end(sub.current_period_end)
+        if end and end < date.today():
+            return False
+        return True
+    return sub.status == "active"
+
+
+def get_patient_subscription(db: Session, patient_id: int):
+    """Última suscripción del paciente (cualquier estado relevante)."""
+    return (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.subscriber_type == "patient",
+            SubscriptionDB.subscriber_id == patient_id,
+        )
+        .order_by(SubscriptionDB.id.desc())
+        .first()
+    )
+
+
+def ensure_patient_subscription(db: Session, patient_id: int, now_co: Callable):
+    """Garantiza suscripción patient_free (trial 7 días) si no existe."""
+    _ensure_default_plans(db, now_co)
+    sub = get_patient_subscription(db, patient_id)
+    ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+    free_plan = db.query(BillingPlanDB).filter(BillingPlanDB.code == "patient_free").first()
+    if not free_plan:
+        return None
+
+    if sub and sub.status == "trialing":
+        end = _parse_period_end(sub.current_period_end)
+        if end and end < date.today():
+            # Trial vencido → Free permanente limitado
+            sub.status = "active"
+            sub.plan_id = free_plan.id
+            sub.mrr_cop = 0
+            sub.current_period_start = date.today().strftime("%Y-%m-%d")
+            sub.current_period_end = (date.today() + timedelta(days=3650)).strftime("%Y-%m-%d")
+            sub.updated_at = ts
+            db.commit()
+            db.refresh(sub)
+        return sub
+
+    if sub:
+        return sub
+
+    start = now_co().date()
+    end = start + timedelta(days=PATIENT_TRIAL_DAYS)
+    sub = SubscriptionDB(
+        plan_id=free_plan.id,
+        subscriber_type="patient",
+        subscriber_id=patient_id,
+        status="trialing",
+        billing_cycle="monthly",
+        payment_provider="manual",
+        current_period_start=start.strftime("%Y-%m-%d"),
+        current_period_end=end.strftime("%Y-%m-%d"),
+        mrr_cop=0,
+        created_at=ts,
+        updated_at=ts,
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+
+def get_patient_plan_features(db: Session, patient_id: int, now_co: Callable = None) -> dict:
+    """
+    Devuelve features efectivas del paciente según su plan/suscripción.
+    Keys booleanas: features de plan + flags patient_phase_* / pwa_offline.
+    """
+    _now = now_co or (lambda: datetime.now())
+    sub = ensure_patient_subscription(db, patient_id, _now)
+    free_feats = set(PATIENT_FREE_FEATURES)
+    features = set(free_feats)
+
+    plan = None
+    if sub:
+        plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == sub.plan_id).first()
+
+    degraded = False
+    if not sub or sub.status in ("cancelled", "blocked"):
+        degraded = True
+    elif sub.status == "past_due":
+        degraded = True
+    elif sub.status == "trialing":
+        end = _parse_period_end(sub.current_period_end)
+        if end and end < date.today():
+            degraded = True
+        else:
+            features |= set(PATIENT_TRIAL_EXTRA_FEATURES)
+            if plan and plan.features:
+                # Durante trial en free, extras de trial; si upgraded mid-trial, usa plan
+                if plan.code != "patient_free":
+                    features |= set(plan.features or [])
+    elif sub.status == "active" and plan:
+        if plan.code == "patient_free":
+            features = set(free_feats)
+        else:
+            features |= set(plan.features or [])
+
+    if degraded:
+        features = set(free_feats)
+        # Asegurar plan free visual
+        if sub and plan and plan.code != "patient_free":
+            pass
+
+    # Fases: solo por módulos premium del plan (no por notifications del free).
+    flag_map = {
+        "patient_phase_1": (
+            "patient_phase_1" in features
+            or "adherence" in features
+            or "program" in features
+            or "appointments" in features
+            or "recipes" in features
+        ),
+        "patient_phase_2": "patient_phase_2" in features,
+        "patient_phase_3": "patient_phase_3" in features,
+        "patient_phase_4": "patient_phase_4" in features or "food_diary" in features,
+        "pwa_offline": "pwa_offline" in features or "food_diary" in features,
+        "gamification": "gamification" in features,
+        "wearables": "wearables" in features,
+    }
+
+    out = {f: True for f in features}
+    out.update(flag_map)
+    out["_plan_code"] = plan.code if plan else "patient_free"
+    out["_subscription_status"] = sub.status if sub else "none"
+    out["_degraded"] = degraded
+    return out
+
+
+def patient_has_feature(db: Session, patient_id: int, feature: str, now_co: Callable = None) -> bool:
+    feats = get_patient_plan_features(db, patient_id, now_co)
+    return bool(feats.get(feature))
+
+
+def require_patient_feature(db: Session, patient_id: int, feature: str, now_co: Callable = None) -> None:
+    if patient_has_feature(db, patient_id, feature, now_co):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "subscription_required",
+            "feature": feature,
+            "message": f"Tu plan no incluye «{feature}». Mejora tu suscripción para continuar.",
+        },
+    )
+
+
+def _activate_subscription_from_invoice(db: Session, sub, inv, ts: str, now_co: Callable) -> None:
+    """Activa/renueva suscripción al confirmar pago (webhook o marca manual)."""
+    plan = None
+    billing_cycle = sub.billing_cycle or "monthly"
+    items = inv.line_items if isinstance(inv.line_items, list) else []
+    for item in items:
+        if isinstance(item, dict) and item.get("plan_id"):
+            plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == int(item["plan_id"])).first()
+            if item.get("billing_cycle") in ("monthly", "yearly"):
+                billing_cycle = item["billing_cycle"]
+            break
+        if isinstance(item, dict) and item.get("plan_code"):
+            plan = db.query(BillingPlanDB).filter(BillingPlanDB.code == str(item["plan_code"])).first()
+            if item.get("billing_cycle") in ("monthly", "yearly"):
+                billing_cycle = item["billing_cycle"]
+            break
+    if not plan:
+        plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == sub.plan_id).first()
+
+    if plan:
+        sub.plan_id = plan.id
+        sub.mrr_cop = _plan_mrr(plan, billing_cycle)
+    sub.billing_cycle = billing_cycle
+    sub.status = "active"
+    sub.blocked_at = None
+    sub.updated_at = ts
+    start = now_co().date()
+    days = 365 if billing_cycle == "yearly" else 30
+    sub.current_period_start = start.strftime("%Y-%m-%d")
+    sub.current_period_end = (start + timedelta(days=days)).strftime("%Y-%m-%d")
+    if inv.provider_ref:
+        sub.external_subscription_id = str(inv.provider_ref)
 
 
 def _serialize_subscription(db: Session, sub, OrganizationDB, UserDB) -> dict:
@@ -764,7 +1090,7 @@ def register_billing_routes(app, deps: dict):
         plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == payload.plan_id).first()
         if not plan:
             raise HTTPException(status_code=404, detail="Plan no encontrado")
-        if payload.subscriber_type not in ("organization", "nutritionist"):
+        if payload.subscriber_type not in ("organization", "nutritionist", "patient"):
             raise HTTPException(status_code=400, detail="subscriber_type inválido")
         if payload.payment_provider not in PAYMENT_PROVIDERS:
             raise HTTPException(status_code=400, detail="Proveedor inválido")
@@ -901,10 +1227,8 @@ def register_billing_routes(app, deps: dict):
         inv.paid_at = ts
         inv.updated_at = ts
         sub = db.query(SubscriptionDB).filter(SubscriptionDB.id == inv.subscription_id).first()
-        if sub and sub.status in ("past_due", "blocked"):
-            sub.status = "active"
-            sub.blocked_at = None
-            sub.updated_at = ts
+        if sub:
+            _activate_subscription_from_invoice(db, sub, inv, ts, now_co)
         db.commit()
         return _serialize_invoice(db, inv, OrganizationDB, UserDB)
 
@@ -1019,10 +1343,7 @@ def register_billing_routes(app, deps: dict):
                 inv.paid_at = ts
                 sub = db.query(SubscriptionDB).filter(SubscriptionDB.id == inv.subscription_id).first()
                 if sub:
-                    sub.status = "active"
-                    sub.blocked_at = None
-                    sub.external_subscription_id = str(ref)
-                    sub.updated_at = ts
+                    _activate_subscription_from_invoice(db, sub, inv, ts, now_co)
         db.commit()
         return {"received": True}
 
@@ -1059,3 +1380,204 @@ def register_billing_routes(app, deps: dict):
             "subscription": _serialize_subscription(db, sub, OrganizationDB, UserDB),
             "invoices": [_serialize_invoice(db, i, OrganizationDB, UserDB) for i in invoices],
         }
+
+    def _require_patient(user):
+        if getattr(user, "role", None) != "patient":
+            raise HTTPException(status_code=403, detail="Solo pacientes")
+        return user
+
+    @app.get("/api/patient/billing/plans")
+    def patient_list_plans(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+        _require_patient(current_user)
+        _ensure_default_plans(db, now_co)
+        rows = (
+            db.query(BillingPlanDB)
+            .filter(BillingPlanDB.billing_unit == "patient", BillingPlanDB.is_active == 1)
+            .order_by(BillingPlanDB.sort_order.asc())
+            .all()
+        )
+        return [_serialize_plan(p) for p in rows]
+
+    @app.get("/api/patient/billing/me")
+    def patient_billing_me(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+        _require_patient(current_user)
+        sub = ensure_patient_subscription(db, current_user.id, now_co)
+        plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == sub.plan_id).first() if sub else None
+        features = get_patient_plan_features(db, current_user.id, now_co)
+        # Quitar claves internas del mapa de features expuesto
+        public_features = {k: v for k, v in features.items() if not str(k).startswith("_")}
+        invoices = []
+        if sub:
+            invoices = (
+                db.query(InvoiceDB)
+                .filter(InvoiceDB.subscription_id == sub.id)
+                .order_by(InvoiceDB.id.desc())
+                .limit(12)
+                .all()
+            )
+        trial_days_left = None
+        if sub and sub.status == "trialing" and sub.current_period_end:
+            end = _parse_period_end(sub.current_period_end)
+            if end:
+                trial_days_left = max(0, (end - date.today()).days)
+        return {
+            "plan": _serialize_plan(plan) if plan else None,
+            "subscription": _serialize_subscription(db, sub, OrganizationDB, UserDB) if sub else None,
+            "invoices": [_serialize_invoice(db, i, OrganizationDB, UserDB) for i in invoices],
+            "features": public_features,
+            "trial_days_left": trial_days_left,
+            "degraded": bool(features.get("_degraded")),
+            "message": (
+                "Prueba Esencial activa: adherencia, citas, recetas y programa"
+                if sub and sub.status == "trialing"
+                else (
+                    "Gratis: calorías, peso ideal y 2 sugerencias de comida con IA. Mejora para plan y comidas."
+                    if plan and plan.code == "patient_free"
+                    else None
+                )
+            ),
+        }
+
+    @app.post("/api/patient/billing/subscribe")
+    def patient_subscribe(
+        payload: PatientSubscribeSchema,
+        db: Session = Depends(get_db),
+        current_user=Depends(get_current_user),
+    ):
+        _require_patient(current_user)
+        if payload.plan_code not in ("patient_essential", "patient_plus"):
+            raise HTTPException(status_code=400, detail="plan_code inválido (usa patient_essential o patient_plus)")
+        if payload.billing_cycle not in ("monthly", "yearly"):
+            raise HTTPException(status_code=400, detail="billing_cycle inválido")
+        if payload.provider not in PAYMENT_PROVIDERS:
+            raise HTTPException(status_code=400, detail="Proveedor inválido")
+
+        _ensure_default_plans(db, now_co)
+        plan = db.query(BillingPlanDB).filter(BillingPlanDB.code == payload.plan_code, BillingPlanDB.is_active == 1).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+
+        ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+        sub = ensure_patient_subscription(db, current_user.id, now_co)
+        start = now_co().date()
+        amount = plan.price_yearly_cop if payload.billing_cycle == "yearly" else plan.price_monthly_cop
+
+        # No activar plan de pago hasta confirmar el cobro (webhook / marca pagada).
+        # Solo guardamos preferencia de ciclo/proveedor; el plan_id se aplica al pagar.
+        sub.billing_cycle = payload.billing_cycle
+        sub.payment_provider = payload.provider if payload.provider != "manual" else "wompi"
+        sub.updated_at = ts
+        db.commit()
+        db.refresh(sub)
+
+        inv = None
+        if (amount or 0) > 0:
+            inv = InvoiceDB(
+                subscription_id=sub.id,
+                invoice_number=_next_invoice_number(db),
+                amount_cop=amount or 0,
+                status="pending",
+                due_date=(start + timedelta(days=3)).strftime("%Y-%m-%d"),
+                line_items=[
+                    {
+                        "description": f"Plan {plan.name} ({payload.billing_cycle})",
+                        "amount_cop": amount,
+                        "plan_id": plan.id,
+                        "plan_code": plan.code,
+                        "billing_cycle": payload.billing_cycle,
+                    }
+                ],
+                notes="Suscripción paciente self-service",
+                created_at=ts,
+                updated_at=ts,
+            )
+            db.add(inv)
+            db.commit()
+            db.refresh(inv)
+
+        checkout = None
+        if inv:
+            result = _provider_checkout_url(
+                payload.provider if payload.provider != "manual" else "wompi",
+                sub.id,
+                inv.amount_cop,
+                payload.return_url or os.getenv("FRONTEND_URL", ""),
+                reference=inv.invoice_number,
+                description=f"NutriData — {plan.name}",
+            )
+            if result.get("reference"):
+                inv.provider_ref = str(result["reference"])
+                inv.updated_at = ts
+                db.commit()
+            checkout = result
+
+        return {
+            "success": True,
+            "subscription": _serialize_subscription(db, sub, OrganizationDB, UserDB),
+            "invoice": _serialize_invoice(db, inv, OrganizationDB, UserDB) if inv else None,
+            "checkout": checkout,
+        }
+
+    @app.post("/api/patient/billing/checkout")
+    def patient_checkout(
+        payload: PatientCheckoutSchema,
+        db: Session = Depends(get_db),
+        current_user=Depends(get_current_user),
+    ):
+        _require_patient(current_user)
+        sub = ensure_patient_subscription(db, current_user.id, now_co)
+        if payload.subscription_id and payload.subscription_id != sub.id:
+            raise HTTPException(status_code=403, detail="No autorizado para esta suscripción")
+        plan = db.query(BillingPlanDB).filter(BillingPlanDB.id == sub.plan_id).first()
+        inv = None
+        if payload.invoice_id:
+            inv = db.query(InvoiceDB).filter(
+                InvoiceDB.id == payload.invoice_id,
+                InvoiceDB.subscription_id == sub.id,
+            ).first()
+            if not inv:
+                raise HTTPException(status_code=404, detail="Factura no encontrada")
+        else:
+            inv = (
+                db.query(InvoiceDB)
+                .filter(InvoiceDB.subscription_id == sub.id, InvoiceDB.status.in_(("pending", "overdue")))
+                .order_by(InvoiceDB.id.desc())
+                .first()
+            )
+        if not inv:
+            # Crear factura del plan actual si es de pago
+            amount = 0
+            if plan:
+                amount = plan.price_yearly_cop if sub.billing_cycle == "yearly" else plan.price_monthly_cop
+            if not amount:
+                raise HTTPException(status_code=400, detail="No hay factura pendiente para este plan")
+            ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+            inv = InvoiceDB(
+                subscription_id=sub.id,
+                invoice_number=_next_invoice_number(db),
+                amount_cop=amount,
+                status="pending",
+                due_date=(now_co().date() + timedelta(days=3)).strftime("%Y-%m-%d"),
+                line_items=[{"description": f"Plan {plan.name}", "amount_cop": amount}],
+                created_at=ts,
+                updated_at=ts,
+            )
+            db.add(inv)
+            db.commit()
+            db.refresh(inv)
+
+        result = _provider_checkout_url(
+            payload.provider or "wompi",
+            sub.id,
+            inv.amount_cop,
+            payload.return_url or os.getenv("FRONTEND_URL", ""),
+            reference=inv.invoice_number,
+            description=f"NutriData — factura {inv.invoice_number}",
+        )
+        if result.get("reference"):
+            inv.provider_ref = str(result["reference"])
+            inv.updated_at = now_co().strftime("%Y-%m-%d %H:%M:%S")
+            db.commit()
+        result["invoice_id"] = inv.id
+        result["amount_cop"] = inv.amount_cop
+        return result

@@ -12,7 +12,6 @@ import {
   Calendar,
   User,
   Loader2,
-  Eye,
   List,
   Utensils,
   Sparkles,
@@ -21,22 +20,22 @@ import {
   Salad,
   Moon,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { MealDetailDialog, type MealDetail } from "@/components/patient/MealDetailDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { ExchangeList } from "@/components/patient/ExchangeList";
 import { formatInColombia, getColombiaDayOfWeek } from "@/lib/timezone";
+import { resolveMealCalories, type IngredientInput } from "@/lib/mealIngredientDisplay";
 
-interface Meal {
+interface Meal extends MealDetail {
   meal: string;
   food: string;
   calories: number;
   time: string;
-  ingredients?: string[];
+  ingredients?: IngredientInput[];
   instructions?: string[];
   image?: string;
+  recipe_id?: number;
 }
 
 interface PlanData {
@@ -109,6 +108,8 @@ export default function MyPlan() {
   const [loading, setLoading] = useState(true);
   const [planData, setPlanData] = useState<PlanData | null>(null);
   const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null);
+  const [mealDetailForModal, setMealDetailForModal] = useState<Meal | null>(null);
+  const [loadingMealDetail, setLoadingMealDetail] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [currentWeekTab, setCurrentWeekTab] = useState("1");
   const [currentDay, setCurrentDay] = useState("lunes");
@@ -130,6 +131,75 @@ export default function MyPlan() {
     const map = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
     setCurrentDay(map[getColombiaDayOfWeek()]);
   }, []);
+
+  const getImageUrl = (imagePath: string | undefined) => {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("http")) return imagePath;
+    const base = API_URL.replace(/\/api\/?$/, "");
+    return `${base}${imagePath.startsWith("/") ? imagePath : `/${imagePath}`}`;
+  };
+
+  useEffect(() => {
+    if (!isDetailsOpen || !selectedMeal) {
+      setMealDetailForModal(null);
+      setLoadingMealDetail(false);
+      return;
+    }
+
+    const base = selectedMeal;
+    const rid = base.recipe_id;
+    const needsRecipeFetch =
+      !!rid &&
+      ((base.ingredients?.length ?? 0) === 0 || (base.instructions?.length ?? 0) === 0);
+
+    if (!needsRecipeFetch) {
+      setMealDetailForModal(base);
+      setLoadingMealDetail(false);
+      return;
+    }
+
+    setLoadingMealDetail(true);
+    setMealDetailForModal(base);
+    let cancelled = false;
+    const token = localStorage.getItem("userToken");
+    fetch(`${API_URL}/recipes/${rid}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (
+          recipe: {
+            name?: string;
+            ingredients?: IngredientInput[];
+            instructions?: string[];
+            image?: string;
+          } | null
+        ) => {
+          if (cancelled) return;
+          setLoadingMealDetail(false);
+          if (recipe) {
+            setMealDetailForModal({
+              ...base,
+              food: recipe.name ?? base.food,
+              ingredients: Array.isArray(recipe.ingredients)
+                ? recipe.ingredients
+                : base.ingredients ?? [],
+              instructions: Array.isArray(recipe.instructions)
+                ? recipe.instructions
+                : base.instructions ?? [],
+              image: recipe.image ?? base.image,
+            });
+          }
+        }
+      )
+      .catch(() => {
+        if (!cancelled) setLoadingMealDetail(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDetailsOpen, selectedMeal]);
 
   const fetchPlanData = async () => {
     try {
@@ -182,7 +252,7 @@ export default function MyPlan() {
   if (!planData || !planData.has_plan) {
     return (
       <PatientLayout>
-        <div className="space-y-5 lg:space-y-7 animate-fade-in">
+        <div className="space-y-5 lg:space-y-7" data-aos="fade-up">
           <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.08] p-5 sm:p-6 shadow-card">
             <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
             <div className="relative">
@@ -255,7 +325,7 @@ export default function MyPlan() {
 
   return (
     <PatientLayout>
-      <div className="space-y-5 lg:space-y-7 animate-fade-in">
+      <div className="space-y-5 lg:space-y-7" data-aos="fade-up">
         {/* Hero */}
         <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-emerald-500/[0.09] p-5 sm:p-6 shadow-card">
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
@@ -428,7 +498,10 @@ export default function MyPlan() {
 
                   {days.map((day) => {
                     const meals = activeWeekData?.[day.id] || [];
-                    const dayCalories = meals.reduce((acc, m) => acc + (m.calories || 0), 0);
+                    const dayCalories = meals.reduce(
+                      (acc, m) => acc + resolveMealCalories(m.ingredients, m.calories),
+                      0
+                    );
 
                     return (
                       <TabsContent key={day.id} value={day.id} className="space-y-3 mt-0">
@@ -449,7 +522,20 @@ export default function MyPlan() {
                             return (
                               <div
                                 key={`${day.id}-${index}`}
-                                className="group flex items-center gap-3 p-3.5 lg:p-4 rounded-2xl border border-border/70 bg-gradient-to-br from-card to-muted/20 hover:border-primary/30 hover:shadow-md transition-all duration-200"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  setSelectedMeal(item);
+                                  setIsDetailsOpen(true);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setSelectedMeal(item);
+                                    setIsDetailsOpen(true);
+                                  }
+                                }}
+                                className="group flex items-center gap-3 p-3.5 lg:p-4 rounded-2xl border border-border/70 bg-gradient-to-br from-card to-muted/20 hover:border-primary/30 hover:shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                               >
                                 <div
                                   className={`flex h-11 w-11 lg:h-12 lg:w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${tone}`}
@@ -474,27 +560,13 @@ export default function MyPlan() {
                                   </p>
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <Badge
-                                    variant="secondary"
-                                    className="flex items-center gap-1 text-[10px] lg:text-xs rounded-full bg-orange-500/10 text-orange-700 dark:text-orange-300 border-0"
-                                  >
-                                    <Flame className="h-3 w-3" />
-                                    {item.calories} kcal
-                                  </Badge>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10"
-                                    onClick={() => {
-                                      setSelectedMeal(item);
-                                      setIsDetailsOpen(true);
-                                    }}
-                                    title="Ver detalle"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                </div>
+                                <Badge
+                                  variant="secondary"
+                                  className="flex shrink-0 items-center gap-1 text-[10px] lg:text-xs rounded-full bg-orange-500/10 text-orange-700 dark:text-orange-300 border-0"
+                                >
+                                  <Flame className="h-3 w-3" />
+                                    {resolveMealCalories(item.ingredients, item.calories)} kcal
+                                </Badge>
                               </div>
                             );
                           })
@@ -572,162 +644,14 @@ export default function MyPlan() {
         </div>
       </div>
 
-      {/* Recipe Details Dialog */}
-      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-        <DialogContent className="max-w-md lg:max-w-2xl h-[90vh] sm:h-[85vh] overflow-hidden flex flex-col p-0 border-border/70 sm:rounded-2xl">
-          <div className="relative h-32 shrink-0 bg-gradient-to-br from-primary/15 via-primary/5 to-background border-b border-border/50">
-            <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-primary/15 blur-2xl" />
-            <div className="absolute bottom-5 left-5 right-5">
-              <div className="flex items-end justify-between gap-4">
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-2 text-primary font-bold text-[11px] uppercase tracking-wider mb-1">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                    {selectedMeal?.meal}
-                  </div>
-                  <DialogTitle className="text-xl sm:text-2xl font-extrabold tracking-tight text-foreground line-clamp-2">
-                    {selectedMeal?.food}
-                  </DialogTitle>
-                </div>
-                <Badge className="mb-1 font-bold rounded-full bg-orange-500/15 text-orange-700 dark:text-orange-300 border-0 px-3 py-1 shrink-0">
-                  <Flame className="h-3 w-3 mr-1 inline" />
-                  {selectedMeal?.calories} kcal
-                </Badge>
-              </div>
-            </div>
-          </div>
-
-          <ScrollArea className="flex-1 min-h-0 px-5 sm:px-6">
-            <div className="space-y-7 py-5 pb-10">
-              {selectedMeal?.image && (
-                <div className="group relative rounded-2xl overflow-hidden border border-border/60 shadow-md">
-                  <div className="aspect-video w-full">
-                    <img
-                      src={selectedMeal.image}
-                      alt={selectedMeal.food}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).parentElement?.parentElement?.style.setProperty(
-                          "display",
-                          "none"
-                        );
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedMeal?.time && (
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5 text-primary" />
-                  Horario sugerido: {selectedMeal.time}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                    <div className="p-2 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400">
-                      <List className="h-5 w-5" />
-                    </div>
-                    <h3 className="font-bold text-foreground tracking-tight">Ingredientes</h3>
-                  </div>
-
-                  {selectedMeal?.ingredients && selectedMeal.ingredients.length > 0 ? (
-                    <div className="grid gap-2.5">
-                      {selectedMeal.ingredients.map((ingredient, idx) => {
-                        const isObject = typeof ingredient === "object" && ingredient !== null;
-                        const name = isObject
-                          ? (ingredient as { name?: string }).name
-                          : ingredient;
-
-                        let amount: string | number | null = null;
-                        if (isObject) {
-                          const ing = ingredient as Record<string, unknown>;
-                          amount = (ing.portion ||
-                            ing.grams ||
-                            ing.cantidad ||
-                            ing.amount ||
-                            ing.quantity) as string | number | null;
-                        }
-
-                        return (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/40 hover:border-primary/30 hover:bg-primary/5 transition-all duration-200 group"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-1.5 w-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors shrink-0" />
-                              <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground capitalize leading-tight truncate">
-                                {String(name ?? "")}
-                              </span>
-                            </div>
-                            {amount != null && amount !== "" && (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] uppercase font-bold px-2 py-0 border-primary/20 text-primary bg-primary/10 shrink-0 ml-2"
-                              >
-                                {String(amount)}
-                              </Badge>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-10 bg-muted/20 rounded-2xl border border-dashed border-border/50 text-center px-4">
-                      <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-                        <List className="h-6 w-6 text-muted-foreground/60" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        No hay ingredientes listados.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                      <Utensils className="h-5 w-5" />
-                    </div>
-                    <h3 className="font-bold text-foreground tracking-tight">Preparación</h3>
-                  </div>
-
-                  {selectedMeal?.instructions && selectedMeal.instructions.length > 0 ? (
-                    <div className="space-y-3.5">
-                      {selectedMeal.instructions.map((step, idx) => (
-                        <div key={idx} className="flex gap-3.5 group">
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary text-xs font-bold shadow-sm group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-200">
-                            {idx + 1}
-                          </span>
-                          <p className="text-sm leading-relaxed text-muted-foreground group-hover:text-foreground transition-colors pt-0.5 font-medium">
-                            {step}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-10 bg-muted/20 rounded-2xl border border-dashed border-border/50 text-center px-4">
-                      <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-                        <Utensils className="h-6 w-6 text-muted-foreground/60" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        No hay pasos disponibles.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </ScrollArea>
-
-          <div className="shrink-0 p-4 border-t border-border bg-background/95 flex justify-end">
-            <Button className="rounded-full px-6" onClick={() => setIsDetailsOpen(false)}>
-              Cerrar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MealDetailDialog
+        open={isDetailsOpen}
+        onOpenChange={setIsDetailsOpen}
+        meal={mealDetailForModal ?? selectedMeal}
+        getImageUrl={getImageUrl}
+        loading={loadingMealDetail}
+        showCloseFooter
+      />
     </PatientLayout>
   );
 }

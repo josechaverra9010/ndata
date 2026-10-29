@@ -5,7 +5,10 @@ import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { buildGestanteSummary, PRENATAL_CHECKLIST_ITEMS } from '@/lib/specialtyModule';
+import { getAtalahClass, getGestAdolesExpectedGainKg, getGestanteExpectedGainKg } from '@/lib/foodNutrients';
 import { Heart, Scale, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import { GestationalBMIChart } from '@/components/pediatria/GestationalBMIChart';
+import { AtalahChart } from '@/components/specialty/AtalahChart';
 import type { SpecialtyPayload, SpecialtyTracking } from './types';
 
 interface Props {
@@ -32,6 +35,35 @@ export function GestanteSpecialtyPanel({ data, onTrackingChange, readOnly }: Pro
   };
 
   const trimestreLabel = ['', '1.er trimestre', '2.º trimestre', '3.er trimestre'][summary.trimestre] || '';
+
+  const gestationalBmiMeasurement = useMemo(() => {
+    const semana = summary.semana;
+    const estaturaM = parseFloat(String(data.fase_1.gestante_estatura_m ?? '')) || 0;
+    const pesoActual = (data.patient.peso_actual ?? parseFloat(String(data.fase_1.gestante_peso_actual ?? ''))) || 0;
+    if (!(semana > 0 && estaturaM > 0 && pesoActual > 0)) return [];
+    const bmi = pesoActual / (estaturaM * estaturaM);
+    return [{ week: semana, bmi: Math.round(bmi * 10) / 10 }];
+  }, [summary.semana, data.fase_1, data.patient.peso_actual]);
+
+  const atalahCategory = (summary.clasificacionAtalah || 'Normal') as
+    | 'Bajo'
+    | 'Normal'
+    | 'Sobrepeso'
+    | 'Obesidad'
+    | '';
+
+  const isAdolescent = data.fase_1?.tipo_fase === 'gestante_adolescente';
+  const zScore = parseFloat(String(data.fase_1.gestante_puntaje_z ?? ''));
+  const zClass = String(
+    data.fase_1.clasificacion_z ?? data.fase_1.z_class ?? data.fase_1.clasificacionZ ?? ''
+  );
+
+  const expectedGains = useMemo(() => {
+    if (isAdolescent && !Number.isNaN(zScore)) {
+      return getGestAdolesExpectedGainKg(zScore);
+    }
+    return getGestanteExpectedGainKg(atalahCategory || 'Normal');
+  }, [isAdolescent, zScore, atalahCategory]);
 
   return (
     <div className="space-y-4">
@@ -95,6 +127,60 @@ export function GestanteSpecialtyPanel({ data, onTrackingChange, readOnly }: Pro
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Curva de Atalah</CardTitle>
+          <p className="text-xs text-muted-foreground font-normal">
+            {isAdolescent
+              ? 'IMC pregestacional + ganancia acumulada (referencia EVANUT Ges Adolescente)'
+              : 'Clasificación IMC y ganancia gestacional esperada por categoría'}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <AtalahChart
+            variant={isAdolescent ? 'adolescent' : 'adult'}
+            imcPregestacional={summary.imcPregestacional ?? undefined}
+            atalahCategory={
+              (summary.clasificacionAtalah ||
+                getAtalahClass(summary.imcPregestacional ?? 0)) as
+                | 'Bajo'
+                | 'Normal'
+                | 'Sobrepeso'
+                | 'Obesidad'
+                | ''
+            }
+            semanaGestacional={summary.semana}
+            gananciaPresentada={summary.gananciaPresentada ?? undefined}
+            t1Kg={expectedGains.t1}
+            t23Kg={expectedGains.t23}
+            zScore={Number.isNaN(zScore) ? undefined : zScore}
+            zClass={zClass || undefined}
+            compact
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">IMC para la edad gestacional</CardTitle>
+          <p className="text-xs text-muted-foreground font-normal">
+            Curva MINSALUD 2465/2016 · referencia Atalah {atalahCategory || 'Normal'}
+          </p>
+        </CardHeader>
+        <CardContent>
+          <GestationalBMIChart
+            atalahCategory={atalahCategory || 'Normal'}
+            measurements={gestationalBmiMeasurement}
+            compact
+          />
+          {gestationalBmiMeasurement.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Ingresa semana gestacional, estatura y peso actual para ubicar el IMC en la curva.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

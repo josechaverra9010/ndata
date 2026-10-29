@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { resolveMediaUrl } from "@/lib/media";
 import { useAuth } from "@/hooks/useAuth";
 import { API_URL } from "@/config/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -287,7 +288,7 @@ export default function SuperadminSettings() {
           <CardContent className="space-y-4">
             <div className="flex items-center gap-6">
               <Avatar className="h-24 w-24">
-                <AvatarImage src={avatar} />
+                <AvatarImage src={resolveMediaUrl(avatar)} />
                 <AvatarFallback className="text-2xl bg-primary/10 text-primary">
                   {getInitials(user?.name || "SA")}
                 </AvatarFallback>

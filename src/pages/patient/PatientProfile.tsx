@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
@@ -18,24 +17,23 @@ import { Camera, Save, User, Loader2, Clock, ClipboardList, Utensils, Activity }
 import { API_URL } from "@/config/api";
 import { resolveMediaUrl } from "@/lib/media";
 import { useAuth } from "@/hooks/useAuth";
+import { normalizeDatosClinicos, type DatosClinicos } from "@/lib/datosClinicos";
+import { isHeadCircumferenceAgeEligible } from "@/lib/pediatricGrowthUtils";
 
-const allergiesList = [
-  { id: "gluten", label: "Gluten" },
-  { id: "lactose", label: "Lactosa" },
-  { id: "nuts", label: "Frutos secos" },
-  { id: "seafood", label: "Mariscos" },
-  { id: "eggs", label: "Huevos" },
-  { id: "soy", label: "Soja" },
-];
+const formatListOrText = (value: string[] | string | null | undefined) => {
+  if (value == null || value === "") return "No registrado";
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(", ") : "No registrado";
+  }
+  return String(value);
+};
 
-const dietPreferencesList = [
-  { id: "vegetarian", label: "Vegetariano" },
-  { id: "vegan", label: "Vegano" },
-  { id: "keto", label: "Keto" },
-  { id: "paleo", label: "Paleo" },
-  { id: "mediterranean", label: "Mediterránea" },
-  { id: "lowcarb", label: "Baja en carbohidratos" },
-];
+const ReadOnlyField = ({ label, value }: { label: string; value?: string | null }) => (
+  <div className="space-y-1">
+    <p className="text-xs font-medium text-muted-foreground">{label}</p>
+    <p className="text-sm whitespace-pre-wrap">{value?.trim() ? value : "No registrado"}</p>
+  </div>
+);
 
 export default function PatientProfile() {
   const navigate = useNavigate();
@@ -58,16 +56,28 @@ export default function PatientProfile() {
     condiciones_medicas: "",
     alimentos_disgusto: "",
     edad_formateada: "",
-    frecuencia_consumo: [] as any[]
+    frecuencia_consumo: [] as any[],
+    tipo_documento: "",
+    numero_documento: "",
+    programa_eps: "",
+    pal_factor: "" as string | number,
+    antecedentes_familiares: "",
+    evaluacion_nutricional: "",
+    acompanante_nombre: "",
+    acompanante_parentesco: "",
+    acompanante_telefono: "",
+    acompanante_email: "",
+    alergias: [] as string[],
+    preferencias: [] as string[],
+    datos_clinicos: null as DatosClinicos | null,
   });
 
   const [recalls, setRecalls] = useState<any[]>([]);
   const [loadingRecalls, setLoadingRecalls] = useState(false);
 
-  const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedPreferences, setSelectedPreferences] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
 
@@ -75,42 +85,56 @@ export default function PatientProfile() {
 
   // Cargar datos iniciales
   useEffect(() => {
-    if (!isAuthLoading && user?.email) {
-      const token = localStorage.getItem("userToken");
-      fetch(`${API_URL}/profile/${user.email}`, {
-        headers: {
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        }
+    if (isAuthLoading || !user?.id) return;
+    const token = localStorage.getItem("userToken");
+    setLoadingProfile(true);
+    fetch(`${API_URL}/patients/${user.id}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("profile");
+        return res.json();
       })
-        .then(res => res.json())
-        .then(data => {
-          setFormData({
-            nombres: data.nombres || "",
-            apellidos: data.apellidos || "",
-            email: data.email || "",
-            telefono: data.telefono || "",
-            fecha_nacimiento: data.fecha_nacimiento || "",
-            genero: data.genero || "",
-            direccion: data.direccion || "",
-            foto_perfil: data.foto_perfil || "",
-            altura: data.altura || "",
-            peso_actual: data.peso_actual || "",
-            peso_objetivo: data.peso_objetivo || "",
-            nivel_actividad: data.nivel_actividad || "",
-            objetivos_salud: data.objetivos_salud || "",
-            condiciones_medicas: data.condiciones_medicas || "",
-            alimentos_disgusto: data.alimentos_disgusto || "",
-            edad_formateada: data.edad_formateada || "",
-            frecuencia_consumo: Array.isArray(data.frecuencia_consumo) && data.frecuencia_consumo.length > 0
+      .then((data) => {
+        setFormData({
+          nombres: data.nombres || "",
+          apellidos: data.apellidos || "",
+          email: data.email || "",
+          telefono: data.telefono || "",
+          fecha_nacimiento: data.fecha_nacimiento || "",
+          genero: data.genero || "",
+          direccion: data.direccion || "",
+          foto_perfil: data.foto_perfil || "",
+          altura: data.altura != null ? String(data.altura) : "",
+          peso_actual: data.peso_actual != null ? String(data.peso_actual) : "",
+          peso_objetivo: data.peso_objetivo != null ? String(data.peso_objetivo) : "",
+          nivel_actividad: data.nivel_actividad || "",
+          objetivos_salud: data.objetivos_salud || "",
+          condiciones_medicas: data.condiciones_medicas || "",
+          alimentos_disgusto: data.alimentos_disgusto || "",
+          edad_formateada: data.edad_formateada || "",
+          frecuencia_consumo:
+            Array.isArray(data.frecuencia_consumo) && data.frecuencia_consumo.length > 0
               ? data.frecuencia_consumo
-              : FOOD_GROUPS.map(grupo => ({ grupo, frecuencia: "never" }))
-          });
-          setSelectedAllergies(data.alergias || []);
-          setSelectedPreferences(data.preferencias || []);
-        })
-        .catch(() => toast.error("Error al cargar datos de perfil"));
-    }
-  }, [isAuthLoading, user?.email]);
+              : FOOD_GROUPS.map((grupo) => ({ grupo, frecuencia: "never" })),
+          tipo_documento: data.tipo_documento || "",
+          numero_documento: data.numero_documento || "",
+          programa_eps: data.programa_eps || "",
+          pal_factor: data.pal_factor != null ? data.pal_factor : "",
+          antecedentes_familiares: data.antecedentes_familiares || "",
+          evaluacion_nutricional: data.evaluacion_nutricional || "",
+          acompanante_nombre: data.acompanante_nombre || "",
+          acompanante_parentesco: data.acompanante_parentesco || "",
+          acompanante_telefono: data.acompanante_telefono || "",
+          acompanante_email: data.acompanante_email || "",
+          alergias: Array.isArray(data.alergias) ? data.alergias : [],
+          preferencias: Array.isArray(data.preferencias) ? data.preferencias : [],
+          datos_clinicos: normalizeDatosClinicos(data.datos_clinicos),
+        });
+      })
+      .catch(() => toast.error("Error al cargar datos de perfil"))
+      .finally(() => setLoadingProfile(false));
+  }, [isAuthLoading, user?.id]);
 
   const fetchRecalls = async () => {
     if (!user?.id) return;
@@ -187,18 +211,6 @@ export default function PatientProfile() {
     setFormData({ ...formData, [e.target.id]: e.target.value });
   };
 
-  const handleAllergyChange = (allergyId: string, checked: boolean) => {
-    setSelectedAllergies(prev =>
-      checked ? [...prev, allergyId] : prev.filter(id => id !== allergyId)
-    );
-  };
-
-  const handlePreferenceChange = (prefId: string, checked: boolean) => {
-    setSelectedPreferences(prev =>
-      checked ? [...prev, prefId] : prev.filter(id => id !== prefId)
-    );
-  };
-
   const handleSave = async () => {
     setLoading(true);
     const profileData = {
@@ -206,8 +218,9 @@ export default function PatientProfile() {
       altura: formData.altura ? parseFloat(formData.altura.toString()) : null,
       peso_actual: formData.peso_actual ? parseFloat(formData.peso_actual.toString()) : null,
       peso_objetivo: formData.peso_objetivo ? parseFloat(formData.peso_objetivo.toString()) : null,
-      alergias: selectedAllergies,
-      preferencias: selectedPreferences
+      alergias: formData.alergias,
+      preferencias: formData.preferencias,
+      alimentos_disgusto: formData.alimentos_disgusto || null,
     };
 
     try {
@@ -255,8 +268,13 @@ export default function PatientProfile() {
           </Button>
         </div>
 
+        {loadingProfile ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
         <Tabs defaultValue="personal" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 mb-6 h-auto gap-1">
             <TabsTrigger value="personal" className="flex gap-2">
               <User className="h-4 w-4" />
               Personal
@@ -272,6 +290,10 @@ export default function PatientProfile() {
             <TabsTrigger value="recordatorio" className="flex gap-2">
               <Clock className="h-4 w-4" />
               Recordatorio 24h
+            </TabsTrigger>
+            <TabsTrigger value="ficha" className="flex gap-2">
+              <ClipboardList className="h-4 w-4" />
+              Ficha clínica
             </TabsTrigger>
           </TabsList>
 
@@ -353,6 +375,14 @@ export default function PatientProfile() {
                     <Label htmlFor="direccion">Dirección</Label>
                     <Input id="direccion" value={formData.direccion} onChange={handleInputChange} />
                   </div>
+                  <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t">
+                    <ReadOnlyField
+                      label="Tipo de documento"
+                      value={formData.tipo_documento}
+                    />
+                    <ReadOnlyField label="Número de documento" value={formData.numero_documento} />
+                    <ReadOnlyField label="Programa EPS" value={formData.programa_eps} />
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -405,6 +435,9 @@ export default function PatientProfile() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {formData.pal_factor !== "" && formData.pal_factor != null ? (
+                    <ReadOnlyField label="Factor de actividad (PAL)" value={String(formData.pal_factor)} />
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -419,6 +452,8 @@ export default function PatientProfile() {
                     <Label htmlFor="condiciones_medicas">Condiciones o Diagnósticos Médicos</Label>
                     <Textarea id="condiciones_medicas" value={formData.condiciones_medicas} onChange={handleInputChange} rows={3} />
                   </div>
+                  <ReadOnlyField label="Antecedentes familiares" value={formData.antecedentes_familiares} />
+                  <ReadOnlyField label="Evaluación nutricional (nutricionista)" value={formData.evaluacion_nutricional} />
                 </CardContent>
               </Card>
             </div>
@@ -443,33 +478,80 @@ export default function PatientProfile() {
 
             <div className="grid gap-6 md:grid-cols-2">
               <Card>
-                <CardHeader><CardTitle className="text-sm">Alergias Alimentarias</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-sm">Alergias e intolerancias</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 gap-2">
-                    {allergiesList.map((a) => (
-                      <div key={a.id} className="flex items-center space-x-2">
-                        <Checkbox id={`alg-${a.id}`} checked={selectedAllergies.includes(a.id)} onCheckedChange={(c) => handleAllergyChange(a.id, c as boolean)} />
-                        <Label htmlFor={`alg-${a.id}`} className="text-xs">{a.label}</Label>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-sm">{formatListOrText(formData.alergias)}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Registradas por tu nutricionista. Si necesitas corregirlas, contacta a tu equipo.
+                  </p>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader><CardTitle className="text-sm">Preferencias de Dieta</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-sm">Preferencias alimentarias</CardTitle></CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 gap-2">
-                    {dietPreferencesList.map((p) => (
-                      <div key={p.id} className="flex items-center space-x-2">
-                        <Checkbox id={`pref-${p.id}`} checked={selectedPreferences.includes(p.id)} onCheckedChange={(c) => handlePreferenceChange(p.id, c as boolean)} />
-                        <Label htmlFor={`pref-${p.id}`} className="text-xs">{p.label}</Label>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-sm">{formatListOrText(formData.preferencias)}</p>
+                </CardContent>
+              </Card>
+
+              <Card className="md:col-span-2">
+                <CardHeader><CardTitle className="text-sm">Rechazos alimentarios</CardTitle></CardHeader>
+                <CardContent>
+                  <ReadOnlyField label="" value={formData.alimentos_disgusto} />
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="ficha" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Información registrada en consulta</CardTitle>
+                <CardDescription>
+                  Datos que tu nutricionista ingresó al crear tu ficha. Para cambios, coordina con tu nutricionista.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {(formData.acompanante_nombre || formData.acompanante_telefono) && (
+                  <div className="grid gap-4 sm:grid-cols-2 rounded-lg border p-4 bg-muted/20">
+                    <ReadOnlyField label="Acompañante" value={formData.acompanante_nombre} />
+                    <ReadOnlyField label="Parentesco" value={formData.acompanante_parentesco} />
+                    <ReadOnlyField label="Teléfono acompañante" value={formData.acompanante_telefono} />
+                    <ReadOnlyField label="Email acompañante" value={formData.acompanante_email} />
+                  </div>
+                )}
+                {formData.datos_clinicos && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <ReadOnlyField label="Motivo de consulta" value={formData.datos_clinicos.motivo_consulta} />
+                    <ReadOnlyField label="Enfermedad actual" value={formData.datos_clinicos.enfermedad_actual} />
+                    <ReadOnlyField label="Medicamentos" value={formData.datos_clinicos.medicamentos} />
+                    <ReadOnlyField label="Diagnóstico PES" value={formData.datos_clinicos.diagnostico_pes} />
+                    <ReadOnlyField label="Tipo de dieta indicada" value={formData.datos_clinicos.tipo_dieta} />
+                    <ReadOnlyField label="Recomendaciones" value={formData.datos_clinicos.recomendaciones} />
+                    {isHeadCircumferenceAgeEligible(formData.fecha_nacimiento) &&
+                    formData.datos_clinicos.perimetro_cefalico ? (
+                      <ReadOnlyField
+                        label="Perímetro cefálico (cm)"
+                        value={formData.datos_clinicos.perimetro_cefalico}
+                      />
+                    ) : null}
+                    <ReadOnlyField label="Perímetro braquial (cm)" value={formData.datos_clinicos.perimetro_braquial} />
+                    <ReadOnlyField label="Perímetro cintura (cm)" value={formData.datos_clinicos.perimetro_cintura} />
+                    <ReadOnlyField
+                      label="Clasificación antropométrica"
+                      value={formData.datos_clinicos.clasificacion_antropometrica}
+                    />
+                  </div>
+                )}
+                {!formData.datos_clinicos?.motivo_consulta &&
+                  !formData.acompanante_nombre &&
+                  !formData.evaluacion_nutricional && (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      Aún no hay datos clínicos extendidos en tu ficha.
+                    </p>
+                  )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="recordatorio" className="space-y-6">
@@ -528,6 +610,7 @@ export default function PatientProfile() {
             </div>
           </TabsContent>
         </Tabs>
+        )}
       </div>
     </PatientLayout>
   );

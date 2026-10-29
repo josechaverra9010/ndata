@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { API_URL } from "@/config/api";
+import { resolveMediaUrl } from "@/lib/media";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { todayInColombiaISO } from "@/lib/timezone";
@@ -847,7 +848,7 @@ export default function PatientAppointments() {
                     <div className="relative">
                       <div className="h-20 w-20 rounded-2xl overflow-hidden ring-4 ring-primary/10 shadow-sm bg-primary/10">
                         <img
-                          src={nutritionist.photo}
+                          src={resolveMediaUrl(nutritionist.photo) || nutritionist.photo}
                           alt={nutritionist.name}
                           className="h-full w-full object-cover"
                         />

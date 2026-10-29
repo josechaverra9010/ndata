@@ -15,6 +15,7 @@ export function MaintenanceGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<PlatformStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiOffline, setApiOffline] = useState(false);
+  const [offlineHint, setOfflineHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,15 +28,35 @@ export function MaintenanceGate({ children }: { children: ReactNode }) {
           const data = await res.json();
           if (!cancelled) {
             setStatus(data);
-            setApiOffline(false);
+            if (data.databaseOk === false && data.maintenanceMode !== true) {
+              setApiOffline(true);
+              setOfflineHint(
+                import.meta.env.DEV
+                  ? "La API responde pero la base de datos no. Revisa DATABASE_URL local."
+                  : "El servidor está en línea pero no conecta a la base de datos. Revisa DATABASE_URL en Cloud Run (y Cloud SQL si aplica)."
+              );
+            } else {
+              setApiOffline(false);
+              setOfflineHint(null);
+            }
           }
         } else if (!cancelled) {
           setApiOffline(true);
+          setOfflineHint(
+            import.meta.env.DEV
+              ? "No se pudo contactar la API. Inicia: python -m uvicorn main:app --reload --port 8001"
+              : "La API devolvió un error. Comprueba que el último deploy en Cloud Run terminó bien y que las variables de entorno siguen configuradas."
+          );
           setStatus({ maintenanceMode: false, maintenanceMessage: "" });
         }
       } catch {
         if (!cancelled) {
           setApiOffline(true);
+          setOfflineHint(
+            import.meta.env.DEV
+              ? "No se pudo contactar la API. Inicia: python -m uvicorn main:app --reload --port 8001"
+              : "No hay respuesta del servidor. Verifica DNS (utridata.com), Cloud Run activo y que no haya bloqueo de red."
+          );
           setStatus({ maintenanceMode: false, maintenanceMessage: "" });
         }
       } finally {
@@ -86,8 +107,8 @@ export function MaintenanceGate({ children }: { children: ReactNode }) {
         <div className="sticky top-0 z-[100] flex items-center justify-center gap-2 bg-amber-600 px-4 py-2 text-sm text-white">
           <WifiOff className="h-4 w-4 shrink-0" />
           <span>
-            No se puede conectar al servidor ({API_URL.replace("/api", "")}). Inicia el backend:{" "}
-            <code className="rounded bg-black/20 px-1">python -m uvicorn main:app --reload --port 8001</code>
+            {offlineHint ||
+              "No se puede conectar al servidor. Comprueba la API y la base de datos."}
           </span>
         </div>
       )}

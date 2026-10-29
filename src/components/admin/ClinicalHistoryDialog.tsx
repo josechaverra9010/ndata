@@ -48,6 +48,7 @@ import { Recordatorio24hForm } from "@/components/admin/Recordatorio24hForm";
 import { FoodFrequencyForm, FOOD_GROUPS } from "@/components/shared/FoodFrequencyForm";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { isHeadCircumferenceAgeEligible } from "@/lib/pediatricGrowthUtils";
 
 function normalizeFrecuenciaConsumo(raw?: any[] | null) {
   return FOOD_GROUPS.map((grupo) => {
@@ -225,6 +226,11 @@ export function ClinicalHistoryDialog({ open, onOpenChange, patient }: ClinicalH
     const to = nutritionistLicense ? ` — TO: ${nutritionistLicense}` : "";
     return `Generado por: ${name}${to}`;
   }, [nutritionistName, nutritionistLicense]);
+
+  const showPerimetroCefalico = useMemo(
+    () => isHeadCircumferenceAgeEligible(form.fecha_nacimiento || null),
+    [form.fecha_nacimiento]
+  );
 
   useEffect(() => {
     if (!open || !patient) return;
@@ -679,11 +685,15 @@ export function ClinicalHistoryDialog({ open, onOpenChange, patient }: ClinicalH
                     },
                     { key: "peso_objetivo", label: "Peso objetivo (kg)" },
                     { key: "imc", label: "IMC" },
-                    { key: "perimetro_cefalico", label: "P. cefálico" },
-                    { key: "perimetro_braquial", label: "P. braquial" },
-                    { key: "perimetro_cintura", label: "P. cintura" },
-                    { key: "pliegue_tricipital", label: "Pliegue tricipital" },
-                    { key: "pliegue_subescapular", label: "Pliegue subescapular" },
+                    ...(showPerimetroCefalico
+                      ? [{ key: "perimetro_cefalico" as const, label: "P. cefálico (cm)" }]
+                      : []),
+                    { key: "perimetro_braquial", label: "P. braquial (cm)" },
+                    { key: "perimetro_cintura", label: "P. cintura (cm)" },
+                    { key: "pliegue_tricipital", label: "Pliegue tricipital (mm)" },
+                    { key: "pliegue_subescapular", label: "Pliegue subescapular (mm)" },
+                    { key: "pliegue_muslo", label: "Pliegue muslo (mm)" },
+                    { key: "pliegue_pantorrilla", label: "Pliegue pantorrilla (mm)" },
                   ];
                   const filled = antroFields.filter((f) => has(String(form[f.key] ?? "")));
                   return (

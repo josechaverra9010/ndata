@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { LOADING_MIN_DURATION_MS } from "@/hooks/useLoadingGate";
 
@@ -14,6 +15,7 @@ interface LoadingScreenProps {
 
 /**
  * Pantalla de carga con animación en video (una reproducción completa por montaje).
+ * En fullscreen se renderiza en document.body para no heredar opacity/transform de AOS.
  */
 export function LoadingScreen({
   message = "Cargando",
@@ -69,13 +71,55 @@ export function LoadingScreen({
     notifyComplete();
   };
 
+  if (fullscreen) {
+    const overlay = (
+      <div
+        className={cn(
+          "fixed inset-0 z-[100] flex flex-col bg-background overflow-hidden",
+          /* Aísla de AOS / transforms de ancestros */
+          "opacity-100 [transform:none]",
+          className
+        )}
+        data-aos-easing=""
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          aria-label="Animación de carga"
+          onEnded={handleVideoEnded}
+          className="absolute inset-0 h-full w-full object-cover opacity-100"
+        >
+          <source src="/loading-animation.mp4" type="video/mp4" />
+        </video>
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent"
+          aria-hidden
+        />
+        <p className="relative z-10 mt-auto pb-10 text-center text-sm font-medium tracking-wide text-foreground/90 animate-pulse px-4">
+          {message}
+        </p>
+      </div>
+    );
+
+    if (typeof document !== "undefined") {
+      return createPortal(overlay, document.body);
+    }
+    return overlay;
+  }
+
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center py-12 px-4",
-        fullscreen ? "fixed inset-0 z-[100] bg-background" : "min-h-[280px]",
+        "flex flex-col items-center justify-center py-12 px-4 min-h-[280px]",
         className
       )}
+      role="status"
+      aria-live="polite"
     >
       <video
         ref={videoRef}
@@ -84,7 +128,7 @@ export function LoadingScreen({
         playsInline
         aria-label="Animación de carga"
         onEnded={handleVideoEnded}
-        className="mb-6 w-48 max-w-[70vw] rounded-2xl object-contain shadow-sm"
+        className="mb-6 w-full max-w-md rounded-2xl object-contain shadow-sm"
       >
         <source src="/loading-animation.mp4" type="video/mp4" />
       </video>

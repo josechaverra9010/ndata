@@ -2025,9 +2025,34 @@ export const EVANUT_GRUPOS_ALIMENTOS: string[] = [
   "Productos con reducción de grasa adultos y niños",
 ];
 
-/** Grupo de suplementos (hoja Deportista EVANUT): nutrientes se introducen manualmente por porción */
+/** Grupo de suplementos (adulto / pediatría / etc.): nutrientes manuales por porción */
 export const SUPLEMENTOS_GRUPO =
   "Suplementos (Introduzca la información nutricional de 1 porción de suplemento)";
+
+/** Grupo Fase 3 en plan deportista (catálogo Suplementos deportivos) */
+export const SUPLEMENTOS_GRUPO_DEPORTISTA = "Suplementos deportivos";
+
+export function resolveSuplementosGrupoKey(
+  grupos?: Record<string, unknown> | null,
+  tipoPlan?: string
+): string {
+  if (tipoPlan === "deportista") {
+    if (grupos && SUPLEMENTOS_GRUPO_DEPORTISTA in grupos) return SUPLEMENTOS_GRUPO_DEPORTISTA;
+    return SUPLEMENTOS_GRUPO_DEPORTISTA;
+  }
+  if (grupos && SUPLEMENTOS_GRUPO in grupos) return SUPLEMENTOS_GRUPO;
+  if (grupos && SUPLEMENTOS_GRUPO_DEPORTISTA in grupos) return SUPLEMENTOS_GRUPO_DEPORTISTA;
+  return SUPLEMENTOS_GRUPO;
+}
+
+export function isPrimarySuplementoGrupoKey(
+  key: string,
+  _grupos?: Record<string, unknown> | null,
+  tipoPlan?: string
+): boolean {
+  if (key.startsWith(SUPLEMENTO_EXTRA_PREFIX)) return false;
+  return listSuplementoGrupoRowsForTipo(tipoPlan).includes(key);
+}
 
 /** Prefijo para filas adicionales de suplementos MIPRESS en fase 3 */
 export const SUPLEMENTO_EXTRA_PREFIX = "__mipress_suplemento__:";
@@ -2042,17 +2067,11 @@ export function makeSuplementoExtraKey(id?: string): string {
 }
 
 export function isSuplementoGrupoKey(nombre: string): boolean {
-  return nombre === SUPLEMENTOS_GRUPO || nombre.startsWith(SUPLEMENTO_EXTRA_PREFIX);
-}
-
-/** Lista de claves de suplemento (principal + extras) presentes en grupos_alimentos_f3 */
-export function listSuplementoKeys(grupos?: Record<string, any> | null): string[] {
-  const keys = [SUPLEMENTOS_GRUPO];
-  if (!grupos || typeof grupos !== "object") return keys;
-  const extras = Object.keys(grupos)
-    .filter((k) => k.startsWith(SUPLEMENTO_EXTRA_PREFIX))
-    .sort();
-  return [...keys, ...extras];
+  return (
+    nombre === SUPLEMENTOS_GRUPO ||
+    nombre === SUPLEMENTOS_GRUPO_DEPORTISTA ||
+    nombre.startsWith(SUPLEMENTO_EXTRA_PREFIX)
+  );
 }
 
 /**
@@ -2064,8 +2083,8 @@ export const EVANUT_GRUPOS_DEPORTISTA: string[] = (() => {
   const idx = groups.indexOf(
     "Leches frescas y fermentadas enteras altas en calorías y azucares"
   );
-  if (idx >= 0) groups.splice(idx + 1, 0, SUPLEMENTOS_GRUPO);
-  else groups.splice(4, 0, SUPLEMENTOS_GRUPO);
+  if (idx >= 0) groups.splice(idx + 1, 0, SUPLEMENTOS_GRUPO_DEPORTISTA);
+  else groups.splice(4, 0, SUPLEMENTOS_GRUPO_DEPORTISTA);
   return groups;
 })();
 
@@ -2117,21 +2136,58 @@ export const EVANUT_GRUPOS_PEDIATRIA: string[] = [
   "Promedio grasas menores de 2 años",
 ];
 
+const EVANUT_ANCLA_LECHE_ALTA =
+  "Leches frescas y fermentadas enteras altas en calorías y azucares";
+
+function insertEvanutGrupoAfter(groups: string[], grupo: string, afterGrupo: string): void {
+  if (groups.includes(grupo)) return;
+  const idx = groups.indexOf(afterGrupo);
+  const at = idx >= 0 ? idx + 1 : Math.min(4, groups.length);
+  groups.splice(at, 0, grupo);
+}
+
 export function getEvanutGruposForTipo(tipoPlan?: string): string[] {
   let groups: string[];
   if (tipoPlan === "deportista") groups = [...EVANUT_GRUPOS_DEPORTISTA];
   else if (tipoPlan === "pediatria") groups = [...EVANUT_GRUPOS_PEDIATRIA];
   else groups = [...EVANUT_GRUPOS_ALIMENTOS];
 
-  // Fórmula sintética desarrollada: incluir fila de suplementos MIPRESS/EVANUT
-  if (!groups.includes(SUPLEMENTOS_GRUPO)) {
-    const idx = groups.indexOf(
-      "Leches frescas y fermentadas enteras altas en calorías y azucares"
-    );
-    if (idx >= 0) groups.splice(idx + 1, 0, SUPLEMENTOS_GRUPO);
-    else groups.push(SUPLEMENTOS_GRUPO);
+  if (tipoPlan === "deportista") {
+    insertEvanutGrupoAfter(groups, SUPLEMENTOS_GRUPO_DEPORTISTA, EVANUT_ANCLA_LECHE_ALTA);
+  } else {
+    insertEvanutGrupoAfter(groups, SUPLEMENTOS_GRUPO, EVANUT_ANCLA_LECHE_ALTA);
+    const mipressIdx = groups.indexOf(SUPLEMENTOS_GRUPO);
+    if (!groups.includes(SUPLEMENTOS_GRUPO_DEPORTISTA)) {
+      const at =
+        mipressIdx >= 0
+          ? mipressIdx + 1
+          : groups.indexOf(EVANUT_ANCLA_LECHE_ALTA) + 1;
+      groups.splice(Math.max(at, 0), 0, SUPLEMENTOS_GRUPO_DEPORTISTA);
+    }
   }
   return groups;
+}
+
+/** Filas EVANUT de suplementos (MIPRESS + deportivos) para el tipo de plan */
+export function listSuplementoGrupoRowsForTipo(tipoPlan?: string): string[] {
+  return getEvanutGruposForTipo(tipoPlan).filter(
+    (k) => isSuplementoGrupoKey(k) && !k.startsWith(SUPLEMENTO_EXTRA_PREFIX)
+  );
+}
+
+/** Lista de claves de suplemento (filas EVANUT + extras) en grupos_alimentos_f3 */
+export function listSuplementoKeys(grupos?: Record<string, any> | null, tipoPlan?: string): string[] {
+  const evanutRows = listSuplementoGrupoRowsForTipo(tipoPlan);
+  const keys: string[] = [];
+  for (const k of evanutRows) {
+    if (!grupos || k in grupos) keys.push(k);
+  }
+  if (!keys.length) keys.push(resolveSuplementosGrupoKey(grupos, tipoPlan));
+  if (!grupos || typeof grupos !== "object") return keys;
+  const extras = Object.keys(grupos)
+    .filter((k) => k.startsWith(SUPLEMENTO_EXTRA_PREFIX))
+    .sort();
+  return [...keys, ...extras];
 }
 
 /** Lookup de nutrientes por grupo (soporta alias leche materna y nombres cortos del Excel) */
@@ -4223,6 +4279,95 @@ export function getGrasasPoliinsaturadasCompositionRows(): CompositionTableRow[]
  * 2) Caché del navegador: hacer recarga forzada (Ctrl+F5) o reiniciar el servidor de desarrollo.
  * 3) No regenerar foodNutrients.ts desde food_nutrients.json con convert_to_ts.py sin revisar: ese script puede sobrescribir y quitar campos (portion_grams, unit_measure).
  */
+/** kcal proporcional a gramos consumidos según porción de referencia en la tabla. */
+export function kcalForIngredientAtGrams(ingredientName: string, grams: number): number {
+  if (!Number.isFinite(grams) || grams <= 0) return 0;
+  const baseName = ingredientName.replace(/\s*:.*$/, "").trim();
+  const row =
+    getCompositionRowForIngredient(ingredientName) ?? getCompositionRowForIngredient(baseName);
+  if (!row?.portion_grams || row.portion_grams <= 0) return 0;
+  return ((row.kcal ?? 0) * grams) / row.portion_grams;
+}
+
+/** Macros escalados según gramos consumidos vs. porción de referencia (tabla EVANUT). */
+export function macrosForIngredientAtGrams(
+  ingredientName: string,
+  grams: number
+): {
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  porciones: number;
+  unitMeasure?: string;
+  portionGrams?: number;
+} | null {
+  if (!Number.isFinite(grams) || grams <= 0) return null;
+  const baseName = ingredientName.replace(/\s*:.*$/, "").trim();
+  const row =
+    getCompositionRowForIngredient(ingredientName) ?? getCompositionRowForIngredient(baseName);
+  if (!row?.portion_grams || row.portion_grams <= 0) return null;
+  const factor = grams / row.portion_grams;
+  return {
+    kcal: ((row.kcal ?? 0) * factor),
+    protein: ((row.prot ?? 0) * factor),
+    carbs: ((row.chos ?? 0) * factor),
+    fat: ((row.grasa ?? 0) * factor),
+    porciones: factor,
+    unitMeasure: row.unit_measure,
+    portionGrams: row.portion_grams,
+  };
+}
+
+export function parseLocaleNumberInput(value: string | number): number {
+  if (typeof value === "number") return value;
+  const normalized = String(value).trim().replace(",", ".");
+  const raw = parseFloat(normalized);
+  return Number.isFinite(raw) ? raw : NaN;
+}
+
+export function stripIngredientPortionSuffix(name: string): string {
+  return (name || "").replace(/\s*:.*$/, "").trim();
+}
+
+/**
+ * Une fragmentos partidos por comas (ej. "Salmon rosado" + "crudo" → "Salmon rosado, crudo").
+ */
+export function normalizeCompositionIngredientList(parts: unknown[]): string[] {
+  const items = (parts || []).map((s) => String(s).trim()).filter(Boolean);
+  if (items.length === 0) return [];
+
+  const matchesTable = (label: string) =>
+    !!getCompositionRowForIngredient(stripIngredientPortionSuffix(label));
+
+  const out: string[] = [];
+  let i = 0;
+  while (i < items.length) {
+    let best = items[i];
+    let bestEnd = i;
+
+    if (!matchesTable(best)) {
+      for (let j = i + 1; j < items.length; j++) {
+        let matched = false;
+        for (const joiner of [", ", " "] as const) {
+          const candidate = items.slice(i, j + 1).join(joiner);
+          if (matchesTable(candidate)) {
+            best = candidate;
+            bestEnd = j;
+            matched = true;
+            break;
+          }
+        }
+        if (matched) break;
+      }
+    }
+
+    out.push(best);
+    i = bestEnd + 1;
+  }
+  return out;
+}
+
 export function getCompositionRowForIngredient(name: string): CompositionTableRow | null {
   if (!name || typeof name !== "string") return null;
   const trimmed = name.trim();

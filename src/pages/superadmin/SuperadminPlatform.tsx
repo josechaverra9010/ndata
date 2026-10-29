@@ -292,7 +292,9 @@ export default function SuperadminPlatform() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Eye className="h-5 w-5" /> Auditoría de impersonación</CardTitle>
-                <CardDescription>Desde Usuarios o Nutricionistas → &quot;Ver como&quot;. También POST /impersonate/user/{id}</CardDescription>
+                <CardDescription>
+                  {`Desde Usuarios o Nutricionistas → "Ver como". También POST /impersonate/user/{id}`}
+                </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table>

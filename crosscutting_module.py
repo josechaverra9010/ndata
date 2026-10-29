@@ -8,13 +8,14 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import os
 import secrets
 import threading
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Deque, Dict, List, Optional, TYPE_CHECKING
 
-from fastapi import Depends, HTTPException, Header, Query, Request
+from fastapi import Body, Depends, HTTPException, Header, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, Text, func, or_
 from sqlalchemy.orm import Session
@@ -57,7 +58,7 @@ DEFAULT_RATE_LIMITS = {
 # ── Schemas ──
 
 class ImpersonateBody(BaseModel):
-    reason: str = Field(..., min_length=5, max_length=500)
+    reason: str = Field(default="Soporte superadmin", min_length=3, max_length=500)
 
 
 class MassCommCreateSchema(BaseModel):
@@ -310,9 +311,25 @@ def seed_crosscutting_defaults(db: Session, now_co: Callable):
 
 
 def _client_ip(request: Request) -> str:
+    """IP del cliente; en Cloud Run/proxies prioriza cabeceras y la IP pública en X-Forwarded-For."""
+    for header in ("cf-connecting-ip", "true-client-ip", "x-real-ip"):
+        value = request.headers.get(header)
+        if value and value.strip():
+            return value.strip()
+
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        for candidate in parts:
+            try:
+                addr = ipaddress.ip_address(candidate)
+                if not addr.is_private and not addr.is_loopback and not addr.is_link_local:
+                    return candidate
+            except ValueError:
+                continue
+        if parts:
+            return parts[0]
+
     if request.client:
         return request.client.host or "0.0.0.0"
     return "0.0.0.0"
@@ -340,10 +357,42 @@ def _ip_allowed(db: Session, ip: str) -> bool:
     return False
 
 
+async def read_impersonate_reason(request: Request) -> str:
+    """Lee motivo del body JSON sin validación Pydantic (evita 422 por body vacío o mal formado)."""
+    default = "Soporte superadmin"
+    try:
+        ctype = (request.headers.get("content-type") or "").lower()
+        if "application/json" not in ctype:
+            return default
+        raw = await request.json()
+        if isinstance(raw, dict):
+            reason = raw.get("reason")
+            if isinstance(reason, str) and reason.strip():
+                return reason.strip()
+    except Exception:
+        pass
+    return default
+
+
+def _user_is_active(user) -> bool:
+    raw = getattr(user, "status", None) or "activo"
+    return str(raw).lower().strip() == "activo"
+
+
 def check_superadmin_ip(db: Session, request: Request):
+    enforce = os.getenv("SUPERADMIN_IP_ALLOWLIST_ENFORCE", "1").strip().lower()
+    if enforce in ("0", "false", "no", "off"):
+        return
     ip = _client_ip(request)
     if not _ip_allowed(db, ip):
-        raise HTTPException(status_code=403, detail=f"Acceso superadmin denegado desde IP {ip}")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Acceso denegado desde IP {ip}. "
+                "Añade esta IP en Plataforma → IP allowlist o desactiva la lista "
+                "(variable SUPERADMIN_IP_ALLOWLIST_ENFORCE=0 en el servidor)."
+            ),
+        )
 
 
 def _totp_lib():
@@ -660,13 +709,13 @@ def register_crosscutting_routes(app, deps: dict):
     ALGORITHM = deps.get("ALGORITHM", "HS256")
     send_generic_email = deps.get("send_generic_email")
     calculate_weekly_adherence = deps.get("calculate_weekly_adherence")
+    profile_photo_for_client = deps.get("profile_photo_for_client") or (lambda stored: stored)
     jwt_encode = deps.get("jwt_encode")
     jwt_decode = deps.get("jwt_decode")
 
-    from fastapi import Request as FastAPIRequest
     from jose import jwt as jose_jwt, JWTError
 
-    def _secure_superadmin(request: FastAPIRequest, db: Session = Depends(get_db), user=Depends(require_superadmin)):
+    def _secure_superadmin(request: Request, db: Session = Depends(get_db), user=Depends(require_superadmin)):
         check_superadmin_ip(db, request)
         return user
 
@@ -723,27 +772,40 @@ def register_crosscutting_routes(app, deps: dict):
         }
 
     # ── Impersonación ──
-    @app.post("/api/superadmin/impersonate/user/{user_id}")
-    def impersonate_user(
+    def _impersonate_target_user(
         user_id: int,
-        body: ImpersonateBody,
-        request: FastAPIRequest,
-        db: Session = Depends(get_db),
-        current_user=Depends(_secure_superadmin),
+        reason: str,
+        request: Request,
+        db: Session,
+        current_user,
     ):
         target = db.query(UserDB).filter(UserDB.id == user_id).first()
         if not target:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        if target.role not in ("admin", "patient"):
-            raise HTTPException(status_code=400, detail="Solo nutricionistas o pacientes")
-        if target.status != "activo":
-            raise HTTPException(status_code=400, detail="Usuario inactivo")
         if target.role == "superadmin":
             raise HTTPException(status_code=403, detail="No se puede impersonar superadmin")
+        if target.role not in ("admin", "patient"):
+            raise HTTPException(
+                status_code=400,
+                detail="Solo se puede impersonar nutricionistas (admin) o pacientes",
+            )
+        normalize_status = deps.get("normalize_user_status")
+        if normalize_status:
+            if normalize_status(target) != "activo":
+                raise HTTPException(status_code=400, detail="Usuario inactivo")
+        elif not _user_is_active(target):
+            raise HTTPException(status_code=400, detail="Usuario inactivo")
+
+        clean_reason = (reason or "").strip()
+        if len(clean_reason) < 3:
+            raise HTTPException(
+                status_code=400,
+                detail="El motivo debe tener al menos 3 caracteres (auditoría)",
+            )
 
         token = _create_impersonation_token(target, current_user, target.role)
         ip = _client_ip(request)
-        _log_impersonation(db, current_user, target, "start", body.reason, ip)
+        _log_impersonation(db, current_user, target, "start", clean_reason, ip)
         if log_audit:
             log_audit(
                 db,
@@ -752,18 +814,50 @@ def register_crosscutting_routes(app, deps: dict):
                 entity_type=target.role,
                 entity_id=target.id,
                 summary=f"Impersonación: {target.nombres} {target.apellidos}",
-                details={"reason": body.reason, "ip": ip},
+                details={"reason": clean_reason, "ip": ip},
                 now_co=now_co,
             )
         db.commit()
-        redirect = "/admin" if target.role == "admin" else "/patient/dashboard"
+        redirect = "/admin" if target.role == "admin" else "/patient"
         return {
             "success": True,
             "token": token,
             "redirect": redirect,
-            "user": {"id": target.id, "name": f"{target.nombres} {target.apellidos}", "email": target.email, "role": target.role, "avatar": target.foto_perfil},
-            "impersonator": {"id": current_user.id, "name": f"{current_user.nombres} {current_user.apellidos}"},
+            "user": {
+                "id": target.id,
+                "name": f"{target.nombres} {target.apellidos}",
+                "email": target.email,
+                "role": target.role,
+                "avatar": profile_photo_for_client(target.foto_perfil),
+            },
+            "impersonator": {
+                "id": current_user.id,
+                "name": f"{current_user.nombres} {current_user.apellidos}",
+            },
         }
+
+    @app.post("/api/superadmin/impersonate/user/{user_id}")
+    async def impersonate_user(
+        user_id: int,
+        request: Request,
+        db: Session = Depends(get_db),
+        current_user=Depends(require_superadmin),
+    ):
+        reason = await read_impersonate_reason(request)
+        return _impersonate_target_user(user_id, reason, request, db, current_user)
+
+    @app.post("/api/superadmin/nutritionists/{nutritionist_id}/impersonate")
+    async def impersonate_nutritionist_legacy(
+        nutritionist_id: int,
+        request: Request,
+        db: Session = Depends(get_db),
+        current_user=Depends(require_superadmin),
+    ):
+        """Compatibilidad: nutritionist_id es el user_id del nutricionista (role admin)."""
+        reason = await read_impersonate_reason(request)
+        return _impersonate_target_user(
+            nutritionist_id, reason, request, db, current_user
+        )
 
     @app.get("/api/superadmin/impersonation/logs")
     def impersonation_logs(limit: int = 50, db: Session = Depends(get_db), _=Depends(_secure_superadmin)):
@@ -976,13 +1070,23 @@ def register_crosscutting_routes(app, deps: dict):
         user = db.query(UserDB).filter(UserDB.id == payload.get("id")).first()
         if not user:
             raise HTTPException(status_code=404)
+        account_status = str(getattr(user, "status", None) or "activo").lower().strip()
+        deleted = getattr(user, "deleted_at", None)
+        if deleted and str(deleted).strip():
+            raise HTTPException(status_code=403, detail="Tu cuenta ha sido desactivada.")
+        if account_status != "activo":
+            raise HTTPException(status_code=403, detail="Tu cuenta está inactiva o pendiente de activación.")
         if not verify_totp_code(db, user.id, body.code):
             raise HTTPException(status_code=401, detail="Código 2FA inválido")
+        ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+        user.last_login_at = ts
+        user.last_seen_at = ts
+        db.commit()
         full_token = jose_jwt.encode({
             "sub": user.email, "id": user.id, "role": user.role,
             "exp": datetime.utcnow() + timedelta(hours=12),
         }, SECRET_KEY, algorithm=ALGORITHM)
-        return {"success": True, "token": full_token, "user": {"id": user.id, "name": f"{user.nombres} {user.apellidos}", "role": user.role, "avatar": user.foto_perfil}}
+        return {"success": True, "token": full_token, "user": {"id": user.id, "name": f"{user.nombres} {user.apellidos}", "role": user.role, "avatar": profile_photo_for_client(user.foto_perfil)}}
 
     # ── IP Allowlist ──
     @app.get("/api/superadmin/platform/ip-allowlist")

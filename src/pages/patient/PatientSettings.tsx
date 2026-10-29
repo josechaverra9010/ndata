@@ -1,4 +1,5 @@
 import { PatientLayout } from "@/layouts/PatientLayout";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -789,7 +790,10 @@ export default function PatientSettings() {
                 Privacidad y datos personales
               </CardTitle>
               <CardDescription>
-                Derechos ARCO — Ley 1581 de 2012 (Habeas Data Colombia)
+                Derechos ARCO — Ley 1581 de 2012 (Habeas Data Colombia).{" "}
+                <Link to="/privacidad" className="text-primary underline-offset-4 hover:underline">
+                  Ver política de privacidad completa
+                </Link>
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-6 md:grid-cols-2">

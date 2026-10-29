@@ -15,8 +15,9 @@ import { toast } from "sonner";
 import { LoadingGate } from "@/components/LoadingGate";
 import {
   Search, Plus, Clock, Flame, Users, ChefHat, Heart, Filter, MoreVertical,
-  Edit, Trash2, Copy, Eye, X, Utensils, Beef, Send
+  Edit, Trash2, Copy, Eye, X, Utensils, Beef, Send, Sparkles, Loader2
 } from "lucide-react";
+import { matchAiIngredients } from "@/lib/matchRecipeIngredients";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +37,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   FOOD_INGREDIENT_GROUPS,
+  FOOD_INGREDIENTS_LIST,
   getIngredientsByGroup,
   getCompositionRowForIngredient,
   type CompositionTableRow,
@@ -94,6 +96,19 @@ export default function AdminRecipes() {
   const [formCategory, setFormCategory] = useState("Platos principales");
   const [formPrepTime, setFormPrepTime] = useState(0);
   const [formCookTime, setFormCookTime] = useState(0);
+  const [formName, setFormName] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formServings, setFormServings] = useState(2);
+  const [formInstructions, setFormInstructions] = useState("");
+  const [formTags, setFormTags] = useState("");
+  const [formKey, setFormKey] = useState(0);
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiIdea, setAiIdea] = useState("");
+  const [aiCategory, setAiCategory] = useState("Platos principales");
+  const [aiCalories, setAiCalories] = useState("");
+  const [aiRestrictions, setAiRestrictions] = useState("");
+  const [aiUnmatchedNote, setAiUnmatchedNote] = useState<string | null>(null);
 
   const currentUserId = (() => {
     try {
@@ -272,20 +287,20 @@ export default function AdminRecipes() {
     const formData = new FormData(formElement);
 
     const data = new FormData();
-    data.append("name", formData.get("name") as string);
-    data.append("description", formData.get("description") as string);
+    data.append("name", formName.trim() || (formData.get("name") as string) || "");
+    data.append("description", formDescription);
     data.append("category", formCategory || "Platos principales");
     data.append("prepTime", String(formPrepTime || 0));
     data.append("cookTime", String(formCookTime || 0));
-    data.append("servings", formData.get("servings") as string);
+    data.append("servings", String(formServings || 1));
     data.append("calories", String(Math.round(netNutrients.kcal)));
     data.append("protein", String(Math.round(netNutrients.prot)));
     data.append("carbs", String(Math.round(netNutrients.chos)));
     data.append("fat", String(Math.round(netNutrients.grasa)));
 
     const ingredientsList = selectedIngredients;
-    const instructionsList = (formData.get("instructions") as string).split("\n").filter(i => i.trim());
-    const tagsList = (formData.get("tags") as string).split(",").map(t => t.trim()).filter(t => t);
+    const instructionsList = formInstructions.split("\n").filter((i) => i.trim());
+    const tagsList = formTags.split(",").map((t) => t.trim()).filter((t) => t);
 
     data.append("ingredients", JSON.stringify(ingredientsList));
     data.append("instructions", JSON.stringify(instructionsList));
@@ -412,6 +427,13 @@ export default function AdminRecipes() {
     setFormCategory("Platos principales");
     setFormPrepTime(0);
     setFormCookTime(0);
+    setFormName("");
+    setFormDescription("");
+    setFormServings(2);
+    setFormInstructions("");
+    setFormTags("");
+    setAiUnmatchedNote(null);
+    setFormKey((k) => k + 1);
     setIsFormOpen(true);
   };
 
@@ -426,7 +448,80 @@ export default function AdminRecipes() {
     setFormCategory(recipe.category || "Platos principales");
     setFormPrepTime(recipe.prepTime || 0);
     setFormCookTime(recipe.cookTime || 0);
+    setFormName(recipe.name || "");
+    setFormDescription(recipe.description || "");
+    setFormServings(recipe.servings || 2);
+    setFormInstructions((recipe.instructions || []).join("\n"));
+    setFormTags((recipe.tags || []).join(", "));
+    setAiUnmatchedNote(null);
+    setFormKey((k) => k + 1);
     setIsFormOpen(true);
+  };
+
+  const handleGenerateWithAi = async () => {
+    const idea = aiIdea.trim();
+    if (idea.length < 3) {
+      toast.error("Describe la idea de la receta (mín. 3 caracteres)");
+      return;
+    }
+    setAiGenerating(true);
+    try {
+      const token = localStorage.getItem("userToken");
+      // Muestra al modelo un muestreo del catálogo para mejorar el match
+      const catalog_hints = FOOD_INGREDIENTS_LIST.filter((_, i) => i % 8 === 0).slice(0, 80);
+      const response = await fetch(`${API_URL}/recipes/generate-ai`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          idea,
+          category: aiCategory,
+          target_calories: aiCalories ? parseInt(aiCalories, 10) : null,
+          servings: 2,
+          restrictions: aiRestrictions.trim() || null,
+          catalog_hints,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "No se pudo generar la receta");
+      }
+      const recipe = data.recipe || {};
+      const { matched, unmatched } = matchAiIngredients(recipe.ingredients || []);
+
+      setEditingRecipe(null);
+      setFormName(recipe.name || idea);
+      setFormDescription(recipe.description || "");
+      setFormCategory(recipe.category || aiCategory);
+      setFormPrepTime(Number(recipe.prepTime) || 0);
+      setFormCookTime(Number(recipe.cookTime) || 0);
+      setFormServings(Number(recipe.servings) || 2);
+      setFormInstructions((recipe.instructions || []).join("\n"));
+      setFormTags((recipe.tags || []).join(", "));
+      setSelectedIngredients(matched);
+      setIngredientGroupFilter("Todos");
+      setAiUnmatchedNote(
+        unmatched.length
+          ? `La IA sugirió ingredientes no hallados en el catálogo (revísalos o agrégalos manualmente): ${unmatched
+              .map((u) => u.name)
+              .join(", ")}`
+          : null
+      );
+      setFormKey((k) => k + 1);
+      setAiDialogOpen(false);
+      setIsFormOpen(true);
+      toast.success(
+        data.ai_enabled
+          ? `Borrador listo · ${matched.length} ingredientes del catálogo`
+          : "Borrador local (sin OPENAI_API_KEY). Revisa y ajusta."
+      );
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error al generar con IA");
+    } finally {
+      setAiGenerating(false);
+    }
   };
 
   const toggleIngredient = (name: string) => {
@@ -448,7 +543,7 @@ export default function AdminRecipes() {
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-sm ring-1 ring-primary/20">
                 <ChefHat className="h-6 w-6" />
               </div>
-              <div>
+          <div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">Recetas</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   Biblioteca de recetas para planes y menús semanales
@@ -456,12 +551,28 @@ export default function AdminRecipes() {
                     <span className="font-medium text-foreground/80"> · {filteredRecipes.length} mostradas</span>
                   )}
                 </p>
-              </div>
+          </div>
             </div>
-            <Button className="rounded-full shadow-md hover:shadow-lg transition-shadow shrink-0 gap-2" onClick={openNewRecipeForm}>
-              <Plus className="h-4 w-4" />
-              Nueva receta
-            </Button>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <Button
+                variant="outline"
+                className="rounded-full shadow-sm gap-2 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300"
+                onClick={() => {
+                  setAiIdea("");
+                  setAiCategory("Platos principales");
+                  setAiCalories("");
+                  setAiRestrictions("");
+                  setAiDialogOpen(true);
+                }}
+              >
+                <Sparkles className="h-4 w-4" />
+                Generar con IA
+              </Button>
+              <Button className="rounded-full shadow-md hover:shadow-lg transition-shadow gap-2" onClick={openNewRecipeForm}>
+                <Plus className="h-4 w-4" />
+                Nueva receta
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -631,6 +742,7 @@ export default function AdminRecipes() {
               setEditingRecipe(null);
               setSelectedIngredients([]);
               setIngredientGroupFilter("Todos");
+              setAiUnmatchedNote(null);
             }
           }}
         >
@@ -644,7 +756,16 @@ export default function AdminRecipes() {
               </DialogTitle>
             </DialogHeader>
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4">
-              <form onSubmit={handleSaveRecipe} className="space-y-5 pb-2">
+              <form key={formKey} onSubmit={handleSaveRecipe} className="space-y-5 pb-2">
+                {aiUnmatchedNote && (
+                  <div className="rounded-xl border border-violet-200 bg-violet-50/80 dark:bg-violet-950/30 p-3 text-sm text-violet-900 dark:text-violet-100">
+                    <p className="font-medium flex items-center gap-1.5 mb-1">
+                      <Sparkles className="h-4 w-4" />
+                      Generado con IA — revisa antes de guardar
+                    </p>
+                    <p className="text-xs opacity-90">{aiUnmatchedNote}</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <Label htmlFor="name">Nombre de la receta</Label>
@@ -653,7 +774,8 @@ export default function AdminRecipes() {
                       name="name"
                       required
                       className="mt-1.5 rounded-xl h-11"
-                      defaultValue={editingRecipe?.name}
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
                     />
                   </div>
                   <div className="col-span-2">
@@ -662,7 +784,8 @@ export default function AdminRecipes() {
                       id="description"
                       name="description"
                       className="mt-1.5 rounded-xl"
-                      defaultValue={editingRecipe?.description}
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
                       rows={3}
                     />
                   </div>
@@ -687,7 +810,8 @@ export default function AdminRecipes() {
                       name="servings"
                       type="number"
                       className="mt-1.5 rounded-xl h-11"
-                      defaultValue={editingRecipe?.servings || 2}
+                      value={formServings}
+                      onChange={(e) => setFormServings(Number(e.target.value) || 1)}
                       min="1"
                       required
                     />
@@ -906,7 +1030,8 @@ export default function AdminRecipes() {
                     name="instructions"
                     className="mt-1.5 rounded-xl"
                     rows={5}
-                    defaultValue={editingRecipe?.instructions.join("\n")}
+                    value={formInstructions}
+                    onChange={(e) => setFormInstructions(e.target.value)}
                     required
                   />
                 </div>
@@ -917,7 +1042,8 @@ export default function AdminRecipes() {
                     id="tags"
                     name="tags"
                     className="mt-1.5 rounded-xl h-11"
-                    defaultValue={editingRecipe?.tags.join(", ")}
+                    value={formTags}
+                    onChange={(e) => setFormTags(e.target.value)}
                   />
                 </div>
 
@@ -965,7 +1091,7 @@ export default function AdminRecipes() {
             <CardContent className="text-center py-16 px-6">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
                 <ChefHat className="h-8 w-8 text-primary" />
-              </div>
+          </div>
               <h3 className="text-lg font-semibold text-foreground mb-2">
                 {searchTerm || selectedCategory !== "Todas" || showFavoritesOnly
                   ? "No se encontraron recetas"
@@ -1140,31 +1266,31 @@ export default function AdminRecipes() {
                   <span className="font-medium text-sky-700 dark:text-sky-300">CHO {(recipe.carbs ?? 0)} g</span>
                   <span className="font-medium text-yellow-700 dark:text-yellow-300">Grasa {(recipe.fat ?? 0)} g</span>
                   {(recipe.prepTime > 0 || recipe.cookTime > 0) && (
-                    <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {(recipe.prepTime || 0) + (recipe.cookTime || 0)} min
-                    </span>
+                  </span>
                   )}
                 </div>
 
                 {(recipe.tags?.length ?? 0) > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {recipe.tags.slice(0, 3).map(tag => (
+                <div className="flex flex-wrap gap-1">
+                  {recipe.tags.slice(0, 3).map(tag => (
                       <Badge key={tag} variant="outline" className="rounded-full text-[10px] px-2 py-0">
-                        {tag}
-                      </Badge>
-                    ))}
-                    {recipe.tags.length > 3 && (
+                      {tag}
+                    </Badge>
+                  ))}
+                  {recipe.tags.length > 3 && (
                       <Badge variant="outline" className="rounded-full text-[10px] px-2 py-0">
-                        +{recipe.tags.length - 3}
-                      </Badge>
-                    )}
-                  </div>
+                      +{recipe.tags.length - 3}
+                    </Badge>
+                  )}
+                </div>
                 )}
               </CardContent>
             </Card>
           ))}
-        </div>
+          </div>
         )}
 
         {/* Recipe Detail Dialog */}
@@ -1192,33 +1318,33 @@ export default function AdminRecipes() {
                         </div>
                         <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                           {canModifyRecipe(selectedRecipe) && (
-                          <Button
-                            size="icon"
-                            variant="outline"
+                      <Button
+                        size="icon"
+                        variant="outline"
                             className="rounded-full bg-background/90 backdrop-blur-sm"
-                            onClick={() => {
-                              openEditForm(selectedRecipe);
-                              setIsDetailOpen(false);
-                            }}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
+                        onClick={() => {
+                          openEditForm(selectedRecipe);
+                          setIsDetailOpen(false);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
                           )}
                           {canModifyRecipe(selectedRecipe) && (
-                          <Button
-                            size="icon"
-                            variant="outline"
+                      <Button
+                        size="icon"
+                        variant="outline"
                             className="rounded-full bg-background/90 backdrop-blur-sm"
-                            onClick={() => toggleFavorite(selectedRecipe.id)}
-                          >
+                        onClick={() => toggleFavorite(selectedRecipe.id)}
+                      >
                             <Heart className={`h-4 w-4 ${selectedRecipe.isFavorite ? "fill-rose-500 text-rose-500" : ""}`} />
-                          </Button>
+                      </Button>
                           )}
-                        </div>
-                      </div>
-                    </DialogHeader>
+                    </div>
                   </div>
-                </div>
+                </DialogHeader>
+                  </div>
+                    </div>
 
                 <div className="overflow-y-auto max-h-[calc(90vh-14rem)] px-6 py-5 space-y-5">
                   {selectedRecipe.description && (
@@ -1230,7 +1356,7 @@ export default function AdminRecipes() {
                       <Users className="h-4 w-4 mx-auto mb-1 text-sky-500" />
                       <p className="text-sm font-semibold tabular-nums">{selectedRecipe.servings}</p>
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Porciones</p>
-                    </div>
+                      </div>
                     <div className="rounded-xl border bg-amber-500/5 border-amber-500/20 p-3 text-center">
                       <Flame className="h-4 w-4 mx-auto mb-1 text-amber-500" />
                       <p className="text-sm font-semibold tabular-nums">{selectedRecipe.calories ?? 0}</p>
@@ -1247,16 +1373,16 @@ export default function AdminRecipes() {
                         {(selectedRecipe.carbs ?? 0)}/{(selectedRecipe.fat ?? 0)}
                       </p>
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">CHO / Grasa</p>
+                      </div>
                     </div>
-                  </div>
 
-                  <Tabs defaultValue="ingredients">
+                    <Tabs defaultValue="ingredients">
                     <TabsList className="w-full h-auto p-1 rounded-xl bg-muted/60 grid grid-cols-2">
                       <TabsTrigger value="ingredients" className="rounded-lg data-[state=active]:shadow-sm">Ingredientes</TabsTrigger>
                       <TabsTrigger value="instructions" className="rounded-lg data-[state=active]:shadow-sm">Instrucciones</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="ingredients" className="mt-4">
-                      <ul className="space-y-2">
+                      </TabsList>
+                      <TabsContent value="ingredients" className="mt-4">
+                        <ul className="space-y-2">
                         {selectedRecipe.ingredients.map((ingredient, idx) => {
                           const row = getCompositionRowForIngredient(ingredient);
                           const grams = row?.portion_grams;
@@ -1276,21 +1402,21 @@ export default function AdminRecipes() {
                             </li>
                           );
                         })}
-                      </ul>
-                    </TabsContent>
-                    <TabsContent value="instructions" className="mt-4">
-                      <ol className="space-y-3">
-                        {selectedRecipe.instructions.map((instruction, idx) => (
+                        </ul>
+                      </TabsContent>
+                      <TabsContent value="instructions" className="mt-4">
+                        <ol className="space-y-3">
+                          {selectedRecipe.instructions.map((instruction, idx) => (
                           <li key={idx} className="flex gap-3 rounded-xl border bg-muted/20 p-3">
                             <span className="flex-shrink-0 h-7 w-7 rounded-full bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center shadow-sm">
-                              {idx + 1}
-                            </span>
+                                {idx + 1}
+                              </span>
                             <span className="text-sm leading-relaxed pt-0.5">{instruction}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </TabsContent>
-                  </Tabs>
+                            </li>
+                          ))}
+                        </ol>
+                      </TabsContent>
+                    </Tabs>
 
                   {(selectedRecipe.tags?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap gap-2 pt-1 border-t">
@@ -1299,9 +1425,106 @@ export default function AdminRecipes() {
                       ))}
                     </div>
                   )}
-                </div>
+                  </div>
               </>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Generar receta con IA */}
+        <Dialog open={aiDialogOpen} onOpenChange={setAiDialogOpen}>
+          <DialogContent className="max-w-lg rounded-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-violet-600" />
+                Generar receta con IA
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-1">
+              <p className="text-sm text-muted-foreground">
+                Describe lo que necesitas. La IA propone nombre, ingredientes (emparejados al catálogo),
+                macros e instrucciones. Tú revisas y guardas.
+              </p>
+              <div>
+                <Label htmlFor="ai-idea">Idea de la receta *</Label>
+                <Textarea
+                  id="ai-idea"
+                  className="mt-1.5 rounded-xl"
+                  rows={3}
+                  placeholder="Ej. Desayuno alto en proteína ~350 kcal con huevo y avena, sin lácteos"
+                  value={aiIdea}
+                  onChange={(e) => setAiIdea(e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Categoría</Label>
+                  <Select value={aiCategory} onValueChange={setAiCategory}>
+                    <SelectTrigger className="mt-1.5 rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.filter((c) => c !== "Todas").map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="ai-kcal">Kcal / porción (opcional)</Label>
+                  <Input
+                    id="ai-kcal"
+                    type="number"
+                    min={50}
+                    className="mt-1.5 rounded-xl"
+                    placeholder="Ej. 400"
+                    value={aiCalories}
+                    onChange={(e) => setAiCalories(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="ai-restrict">Restricciones / preferencias</Label>
+                <Input
+                  id="ai-restrict"
+                  className="mt-1.5 rounded-xl"
+                  placeholder="Ej. vegetariano, sin gluten, bajo en sodio…"
+                  value={aiRestrictions}
+                  onChange={(e) => setAiRestrictions(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  disabled={aiGenerating}
+                  onClick={() => setAiDialogOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  className="rounded-full gap-2 bg-violet-600 hover:bg-violet-700"
+                  disabled={aiGenerating}
+                  onClick={handleGenerateWithAi}
+                >
+                  {aiGenerating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generando…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Generar borrador
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
 

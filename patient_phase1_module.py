@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Callable, List, Optional
 
+from adherence_utils import days_without_meal_logs
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -78,8 +79,9 @@ def register_patient_phase1_routes(app, deps: dict):
         return series
 
     def _next_action(patient, db: Session, today: date) -> dict:
-        last_log = _last_meal_log_date(patient.id, db)
-        days_without = (today - last_log).days if last_log else None
+        days_without = days_without_meal_logs(
+            patient.id, db, today, MealTrackingDB, PatientMealPlanDB
+        )
 
         today_stats = _adherence_for_period(patient.id, db, today, today)
         pending_today = max(0, today_stats["total_meals"] - today_stats["completed_meals"])

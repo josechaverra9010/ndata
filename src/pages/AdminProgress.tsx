@@ -55,6 +55,7 @@ import { API_URL } from "@/config/api";
 import { todayInColombiaISO, formatInColombia } from "@/lib/timezone";
 import { isSpecialtyTipo } from "@/lib/specialtyModule";
 import { SpecialtyProgressHub } from "@/components/specialty/SpecialtyProgressHub";
+import { ProgressPhotosSection } from "@/components/progress/ProgressPhotosSection";
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -953,14 +954,19 @@ const AdminProgress = () => {
 
                 <ScrollArea className="max-h-[calc(90vh-9rem)] px-6 py-4">
                 <Tabs defaultValue="evolution" className="w-full">
-                  <TabsList className={`grid w-full ${isPatientSpecialtyEligible(selectedPatient) ? "grid-cols-4" : "grid-cols-3"} h-auto p-1 rounded-xl bg-muted/60`}>
+                  <TabsList className={`grid w-full ${isPatientSpecialtyEligible(selectedPatient) ? "grid-cols-5" : "grid-cols-4"} h-auto p-1 rounded-xl bg-muted/60`}>
                     <TabsTrigger value="evolution" className="rounded-lg data-[state=active]:shadow-sm">Evolución</TabsTrigger>
                     <TabsTrigger value="metrics" className="rounded-lg data-[state=active]:shadow-sm">Métricas</TabsTrigger>
+                    <TabsTrigger value="photos" className="rounded-lg data-[state=active]:shadow-sm">Fotos</TabsTrigger>
                     {isPatientSpecialtyEligible(selectedPatient) && (
                       <TabsTrigger value="specialty" className="rounded-lg data-[state=active]:shadow-sm">Especialidad</TabsTrigger>
                     )}
                     <TabsTrigger value="achievements" className="rounded-lg data-[state=active]:shadow-sm">Logros</TabsTrigger>
                   </TabsList>
+
+                  <TabsContent value="photos" className="mt-4">
+                    <ProgressPhotosSection patientId={selectedPatient.id} adminMode />
+                  </TabsContent>
 
                   <TabsContent value="evolution" className="space-y-4 mt-4">
                     {/* Weight Chart */}

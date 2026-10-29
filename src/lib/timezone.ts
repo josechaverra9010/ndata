@@ -136,6 +136,19 @@ export function formatDateTimeInColombia(
   });
 }
 
+/** Formato legible para timestamps del API (YYYY-MM-DD HH:MM:SS). */
+export function formatUserLastOnline(value?: string | null): string {
+  if (!value?.trim()) return "Sin registro";
+  const normalized = value.trim().replace(" ", "T");
+  const d = new Date(normalized.includes("T") ? normalized : `${normalized}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(COLOMBIA_LOCALE, {
+    timeZone: COLOMBIA_TZ,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 /** Etiqueta larga de hoy en español (Colombia). */
 export function todayLabelColombia(): string {
   return formatInColombia(new Date(), {

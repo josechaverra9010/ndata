@@ -42,6 +42,17 @@ import {
 import { API_URL } from "@/config/api";
 import { MEAL_SCHEDULE } from "@/config/mealSchedule";
 import { useToast } from "@/hooks/use-toast";
+import {
+  MAX_RECIPES_PER_MEAL,
+  buildMealSlotFromRecipes,
+  hasMealRecipes,
+  hydrateMealSlot,
+  mealRecipeEntries,
+  recipeFromCatalog,
+  syncMealSlotMacros,
+  toggleRecipeSelection,
+  type WeeklyMealSlot,
+} from "@/lib/weeklyMenuMeals";
 
 export interface CreatedWeeklyMenu {
   id: number;
@@ -66,20 +77,7 @@ interface Recipe {
   instructions?: string[];
 }
 
-interface MealSlot {
-  type: "desayuno" | "almuerzo" | "comida" | "merienda" | "cena";
-  recipe_id?: number;
-  recipe_name: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  time: string;
-  notes?: string;
-  image?: string;
-  ingredients?: string[];
-  instructions?: string[];
-}
+type MealSlot = WeeklyMealSlot;
 
 interface DayMenu {
   day: string;
@@ -182,7 +180,7 @@ export function CreateWeeklyMenuDialog({
   const [addMealOpen, setAddMealOpen] = useState(false);
   const [currentDay, setCurrentDay] = useState("");
   const [currentMealType, setCurrentMealType] = useState<MealSlot["type"] | null>(null);
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [selectedRecipes, setSelectedRecipes] = useState<Recipe[]>([]);
   const [mealNotes, setMealNotes] = useState("");
 
   const resetForm = () => {
@@ -190,7 +188,7 @@ export function CreateWeeklyMenuDialog({
     setCurrentWeek(createEmptyWeek());
     setCurrentWeekTab("1");
     setRecipeSearch("");
-    setSelectedRecipe(null);
+    setSelectedRecipes([]);
     setMealNotes("");
     setAddMealOpen(false);
   };
@@ -207,6 +205,11 @@ export function CreateWeeklyMenuDialog({
       .catch(() => setRecipes([]));
   }, [open]);
 
+  const recipeCatalogMap = useMemo(
+    () => new Map(recipes.map((r) => [r.id, r])),
+    [recipes]
+  );
+
   const currentTotals = useMemo(() => {
     let totalCalories = 0;
     let totalProtein = 0;
@@ -214,16 +217,17 @@ export function CreateWeeklyMenuDialog({
     let totalFat = 0;
     currentWeek.forEach((day) => {
       day.meals.forEach((meal) => {
-        if (meal.recipe_name) {
-          totalCalories += meal.calories;
-          totalProtein += meal.protein;
-          totalCarbs += meal.carbs;
-          totalFat += meal.fat;
+        const synced = syncMealSlotMacros(meal, recipeCatalogMap);
+        if (hasMealRecipes(synced)) {
+          totalCalories += synced.calories;
+          totalProtein += synced.protein;
+          totalCarbs += synced.carbs;
+          totalFat += synced.fat;
         }
       });
     });
     const daysWithMeals = currentWeek.filter((day) =>
-      day.meals.some((meal) => meal.recipe_name)
+      day.meals.some((meal) => hasMealRecipes(syncMealSlotMacros(meal, recipeCatalogMap)))
     ).length;
     return {
       total_calories: daysWithMeals > 0 ? Math.round(totalCalories / daysWithMeals) : 0,
@@ -231,7 +235,7 @@ export function CreateWeeklyMenuDialog({
       avg_carbs: daysWithMeals > 0 ? Math.round(totalCarbs / daysWithMeals) : 0,
       avg_fat: daysWithMeals > 0 ? Math.round(totalFat / daysWithMeals) : 0,
     };
-  }, [currentWeek]);
+  }, [currentWeek, recipeCatalogMap]);
 
   const filteredRecipes = useMemo(() => {
     const q = recipeSearch.trim().toLowerCase();
@@ -240,17 +244,43 @@ export function CreateWeeklyMenuDialog({
   }, [recipes, recipeSearch]);
 
   const handleAddMeal = (day: string, mealType: MealSlot["type"]) => {
+    const weekNum = parseInt(currentWeekTab);
+    const existing = currentWeek.find((d) => d.day === day && d.week === weekNum)?.meals.find((m) => m.type === mealType);
+    const hydrated = existing ? hydrateMealSlot(existing) : null;
     setCurrentDay(day);
     setCurrentMealType(mealType);
-    setSelectedRecipe(null);
-    setMealNotes("");
+    setSelectedRecipes(
+      hydrated
+        ? mealRecipeEntries(hydrated)
+            .map((e) => {
+              const found = recipes.find((r) => r.id === e.recipe_id);
+              if (found) return found;
+              if (!e.recipe_name) return null;
+              return {
+                id: e.recipe_id || 0,
+                name: e.recipe_name,
+                calories: e.calories,
+                protein: e.protein,
+                carbs: e.carbs,
+                fat: e.fat,
+                prepTime: 0,
+                image: e.image,
+                ingredients: e.ingredients,
+                instructions: e.instructions,
+              } as Recipe;
+            })
+            .filter((r): r is Recipe => !!r)
+        : []
+    );
+    setMealNotes(hydrated?.notes || "");
     setRecipeSearch("");
     setAddMealOpen(true);
   };
 
   const handleConfirmAddMeal = () => {
-    if (!selectedRecipe || !currentDay || !currentMealType) return;
+    if (selectedRecipes.length === 0 || !currentDay || !currentMealType) return;
     const weekNum = parseInt(currentWeekTab);
+    const entries = selectedRecipes.map(recipeFromCatalog);
     setCurrentWeek((prev) =>
       prev.map((dayMenu) => {
         if (dayMenu.day !== currentDay || dayMenu.week !== weekNum) return dayMenu;
@@ -258,27 +288,14 @@ export function CreateWeeklyMenuDialog({
           ...dayMenu,
           meals: dayMenu.meals.map((meal) =>
             meal.type === currentMealType
-              ? {
-                  type: meal.type,
-                  recipe_id: selectedRecipe.id,
-                  recipe_name: selectedRecipe.name,
-                  calories: selectedRecipe.calories || 0,
-                  protein: selectedRecipe.protein || 0,
-                  carbs: selectedRecipe.carbs || 0,
-                  fat: selectedRecipe.fat || 0,
-                  time: meal.time,
-                  notes: mealNotes,
-                  image: selectedRecipe.image,
-                  ingredients: selectedRecipe.ingredients,
-                  instructions: selectedRecipe.instructions,
-                }
+              ? buildMealSlotFromRecipes(meal.type, meal.time, entries, mealNotes)
               : meal
           ),
         };
       })
     );
     setAddMealOpen(false);
-    setSelectedRecipe(null);
+    setSelectedRecipes([]);
     setMealNotes("");
   };
 
@@ -301,6 +318,7 @@ export function CreateWeeklyMenuDialog({
               fat: 0,
               time: mealTypeInfo?.time || meal.time,
               notes: "",
+              recipes: [],
             };
           }),
         };
@@ -331,7 +349,10 @@ export function CreateWeeklyMenuDialog({
           name: menuForm.name.trim(),
           description: menuForm.description.trim(),
           category: menuForm.category,
-          week: currentWeek,
+          week: currentWeek.map((day) => ({
+            ...day,
+            meals: day.meals.map((m) => syncMealSlotMacros(m, recipeCatalogMap)),
+          })),
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -521,7 +542,7 @@ export function CreateWeeklyMenuDialog({
                         <TabsList className="flex w-full h-auto flex-wrap gap-1 p-1 rounded-xl bg-muted/50 justify-start">
                           {daysOfWeek.map((day) => {
                             const dayMenu = currentWeek.find((d) => d.day === day && d.week === weekNum);
-                            const filled = dayMenu?.meals.filter((m) => m.recipe_name).length || 0;
+                            const filled = dayMenu?.meals.filter((m) => hasMealRecipes(m)).length || 0;
                             return (
                               <TabsTrigger
                                 key={day}
@@ -541,7 +562,7 @@ export function CreateWeeklyMenuDialog({
 
                         {daysOfWeek.map((day) => {
                           const dayMenu = currentWeek.find((d) => d.day === day && d.week === weekNum);
-                          const filledCount = dayMenu?.meals.filter((m) => m.recipe_name).length || 0;
+                          const filledCount = dayMenu?.meals.filter((m) => hasMealRecipes(m)).length || 0;
                           const dayKcal = dayMenu?.meals.reduce((s, m) => s + (m.calories || 0), 0) || 0;
                           return (
                             <TabsContent key={day} value={day} className="space-y-4 mt-4">
@@ -561,7 +582,8 @@ export function CreateWeeklyMenuDialog({
                                 {mealTypes.map((mealType) => {
                                   const meal = dayMenu?.meals.find((m) => m.type === mealType.type);
                                   const MealIcon = mealType.icon;
-                                  const hasRecipe = !!meal?.recipe_name;
+                                  const entries = mealRecipeEntries(meal);
+                                  const hasRecipe = entries.length > 0;
                                   return (
                                     <div
                                       key={mealType.type}
@@ -595,7 +617,7 @@ export function CreateWeeklyMenuDialog({
                                             {hasRecipe ? (
                                               <>
                                                 <Edit className="h-3.5 w-3.5 mr-1.5" />
-                                                Cambiar
+                                                Editar ({entries.length})
                                               </>
                                             ) : (
                                               <>
@@ -606,42 +628,45 @@ export function CreateWeeklyMenuDialog({
                                           </Button>
                                         </div>
 
-                                        {hasRecipe ? (
-                                          <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-3 ring-1 ring-border/60">
-                                            <img
-                                              src={getImageUrl(meal?.image)}
-                                              alt={meal?.recipe_name}
-                                              className="w-16 h-16 rounded-xl object-cover bg-muted shadow-sm"
-                                              onError={(e) => {
-                                                (e.target as HTMLImageElement).src =
-                                                  "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
-                                              }}
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                              <p className="font-medium text-sm truncate">{meal!.recipe_name}</p>
-                                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                        {hasRecipe && meal ? (
+                                          <div className="space-y-2 rounded-xl bg-muted/40 p-3 ring-1 ring-border/60">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                              <p className="text-xs font-medium text-muted-foreground">
+                                                {entries.length > 1
+                                                  ? `${entries.length} opciones (totales del slot)`
+                                                  : "Receta asignada"}
+                                              </p>
+                                              <div className="flex flex-wrap gap-1.5">
                                                 <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0">
-                                                  {meal!.calories} kcal
+                                                  {meal.calories} kcal
                                                 </Badge>
                                                 <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0">
-                                                  P {meal!.protein}g
-                                                </Badge>
-                                                <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0">
-                                                  C {meal!.carbs}g
-                                                </Badge>
-                                                <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0">
-                                                  G {meal!.fat}g
+                                                  P {meal.protein}g
                                                 </Badge>
                                               </div>
                                             </div>
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                              onClick={() => handleRemoveMeal(day, mealType.type)}
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                            {entries.map((entry, idx) => (
+                                              <div key={`${entry.recipe_id ?? idx}-${entry.recipe_name}`} className="flex items-center gap-3">
+                                                <img
+                                                  src={getImageUrl(entry.image ?? meal.image)}
+                                                  alt={entry.recipe_name}
+                                                  className="w-12 h-12 rounded-lg object-cover bg-muted"
+                                                />
+                                                <p className="flex-1 text-sm font-medium truncate">{entry.recipe_name}</p>
+                                                <span className="text-xs text-muted-foreground shrink-0">{entry.calories} kcal</span>
+                                              </div>
+                                            ))}
+                                            <div className="flex justify-end pt-1">
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                onClick={() => handleRemoveMeal(day, mealType.type)}
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                                Quitar todo
+                                              </Button>
+                                            </div>
                                           </div>
                                         ) : (
                                           <button
@@ -702,8 +727,9 @@ export function CreateWeeklyMenuDialog({
                 Seleccionar receta
               </DialogTitle>
               <DialogDescription>
-                Elige una receta para {currentMealType || "esta comida"}
+                Elige hasta {MAX_RECIPES_PER_MEAL} recetas para {currentMealType || "esta comida"}
                 {currentDay ? ` · ${currentDay}` : ""}
+                {selectedRecipes.length > 0 ? ` · ${selectedRecipes.length} seleccionada(s)` : ""}
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -723,15 +749,23 @@ export function CreateWeeklyMenuDialog({
                   No hay recetas disponibles. Crea recetas primero en el módulo de Recetas.
                 </p>
               ) : (
-                filteredRecipes.map((recipe) => (
+                filteredRecipes.map((recipe) => {
+                  const isSelected = selectedRecipes.some((r) => r.id === recipe.id);
+                  const atMax = selectedRecipes.length >= MAX_RECIPES_PER_MEAL && !isSelected;
+                  return (
                   <div
                     key={recipe.id}
                     className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
-                      selectedRecipe?.id === recipe.id
+                      isSelected
                         ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20"
-                        : "hover:bg-muted/50 hover:border-muted-foreground/20"
+                        : atMax
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:bg-muted/50 hover:border-muted-foreground/20"
                     }`}
-                    onClick={() => setSelectedRecipe(recipe)}
+                    onClick={() => {
+                      if (atMax) return;
+                      setSelectedRecipes((prev) => toggleRecipeSelection(prev, recipe));
+                    }}
                   >
                     <img
                       src={getImageUrl(recipe.image)}
@@ -753,13 +787,14 @@ export function CreateWeeklyMenuDialog({
                         )}
                       </div>
                     </div>
-                    {selectedRecipe?.id === recipe.id && (
+                    {isSelected && (
                       <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0">
                         <Check className="h-4 w-4" />
                       </span>
                     )}
                   </div>
-                ))
+                );
+                })
               )}
             </div>
             <div className="space-y-2">
@@ -779,15 +814,15 @@ export function CreateWeeklyMenuDialog({
               className="rounded-full"
               onClick={() => {
                 setAddMealOpen(false);
-                setSelectedRecipe(null);
+                setSelectedRecipes([]);
                 setMealNotes("");
               }}
             >
               Cancelar
             </Button>
-            <Button className="rounded-full" onClick={handleConfirmAddMeal} disabled={!selectedRecipe}>
+            <Button className="rounded-full" onClick={handleConfirmAddMeal} disabled={selectedRecipes.length === 0}>
               <Plus className="h-4 w-4 mr-1.5" />
-              Agregar receta
+              Guardar {selectedRecipes.length > 0 ? `(${selectedRecipes.length})` : ""}
             </Button>
           </DialogFooter>
         </DialogContent>

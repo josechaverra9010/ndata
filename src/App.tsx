@@ -5,7 +5,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/hooks/useAuth";
 import { I18nProvider } from "@/lib/i18n";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { MaintenanceGate } from "@/components/MaintenanceGate";
 import ClickSpark from "@/components/ClickSpark";
@@ -36,21 +36,15 @@ import PatientProgress from "./pages/patient/PatientProgress";
 import PatientAppointments from "./pages/patient/PatientAppointments";
 import PatientMessages from "./pages/patient/PatientMessages";
 import PatientMeals from "./pages/patient/PatientMeals";
+import PatientFoodDiary from "./pages/patient/PatientFoodDiary";
 import PatientProfile from "./pages/patient/PatientProfile";
 import PatientSettings from "./pages/patient/PatientSettings";
 import PatientRecipes from "./pages/patient/PatientRecipes";
 import PatientHelp from "./pages/patient/PatientHelp";
 import PatientAdherence from "./pages/patient/PatientAdherence";
 import PatientNotifications from "./pages/patient/PatientNotifications";
-import PatientRecommendations from "./pages/patient/PatientRecommendations";
-import PatientShoppingList from "./pages/patient/PatientShoppingList";
-import PatientDocuments from "./pages/patient/PatientDocuments";
-import PatientChallenges from "./pages/patient/PatientChallenges";
-import PatientLearn from "./pages/patient/PatientLearn";
 import PatientProgram from "./pages/patient/PatientProgram";
-import PatientHabits from "./pages/patient/PatientHabits";
-import PatientFoodDiary from "./pages/patient/PatientFoodDiary";
-import PatientSubstitutions from "./pages/patient/PatientSubstitutions";
+import PatientBilling from "./pages/patient/PatientBilling";
 import AdminSupport from "./pages/AdminSupport";
 import AdminBilling from "./pages/admin/AdminBilling";
 import SuperadminDashboard from "./pages/superadmin/SuperadminDashboard";
@@ -71,11 +65,14 @@ import SuperadminAnalytics from "./pages/superadmin/SuperadminAnalytics";
 import SuperadminClinicalContent from "./pages/superadmin/SuperadminClinicalContent";
 import SuperadminPlatform from "./pages/superadmin/SuperadminPlatform";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
+import { AosProvider } from "@/components/AosProvider";
 import SuperadminRecipes from "./pages/superadmin/SuperadminRecipes";
 import SuperadminArticles from "./pages/superadmin/SuperadminArticles";
 import SuperadminArticleEditor from "./pages/superadmin/SuperadminArticleEditor";
 import ResetPassword from "./pages/ResetPassword";
 import RegisterNutritionist from "./pages/RegisterNutritionist";
+import RegisterPatient from "./pages/RegisterPatient";
+import LegalDocumentPage from "./pages/LegalDocumentPage";
 
 const queryClient = new QueryClient();
 
@@ -88,6 +85,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <AosProvider />
             <ReleaseNotesPrompt />
             <MaintenanceGate>
             <ClickSpark
@@ -102,9 +100,13 @@ const App = () => (
               <Route path="/" element={<Home />} />
               <Route path="/articles" element={<Articles />} />
               <Route path="/article/:id" element={<ArticleDetail />} />
+              <Route path="/privacidad" element={<LegalDocumentPage docType="privacy_policy" />} />
+              <Route path="/terminos" element={<LegalDocumentPage docType="terms" />} />
+              <Route path="/cookies" element={<LegalDocumentPage docType="cookies_policy" />} />
               
               {/* Auth */}
               <Route path="/auth" element={<Auth />} />
+              <Route path="/register" element={<RegisterPatient />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/register-nutritionist" element={<RegisterNutritionist />} />
 
@@ -131,19 +133,20 @@ const App = () => (
 
               {/* Patient Routes */}
               <Route path="/patient" element={<ProtectedRoute allowedRoles={['patient']}><PatientDashboard /></ProtectedRoute>} />
+              <Route path="/patient/dashboard" element={<Navigate to="/patient" replace />} />
               <Route path="/patient/meals" element={<ProtectedRoute allowedRoles={['patient']}><PatientMeals /></ProtectedRoute>} />
               <Route path="/patient/my-plan" element={<ProtectedRoute allowedRoles={['patient']}><MyPlan /></ProtectedRoute>} />
               <Route path="/patient/adherence" element={<ProtectedRoute allowedRoles={['patient']}><PatientAdherence /></ProtectedRoute>} />
               <Route path="/patient/notifications" element={<ProtectedRoute allowedRoles={['patient']}><PatientNotifications /></ProtectedRoute>} />
-              <Route path="/patient/recommendations" element={<ProtectedRoute allowedRoles={['patient']}><PatientRecommendations /></ProtectedRoute>} />
-              <Route path="/patient/shopping-list" element={<ProtectedRoute allowedRoles={['patient']}><PatientShoppingList /></ProtectedRoute>} />
-              <Route path="/patient/documents" element={<ProtectedRoute allowedRoles={['patient']}><PatientDocuments /></ProtectedRoute>} />
-              <Route path="/patient/challenges" element={<ProtectedRoute allowedRoles={['patient']}><PatientChallenges /></ProtectedRoute>} />
-              <Route path="/patient/learn" element={<ProtectedRoute allowedRoles={['patient']}><PatientLearn /></ProtectedRoute>} />
+              <Route path="/patient/recommendations" element={<Navigate to="/patient" replace />} />
+              <Route path="/patient/shopping-list" element={<Navigate to="/patient" replace />} />
+              <Route path="/patient/documents" element={<Navigate to="/patient" replace />} />
+              <Route path="/patient/challenges" element={<Navigate to="/patient" replace />} />
+              <Route path="/patient/learn" element={<Navigate to="/patient" replace />} />
               <Route path="/patient/program" element={<ProtectedRoute allowedRoles={['patient']}><PatientProgram /></ProtectedRoute>} />
-              <Route path="/patient/habits" element={<ProtectedRoute allowedRoles={['patient']}><PatientHabits /></ProtectedRoute>} />
+              <Route path="/patient/habits" element={<Navigate to="/patient" replace />} />
               <Route path="/patient/food-diary" element={<ProtectedRoute allowedRoles={['patient']}><PatientFoodDiary /></ProtectedRoute>} />
-              <Route path="/patient/substitutions" element={<ProtectedRoute allowedRoles={['patient']}><PatientSubstitutions /></ProtectedRoute>} />
+              <Route path="/patient/substitutions" element={<Navigate to="/patient" replace />} />
               <Route path="/patient/progress" element={<ProtectedRoute allowedRoles={['patient']}><PatientProgress /></ProtectedRoute>} />
               <Route path="/patient/appointments" element={<ProtectedRoute allowedRoles={['patient']}><PatientAppointments /></ProtectedRoute>} />
               <Route path="/patient/messages" element={<ProtectedRoute allowedRoles={['patient']}><PatientMessages /></ProtectedRoute>} />
@@ -151,6 +154,7 @@ const App = () => (
               <Route path="/patient/settings" element={<ProtectedRoute allowedRoles={['patient']}><PatientSettings /></ProtectedRoute>} />
               <Route path="/patient/recipes" element={<ProtectedRoute allowedRoles={['patient']}><PatientRecipes /></ProtectedRoute>} />
               <Route path="/patient/help" element={<ProtectedRoute allowedRoles={['patient']}><PatientHelp /></ProtectedRoute>} />
+              <Route path="/patient/billing" element={<ProtectedRoute allowedRoles={['patient']}><PatientBilling /></ProtectedRoute>} />
 
               {/* SuperAdmin Routes */}
               <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['superadmin']}><SuperadminDashboard /></ProtectedRoute>} />

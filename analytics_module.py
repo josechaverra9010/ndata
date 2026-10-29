@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional, List, Callable
 
+from adherence_utils import days_without_meal_logs, no_meal_logs_alert
 from fastapi import Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -55,16 +56,11 @@ def register_analytics_routes(app, deps: dict):
         )
         return row[0] if row else None
 
-    def build_patient_adherence_alerts(patient, metrics, days_without_log: int, adherence_pct: int) -> List[dict]:
+    def build_patient_adherence_alerts(patient, metrics, days_without_log: Optional[int], adherence_pct: int) -> List[dict]:
         alerts: List[dict] = []
-        if days_without_log >= 3:
-            alerts.append(
-                {
-                    "type": "no_meal_logs",
-                    "severity": "high" if days_without_log >= 5 else "medium",
-                    "message": f"Sin registrar comidas hace {days_without_log} días",
-                }
-            )
+        meal_alert = no_meal_logs_alert(days_without_log)
+        if meal_alert:
+            alerts.append(meal_alert)
         if adherence_pct < 50 and adherence_pct >= 0:
             alerts.append(
                 {
@@ -217,7 +213,9 @@ def register_analytics_routes(app, deps: dict):
             adherence_values.append(adherence["adherence_pct"])
 
             last_activity = get_last_meal_activity_date(patient.id, db)
-            days_without = (end_date - last_activity).days if last_activity else 999
+            days_without = days_without_meal_logs(
+                patient.id, db, end_date, MealTrackingDB, PatientMealPlanDB
+            )
 
             metrics = (
                 db.query(ProgressMetricDB)
@@ -257,7 +255,7 @@ def register_analytics_routes(app, deps: dict):
                     "adherence_pct": adherence["adherence_pct"],
                     "completed_meals": adherence["completed_meals"],
                     "total_meals": adherence["total_meals"],
-                    "days_without_logs": days_without if days_without < 999 else None,
+                    "days_without_logs": days_without,
                     "last_meal_log": last_activity.strftime("%Y-%m-%d") if last_activity else None,
                     "current_weight": current_weight,
                     "goal_weight": patient.peso_objetivo,

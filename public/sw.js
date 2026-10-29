@@ -1,4 +1,4 @@
-const CACHE_NAME = "nutridata-patient-v1";
+const CACHE_NAME = "nutridata-patient-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -20,6 +20,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.method !== "GET") return;
+  // Solo cachear recursos del mismo origen (evita CSP/connect-src con URLs externas)
+  if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
 
   event.respondWith(
@@ -27,13 +29,20 @@ self.addEventListener("fetch", (event) => {
       const fetchPromise = fetch(request)
         .then((response) => {
           // Only cache full 200 responses (206 partial breaks Cache API)
-          if (response.status === 200 && url.origin === self.location.origin) {
+          if (response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
         })
-        .catch(() => cached);
+        .catch(async () => {
+          if (cached) return cached;
+          if (request.mode === "navigate") {
+            const shell = await caches.match("/index.html");
+            if (shell) return shell;
+          }
+          return Response.error();
+        });
       return cached || fetchPromise;
     })
   );

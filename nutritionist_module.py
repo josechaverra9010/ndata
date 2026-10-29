@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
+from adherence_utils import days_without_meal_logs, last_meal_log_date, no_meal_logs_alert, parse_co_date
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, JSON
@@ -120,6 +121,26 @@ def ensure_nutritionist_schema(engine, inspect_fn, text_fn):
                     conn.execute(text_fn(f"ALTER TABLE intervention_templates ADD COLUMN {col_name} {col_sql}"))
     except Exception as e:
         print(f"[NUTRITIONIST] schema migration skipped: {e}")
+
+
+try:
+    from phase_snapshot_module import (
+        capture_patient_phase_snapshot,
+        snapshot_summary,
+        compare_phase_snapshots,
+        serialize_snapshot_full,
+        parse_captured_date,
+        compare_progress_metrics,
+        serialize_progress_metric,
+    )
+except Exception:  # pragma: no cover
+    capture_patient_phase_snapshot = None  # type: ignore
+    snapshot_summary = None  # type: ignore
+    compare_phase_snapshots = None  # type: ignore
+    serialize_snapshot_full = None  # type: ignore
+    parse_captured_date = None  # type: ignore
+    compare_progress_metrics = None  # type: ignore
+    serialize_progress_metric = None  # type: ignore
 
 
 def _tags_list(raw) -> List[str]:
@@ -299,6 +320,7 @@ def register_nutritionist_routes(app, deps: dict):
     UserDB = deps["UserDB"]
     MealPlanDB = deps["MealPlanDB"]
     PatientMealPlanDB = deps["PatientMealPlanDB"]
+    PatientPhaseSnapshotDB = deps.get("PatientPhaseSnapshotDB")
     MealTrackingDB = deps["MealTrackingDB"]
     ProgressMetricDB = deps["ProgressMetricDB"]
     AppointmentDB = deps["AppointmentDB"]
@@ -309,6 +331,34 @@ def register_nutritionist_routes(app, deps: dict):
     AdminProfileDB = deps.get("AdminProfileDB")
     today_co: Callable = deps["today_co"]
     now_co: Callable = deps["now_co"]
+    _capture_fn = deps.get("capture_patient_phase_snapshot") or capture_patient_phase_snapshot
+
+    def _latest_snapshot_for_assignment(db: Session, assignment_id: int):
+        if PatientPhaseSnapshotDB is None:
+            return None
+        return (
+            db.query(PatientPhaseSnapshotDB)
+            .filter(PatientPhaseSnapshotDB.assignment_id == assignment_id)
+            .order_by(PatientPhaseSnapshotDB.id.desc())
+            .first()
+        )
+
+    def _ensure_snapshot_for_assignment(db: Session, assignment, plan):
+        """Backfill: si la asignación no tiene snapshot, congela el plan actual una vez."""
+        if PatientPhaseSnapshotDB is None or not _capture_fn or not assignment or not plan:
+            return None
+        existing = _latest_snapshot_for_assignment(db, assignment.id)
+        if existing:
+            return existing
+        return _capture_fn(
+            db,
+            PatientPhaseSnapshotDB,
+            patient_id=assignment.patient_id,
+            assignment_id=assignment.id,
+            plan=plan,
+            reason="backfill",
+            now_co=now_co,
+        )
 
     def _patient_ids_for_user(db: Session, current_user) -> List[int]:
         query = db.query(UserDB.id).filter(UserDB.role == "patient", UserDB.status == "activo")
@@ -326,24 +376,10 @@ def register_nutritionist_routes(app, deps: dict):
         }
 
     def _parse_date(value) -> Optional[date]:
-        if value is None:
-            return None
-        if isinstance(value, date):
-            return value
-        text = str(value).strip()[:10]
-        try:
-            return date.fromisoformat(text)
-        except ValueError:
-            return None
+        return parse_co_date(value)
 
     def _last_meal_log_date(patient_id: int, db: Session) -> Optional[date]:
-        row = (
-            db.query(MealTrackingDB.date)
-            .filter(MealTrackingDB.patient_id == patient_id)
-            .order_by(MealTrackingDB.date.desc(), MealTrackingDB.id.desc())
-            .first()
-        )
-        return row[0] if row else None
+        return last_meal_log_date(patient_id, db, MealTrackingDB)
 
     def _adherence_pct(patient_id: int, db: Session, start: date, end: date) -> int:
         base_q = db.query(MealTrackingDB).filter(
@@ -359,17 +395,12 @@ def register_nutritionist_routes(app, deps: dict):
         reasons: List[dict] = []
         start = today - timedelta(days=6)
         adherence = _adherence_pct(patient.id, db, start, today)
-        last_log = _last_meal_log_date(patient.id, db)
-        days_without = (today - last_log).days if last_log else 999
-
-        if days_without >= 3:
-            reasons.append(
-                {
-                    "type": "no_meal_logs",
-                    "severity": "high" if days_without >= 5 else "medium",
-                    "message": f"Sin registrar comidas hace {days_without} días",
-                }
-            )
+        days_without = days_without_meal_logs(
+            patient.id, db, today, MealTrackingDB, PatientMealPlanDB
+        )
+        meal_alert = no_meal_logs_alert(days_without)
+        if meal_alert:
+            reasons.append(meal_alert)
         if adherence < 60:
             reasons.append(
                 {
@@ -572,8 +603,9 @@ def register_nutritionist_routes(app, deps: dict):
                 plan_name = plan.name if plan else "Plan activo"
 
             adherence = _adherence_pct(patient.id, db, today - timedelta(days=6), today)
-            last_log = _last_meal_log_date(patient.id, db)
-            days_without = (today - last_log).days if last_log else None
+            days_without = days_without_meal_logs(
+                patient.id, db, today, MealTrackingDB, PatientMealPlanDB
+            )
 
             at_risk_entry = {
                 "patient_id": patient.id,
@@ -858,7 +890,7 @@ def register_nutritionist_routes(app, deps: dict):
             "text": text,
         }
 
-    # ── Comparador de planes ──
+    # ── Comparador de planes / historial de fases ──
 
     @app.get("/api/nutritionist/patients/{patient_id}/plans/history")
     def get_patient_plan_history(
@@ -883,7 +915,9 @@ def register_nutritionist_routes(app, deps: dict):
         timeline = []
         for assignment in assignments:
             plan = db.query(MealPlanDB).filter(MealPlanDB.id == assignment.meal_plan_id).first()
-            snap = _plan_snapshot(plan)
+            frozen = _ensure_snapshot_for_assignment(db, assignment, plan)
+            live = _plan_snapshot(plan)
+            summary = snapshot_summary(frozen) if frozen and snapshot_summary else {}
             timeline.append(
                 {
                     "assignment_id": assignment.id,
@@ -892,12 +926,29 @@ def register_nutritionist_routes(app, deps: dict):
                     "start_date": assignment.start_date,
                     "end_date": assignment.end_date,
                     "notes": assignment.notes,
-                    "plan_id": snap.get("plan_id"),
-                    "plan_name": snap.get("name"),
-                    "calories": snap.get("calories"),
-                    "tipo_label": snap.get("tipo_label"),
+                    "plan_id": summary.get("meal_plan_id") or live.get("plan_id"),
+                    "plan_name": summary.get("plan_name") or live.get("name"),
+                    "calories": summary.get("calories") if summary.get("calories") is not None else live.get("calories"),
+                    "tipo_label": PLAN_TIPO_LABELS.get(
+                        summary.get("tipo") or live.get("tipo") or "adulto",
+                        summary.get("tipo") or live.get("tipo"),
+                    ),
+                    "snapshot_id": summary.get("snapshot_id"),
+                    "captured_at": summary.get("captured_at"),
+                    "has_frozen_snapshot": bool(frozen),
+                    "peso_kg": summary.get("peso_kg"),
+                    "requerimiento_kcal": summary.get("requerimiento_kcal"),
+                    "macros_f2": summary.get("macros_f2"),
+                    "grupos_con_porcion_f3": summary.get("grupos_con_porcion_f3"),
+                    "has_fase4_detail": summary.get("has_fase4_detail"),
+                    "imc": summary.get("imc"),
                 }
             )
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
         active = next((t for t in timeline if t["status"] == "active"), None)
         previous = next((t for t in timeline if t["status"] != "active"), None)
         return {
@@ -949,19 +1000,249 @@ def register_nutritionist_routes(app, deps: dict):
 
         left_plan = db.query(MealPlanDB).filter(MealPlanDB.id == left_a.meal_plan_id).first()
         right_plan = db.query(MealPlanDB).filter(MealPlanDB.id == right_a.meal_plan_id).first()
-        left_snap = _plan_snapshot(left_plan)
-        right_snap = _plan_snapshot(right_plan)
-        changes = _compare_plan_snapshots(left_snap, right_snap)
+        left_frozen = _ensure_snapshot_for_assignment(db, left_a, left_plan)
+        right_frozen = _ensure_snapshot_for_assignment(db, right_a, right_plan)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        if left_frozen and right_frozen and compare_phase_snapshots:
+            changes = compare_phase_snapshots(left_frozen, right_frozen)
+            left_full = serialize_snapshot_full(left_frozen) if serialize_snapshot_full else {}
+            right_full = serialize_snapshot_full(right_frozen) if serialize_snapshot_full else {}
+            left_cal = (left_full.get("summary") or {}).get("calories") or 0
+            right_cal = (right_full.get("summary") or {}).get("calories") or 0
+        else:
+            left_snap = _plan_snapshot(left_plan)
+            right_snap = _plan_snapshot(right_plan)
+            changes = _compare_plan_snapshots(left_snap, right_snap)
+            left_full = {"plan_meta": left_snap, "fase_1": left_snap.get("fase_1"), "fase_2": left_snap.get("fase_2"), "fase_3": left_snap.get("fase_3"), "fase_4": left_snap.get("fase_4")}
+            right_full = {"plan_meta": right_snap, "fase_1": right_snap.get("fase_1"), "fase_2": right_snap.get("fase_2"), "fase_3": right_snap.get("fase_3"), "fase_4": right_snap.get("fase_4")}
+            left_cal = left_snap.get("calories") or 0
+            right_cal = right_snap.get("calories") or 0
+
+        by_phase: Dict[str, list] = {"meta": [], "fase_1": [], "fase_2": [], "fase_3": [], "fase_4": []}
+        for c in changes:
+            ph = c.get("phase") or "meta"
+            if ph not in by_phase:
+                by_phase[ph] = []
+            by_phase[ph].append(c)
 
         return {
             "patient": {"id": patient.id, "name": f"{patient.nombres} {patient.apellidos}"},
-            "left": _assignment_snapshot(left_a, left_plan, db),
-            "right": _assignment_snapshot(right_a, right_plan, db),
+            "left": {
+                **_assignment_snapshot(left_a, left_plan, db),
+                "snapshot": left_full,
+                "has_frozen_snapshot": bool(left_frozen),
+            },
+            "right": {
+                **_assignment_snapshot(right_a, right_plan, db),
+                "snapshot": right_full,
+                "has_frozen_snapshot": bool(right_frozen),
+            },
+            "changes": changes,
+            "changes_by_phase": by_phase,
+            "summary": {
+                "total_changes": len(changes),
+                "calorie_delta": (left_cal or 0) - (right_cal or 0),
+                "phases_with_changes": [k for k, v in by_phase.items() if v],
+            },
+        }
+
+    @app.get("/api/nutritionist/patients/{patient_id}/clinical-timeline")
+    def get_patient_clinical_timeline(
+        patient_id: int,
+        db: Session = Depends(get_db),
+        current_user=Depends(get_current_user),
+    ):
+        """Timeline unificado: snapshots de fases + métricas de progreso antropométrico."""
+        if current_user.role not in ("admin", "superadmin"):
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+        if authorize_patient_access:
+            authorize_patient_access(patient_id, current_user, db)
+        patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+        events: List[dict] = []
+
+        # Asegurar snapshots de asignaciones existentes
+        assignments = (
+            db.query(PatientMealPlanDB)
+            .filter(PatientMealPlanDB.patient_id == patient_id)
+            .order_by(PatientMealPlanDB.id.desc())
+            .all()
+        )
+        for assignment in assignments:
+            plan = db.query(MealPlanDB).filter(MealPlanDB.id == assignment.meal_plan_id).first()
+            frozen = _ensure_snapshot_for_assignment(db, assignment, plan)
+            if not frozen or not snapshot_summary:
+                continue
+            summary = snapshot_summary(frozen)
+            events.append(
+                {
+                    "type": "plan_snapshot",
+                    "date": (frozen.captured_at or assignment.start_date or assignment.assigned_date or "")[:10],
+                    "captured_at": frozen.captured_at,
+                    "assignment_id": assignment.id,
+                    "snapshot_id": frozen.id,
+                    "status": assignment.status,
+                    "title": summary.get("plan_name") or "Plan",
+                    "subtitle": f"{summary.get('calories') or '—'} kcal · RE {summary.get('requerimiento_kcal') or '—'} kcal",
+                    "peso_kg": summary.get("peso_kg"),
+                    "requerimiento_kcal": summary.get("requerimiento_kcal"),
+                    "calories": summary.get("calories"),
+                    "imc": summary.get("imc"),
+                    "macros_f2": summary.get("macros_f2"),
+                }
+            )
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        metrics = (
+            db.query(ProgressMetricDB)
+            .filter(ProgressMetricDB.patient_id == patient_id)
+            .order_by(ProgressMetricDB.date.desc(), ProgressMetricDB.id.desc())
+            .all()
+        )
+        progress_list = []
+        for m in metrics:
+            serialized = (
+                serialize_progress_metric(m)
+                if serialize_progress_metric
+                else {
+                    "id": m.id,
+                    "date": m.date.isoformat() if hasattr(m.date, "isoformat") else str(m.date),
+                    "weight": m.weight,
+                    "body_fat": m.body_fat,
+                    "muscle": m.muscle,
+                    "water": m.water,
+                    "waist": m.waist,
+                    "hip": m.hip,
+                    "chest": m.chest,
+                    "arm": m.arm,
+                    "notes": m.notes,
+                }
+            )
+            progress_list.append(serialized)
+            d = serialized["date"]
+            events.append(
+                {
+                    "type": "progress",
+                    "date": d,
+                    "captured_at": serialized.get("created_at") or d,
+                    "metric_id": m.id,
+                    "title": "Control antropométrico",
+                    "subtitle": f"Peso {m.weight} kg"
+                    + (f" · grasa {m.body_fat}%" if m.body_fat is not None else ""),
+                    "peso_kg": m.weight,
+                    "body_fat": m.body_fat,
+                    "muscle": m.muscle,
+                    "water": m.water,
+                    "waist": m.waist,
+                    "hip": m.hip,
+                    "chest": m.chest,
+                    "arm": m.arm,
+                    "notes": m.notes,
+                }
+            )
+
+        events.sort(key=lambda e: (e.get("date") or "", e.get("captured_at") or ""), reverse=True)
+
+        # Evolución compacta peso / RE / kcal entre snapshots
+        plan_events = [e for e in events if e.get("type") == "plan_snapshot"]
+        evolution = []
+        for e in reversed(plan_events):
+            evolution.append(
+                {
+                    "date": e.get("date"),
+                    "plan_name": e.get("title"),
+                    "peso_kg": e.get("peso_kg"),
+                    "requerimiento_kcal": e.get("requerimiento_kcal"),
+                    "calories": e.get("calories"),
+                    "imc": e.get("imc"),
+                    "assignment_id": e.get("assignment_id"),
+                }
+            )
+
+        # Evolución de todos los controles de progreso (cronológico)
+        progress_evolution = list(reversed(progress_list))
+
+        return {
+            "patient": {"id": patient.id, "name": f"{patient.nombres} {patient.apellidos}"},
+            "events": events,
+            "evolution": evolution,
+            "progress_metrics": progress_list,
+            "progress_evolution": progress_evolution,
+            "defaults": {
+                "left_metric_id": progress_list[0]["id"] if progress_list else None,
+                "right_metric_id": progress_list[1]["id"] if len(progress_list) > 1 else None,
+            },
+        }
+
+    @app.get("/api/nutritionist/patients/{patient_id}/progress/compare")
+    def compare_patient_progress(
+        patient_id: int,
+        left_metric_id: Optional[int] = None,
+        right_metric_id: Optional[int] = None,
+        db: Session = Depends(get_db),
+        current_user=Depends(get_current_user),
+    ):
+        """Compara dos (o cualquier par de) registros de progreso antropométrico."""
+        if current_user.role not in ("admin", "superadmin"):
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+        if authorize_patient_access:
+            authorize_patient_access(patient_id, current_user, db)
+        patient = db.query(UserDB).filter(UserDB.id == patient_id).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+        metrics = (
+            db.query(ProgressMetricDB)
+            .filter(ProgressMetricDB.patient_id == patient_id)
+            .order_by(ProgressMetricDB.date.desc(), ProgressMetricDB.id.desc())
+            .all()
+        )
+        if len(metrics) < 1:
+            raise HTTPException(status_code=404, detail="No hay controles de progreso registrados")
+
+        by_id = {m.id: m for m in metrics}
+        if not left_metric_id:
+            left_metric_id = metrics[0].id
+        if not right_metric_id:
+            right_metric_id = metrics[1].id if len(metrics) > 1 else metrics[0].id
+
+        left_m = by_id.get(left_metric_id)
+        right_m = by_id.get(right_metric_id)
+        if not left_m or not right_m:
+            raise HTTPException(status_code=404, detail="Registro de progreso no encontrado")
+
+        if compare_progress_metrics:
+            changes = compare_progress_metrics(left_m, right_m)
+        else:
+            changes = []
+
+        left_s = serialize_progress_metric(left_m) if serialize_progress_metric else {"id": left_m.id}
+        right_s = serialize_progress_metric(right_m) if serialize_progress_metric else {"id": right_m.id}
+        weight_delta = None
+        if left_m.weight is not None and right_m.weight is not None:
+            weight_delta = round(float(left_m.weight) - float(right_m.weight), 2)
+
+        return {
+            "patient": {"id": patient.id, "name": f"{patient.nombres} {patient.apellidos}"},
+            "left": left_s,
+            "right": right_s,
             "changes": changes,
             "summary": {
                 "total_changes": len(changes),
-                "calorie_delta": (left_snap.get("calories") or 0) - (right_snap.get("calories") or 0),
+                "weight_delta": weight_delta,
             },
+            "all_metrics": [
+                serialize_progress_metric(m) if serialize_progress_metric else {"id": m.id} for m in metrics
+            ],
         }
 
     # ── Asignación masiva de menús por cohorte / EPS / org ──

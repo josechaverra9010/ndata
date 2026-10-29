@@ -10,8 +10,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Session
+
+from meal_vision_module import analyze_meal_image, is_meal_vision_enabled, normalize_meal_analysis
 
 
 MealPhotoDB = None
@@ -151,6 +153,7 @@ def register_patient_phase4_models(Base):
         meal_type = Column(String(50), nullable=True)
         photo_url = Column(String(500), nullable=False)
         caption = Column(Text, nullable=True)
+        analysis_json = Column(Text, nullable=True)
         created_at = Column(String(50), nullable=True)
 
     class _WearableSnapshotDB(Base):
@@ -180,7 +183,16 @@ def register_patient_phase4_models(Base):
 
 
 def ensure_patient_phase4_schema(engine, inspect_fn, text_fn):
-    pass
+    try:
+        insp = inspect_fn(engine)
+        if not insp.has_table("meal_photos"):
+            return
+        cols = {c["name"] for c in insp.get_columns("meal_photos")}
+        if "analysis_json" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text_fn("ALTER TABLE meal_photos ADD COLUMN analysis_json TEXT NULL"))
+    except Exception:
+        pass
 
 
 def _normalize_ingredient(text: str) -> str:
@@ -208,6 +220,7 @@ def register_patient_phase4_routes(app, deps: dict):
     authorize_patient_access = deps["authorize_patient_access"]
     UserDB = deps["UserDB"]
     MealTrackingDB = deps["MealTrackingDB"]
+    MealFoodItemDB = deps.get("MealFoodItemDB")
     WaterTrackingDB = deps.get("WaterTrackingDB")
     RecipeDB = deps.get("RecipeDB")
     PatientHabitLogDB = deps.get("PatientHabitLogDB")
@@ -230,6 +243,18 @@ def register_patient_phase4_routes(app, deps: dict):
         patient = db.query(UserDB).filter(UserDB.id == patient_id, UserDB.role == "patient").first()
         if not patient:
             raise HTTPException(status_code=404, detail="Paciente no encontrado")
+        return patient
+
+    def _require_food_diary(patient_id: int, current_user, db: Session):
+        patient = _require_patient(patient_id, current_user, db)
+        if getattr(current_user, "role", None) == "patient":
+            try:
+                from billing_module import require_patient_feature
+                require_patient_feature(db, patient_id, "food_diary", now_co)
+            except HTTPException:
+                raise
+            except Exception:
+                pass
         return patient
 
     def _filter_allergies(alternatives: List[dict], patient) -> List[dict]:
@@ -256,7 +281,7 @@ def register_patient_phase4_routes(app, deps: dict):
         db: Session = Depends(get_db),
         current_user=Depends(get_current_user),
     ):
-        _require_patient(patient_id, current_user, db)
+        _require_food_diary(patient_id, current_user, db)
         if MealPhotoDB is None:
             return {"photos": [], "total": 0}
 
@@ -275,6 +300,7 @@ def register_patient_phase4_routes(app, deps: dict):
                 "meal_type": r.meal_type,
                 "photo_url": r.photo_url,
                 "caption": r.caption,
+                "analysis": json.loads(r.analysis_json) if getattr(r, "analysis_json", None) else None,
                 "created_at": r.created_at,
             }
             for r in rows
@@ -294,7 +320,7 @@ def register_patient_phase4_routes(app, deps: dict):
         db: Session = Depends(get_db),
         current_user=Depends(get_current_user),
     ):
-        _require_patient(patient_id, current_user, db)
+        _require_food_diary(patient_id, current_user, db)
         if MealPhotoDB is None:
             raise HTTPException(status_code=503, detail="Diario fotográfico no disponible")
 
@@ -308,12 +334,14 @@ def register_patient_phase4_routes(app, deps: dict):
         safe = sanitize_filename(file.filename) if sanitize_filename else (file.filename or "photo.jpg")
         ext = os.path.splitext(safe)[1].lower() or ".jpg"
         file_name = f"meal_{patient_id}_{uuid.uuid4().hex[:12]}{ext}"
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
         contents = await file.read()
         if len(contents) > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="Imagen demasiado grande (máx. 5MB)")
-        with open(os.path.join(UPLOAD_DIR, file_name), "wb") as buffer:
-            buffer.write(contents)
+        from media_storage import persist_upload_bytes
+
+        photo_path = persist_upload_bytes(
+            file_name, contents, content_type=file.content_type, upload_dir=UPLOAD_DIR
+        )
 
         d = photo_date or today_co().strftime("%Y-%m-%d")
         ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
@@ -321,7 +349,7 @@ def register_patient_phase4_routes(app, deps: dict):
             patient_id=patient_id,
             date=d,
             meal_type=meal_type,
-            photo_url=f"/uploads/{file_name}",
+            photo_url=photo_path,
             caption=(caption or "").strip() or None,
             created_at=ts,
         )
@@ -355,6 +383,190 @@ def register_patient_phase4_routes(app, deps: dict):
         db.delete(row)
         db.commit()
         return {"success": True}
+
+    @app.get("/api/patient/meal-vision/status")
+    def meal_vision_status(current_user=Depends(get_current_user)):
+        return {
+            "enabled": is_meal_vision_enabled(),
+            "provider": "openai" if is_meal_vision_enabled() else None,
+            "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini") if is_meal_vision_enabled() else None,
+        }
+
+    def _recalculate_meal_tracking_totals(db: Session, meal_tracking) -> None:
+        if not meal_tracking or not MealFoodItemDB:
+            return
+        items = (
+            db.query(MealFoodItemDB)
+            .filter(MealFoodItemDB.meal_tracking_id == meal_tracking.id)
+            .all()
+        )
+        consumed_kcal = sum(int(i.calories or 0) for i in items if i.checked)
+        meal_tracking.calories = consumed_kcal
+        all_checked = bool(items) and all(i.checked == 1 for i in items)
+        if all_checked:
+            meal_tracking.completed = 1
+            meal_tracking.completed_at = meal_tracking.completed_at or now_co().strftime("%Y-%m-%d %H:%M:%S")
+        elif consumed_kcal > 0:
+            meal_tracking.completed = 0
+
+    def _append_foods_to_meal(
+        db: Session,
+        patient_id: int,
+        meal_type: str,
+        meal_date: date,
+        foods: List[dict],
+    ) -> List[dict]:
+        if not MealFoodItemDB or not foods:
+            return []
+
+        meal_tracking = db.query(MealTrackingDB).filter(
+            MealTrackingDB.patient_id == patient_id,
+            MealTrackingDB.date == meal_date,
+            MealTrackingDB.meal_type == meal_type,
+        ).first()
+
+        if not meal_tracking:
+            meal_tracking = MealTrackingDB(
+                patient_id=patient_id,
+                date=meal_date,
+                meal_type=meal_type,
+                meal_name=f"Comida {meal_type}",
+                calories=0,
+                completed=0,
+                created_at=now_co().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            db.add(meal_tracking)
+            db.flush()
+
+        max_order = (
+            db.query(func.max(MealFoodItemDB.order_index))
+            .filter(MealFoodItemDB.meal_tracking_id == meal_tracking.id)
+            .scalar()
+            or 0
+        )
+
+        added: List[dict] = []
+        for idx, food in enumerate(foods, start=1):
+            row = MealFoodItemDB(
+                meal_tracking_id=meal_tracking.id,
+                name=food["name"],
+                portion_size=food["portion_size"],
+                calories=food["calories"],
+                protein=food["protein"],
+                carbs=food["carbs"],
+                fat=food["fat"],
+                checked=1,
+                order_index=max_order + idx,
+            )
+            db.add(row)
+            added.append(
+                {
+                    "name": row.name,
+                    "portion_size": row.portion_size,
+                    "calories": row.calories,
+                    "protein": row.protein,
+                    "carbs": row.carbs,
+                    "fat": row.fat,
+                }
+            )
+
+        if added:
+            _recalculate_meal_tracking_totals(db, meal_tracking)
+
+        return added
+
+    async def analyze_meal_photo(
+        patient_id: int,
+        file: UploadFile = File(...),
+        meal_type: Optional[str] = Form("lunch"),
+        photo_date: Optional[str] = Form(None),
+        caption: Optional[str] = Form(None),
+        add_to_meal: bool = Form(False),
+        save_photo: bool = Form(True),
+        db: Session = Depends(get_db),
+        current_user=Depends(get_current_user),
+    ):
+        """Analiza una foto de comida con IA y opcionalmente la registra en el diario / comidas del día."""
+        _require_patient(patient_id, current_user, db)
+
+        if not is_meal_vision_enabled():
+            raise HTTPException(
+                status_code=503,
+                detail="Análisis por foto no disponible. Configura OPENAI_API_KEY en el servidor.",
+            )
+
+        if validate_upload_file:
+            await validate_upload_file(file, IMAGE_EXTENSIONS)
+        else:
+            ext = os.path.splitext(file.filename or "")[1].lower()
+            if ext not in IMAGE_EXTENSIONS:
+                raise HTTPException(status_code=400, detail="Solo imágenes permitidas")
+
+        safe = sanitize_filename(file.filename) if sanitize_filename else (file.filename or "photo.jpg")
+        ext = os.path.splitext(safe)[1].lower() or ".jpg"
+        contents = await file.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Imagen demasiado grande (máx. 5MB)")
+
+        try:
+            analysis = analyze_meal_image(contents, ext)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Error al analizar la imagen: {exc}") from exc
+
+        d_str = photo_date or today_co().strftime("%Y-%m-%d")
+        try:
+            meal_date = date.fromisoformat(d_str)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Fecha inválida") from exc
+
+        photo_id = None
+        photo_url = None
+        if save_photo and MealPhotoDB is not None:
+            file_name = f"meal_{patient_id}_{uuid.uuid4().hex[:12]}{ext}"
+            from media_storage import persist_upload_bytes
+
+            photo_path = persist_upload_bytes(
+                file_name, contents, content_type=file.content_type, upload_dir=UPLOAD_DIR
+            )
+            ts = now_co().strftime("%Y-%m-%d %H:%M:%S")
+            row = MealPhotoDB(
+                patient_id=patient_id,
+                date=d_str,
+                meal_type=meal_type,
+                photo_url=photo_path,
+                caption=(caption or analysis.get("description") or "").strip() or None,
+                analysis_json=json.dumps(analysis, ensure_ascii=False),
+                created_at=ts,
+            )
+            db.add(row)
+            db.flush()
+            photo_id = row.id
+            photo_url = row.photo_url
+
+        foods_added: List[dict] = []
+        if add_to_meal and analysis.get("foods"):
+            foods_added = _append_foods_to_meal(
+                db,
+                patient_id,
+                meal_type or "lunch",
+                meal_date,
+                analysis["foods"],
+            )
+
+        db.commit()
+
+        return {
+            "success": True,
+            "photo_id": photo_id,
+            "photo_url": photo_url,
+            "meal_type": meal_type,
+            "date": d_str,
+            "analysis": analysis,
+            "foods_added": foods_added,
+            "added_to_meal": bool(foods_added),
+        }
 
     # ── Sustituciones inteligentes ──
 

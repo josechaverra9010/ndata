@@ -37,20 +37,36 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { resolveMediaUrl } from "@/lib/media";
 import { TransferPatientDialog } from "@/components/admin/TransferPatientDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { startUserImpersonation } from "@/lib/impersonation";
 import { Eye } from "lucide-react";
 
+function parseApiDetail(data: unknown): string {
+  if (!data || typeof data !== "object") return "Error en la solicitud";
+  const detail = (data as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (typeof item === "object" && item && "msg" in item ? String((item as { msg: string }).msg) : String(item)))
+      .join(", ");
+  }
+  return "Error en la solicitud";
+}
+
 interface User {
   id: number;
   name: string;
   email: string;
+  phone?: string;
   role: string;
   status: string;
   avatar?: string;
   createdAt: string;
   lastLogin?: string;
+  lastSeen?: string;
+  lastOnline?: string;
   nutritionist_id?: number | null;
   nutritionist_name?: string | null;
   organization_name?: string | null;
@@ -62,7 +78,7 @@ interface OrganizationOption {
 }
 
 import { API_URL } from "@/config/api";
-import { todayInColombiaISO } from "@/lib/timezone";
+import { todayInColombiaISO, formatUserLastOnline } from "@/lib/timezone";
 
 export default function SuperadminUsers() {
   const [users, setUsers] = useState<User[]>([]);
@@ -92,6 +108,9 @@ export default function SuperadminUsers() {
   const [emailSubject, setEmailSubject] = useState("Mensaje de NutriData");
   const [emailMessage, setEmailMessage] = useState("");
   const [emailSending, setEmailSending] = useState(false);
+  const [editPassword, setEditPassword] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
 
   const authHeaders = (): HeadersInit => {
     const token = localStorage.getItem("userToken");
@@ -117,8 +136,12 @@ export default function SuperadminUsers() {
       const response = await fetch(`${API_URL}/superadmin/users?${params}`, {
         headers: authHeaders(),
       });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(parseApiDetail(err));
+      }
       const data = await response.json();
-      setUsers(data);
+      setUsers(Array.isArray(data) ? data : []);
       setSelectedIds([]);
     } catch (error) {
       console.error("Error al cargar usuarios:", error);
@@ -207,37 +230,72 @@ export default function SuperadminUsers() {
     }
   };
 
+  const openEditUser = async (user: User) => {
+    setIsEditUserOpen(true);
+    setEditPassword("");
+    setSelectedUser({ ...user });
+    setEditLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/superadmin/users/${user.id}`, {
+        headers: authHeaders(),
+      });
+      if (response.ok) {
+        const fresh = await response.json();
+        setSelectedUser(fresh as User);
+      }
+    } catch (error) {
+      console.error("Error al cargar usuario:", error);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const handleEditUser = async () => {
     if (!selectedUser) return;
+    const name = selectedUser.name?.trim();
+    const email = selectedUser.email?.trim();
+    if (!name || !email) {
+      toast.error("Nombre y email son requeridos");
+      return;
+    }
 
+    setEditSaving(true);
     try {
+      const payload: Record<string, string> = {
+        name,
+        email,
+        role: selectedUser.role,
+        status: selectedUser.status,
+        phone: selectedUser.phone?.trim() ?? "",
+      };
+      if (editPassword.trim()) {
+        payload.password = editPassword.trim();
+      }
+
       const response = await fetch(`${API_URL}/superadmin/users/${selectedUser.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           ...authHeaders(),
         },
-        body: JSON.stringify({
-          name: selectedUser.name,
-          email: selectedUser.email,
-          role: selectedUser.role,
-          status: selectedUser.status,
-          phone: ""
-        }),
+        body: JSON.stringify(payload),
       });
 
+      const data = await response.json().catch(() => ({}));
       if (response.ok) {
         toast.success("Usuario actualizado exitosamente");
         setIsEditUserOpen(false);
         setSelectedUser(null);
+        setEditPassword("");
         fetchUsers();
       } else {
-        const data = await response.json();
-        toast.error(data.detail || "Error al actualizar usuario");
+        toast.error(parseApiDetail(data));
       }
     } catch (error) {
       console.error("Error:", error);
       toast.error("Error al actualizar usuario");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -379,7 +437,7 @@ export default function SuperadminUsers() {
             <p className="text-muted-foreground">Administra todos los usuarios del sistema</p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleExportUsers} variant="outline">
+            <Button onClick={() => handleExportUsers()} variant="outline">
               <Download className="h-4 w-4 mr-2" />
               Exportar
             </Button>
@@ -489,7 +547,7 @@ export default function SuperadminUsers() {
                     onCheckedChange={(v) => toggleSelect(user.id, Boolean(v))}
                   />
                   <Avatar className="h-12 w-12">
-                    <AvatarImage src={user.avatar} />
+                    <AvatarImage src={resolveMediaUrl(user.avatar)} />
                     <AvatarFallback className="bg-primary/10 text-primary">
                       {user.name.split(' ').map(n => n[0]).join('')}
                     </AvatarFallback>
@@ -515,9 +573,11 @@ export default function SuperadminUsers() {
                       </p>
                     )}
                   </div>
-                  <div className="text-right text-sm text-muted-foreground">
+                  <div className="text-right text-sm text-muted-foreground min-w-[140px]">
                     <p>Creado: {user.createdAt}</p>
-                    {user.lastLogin && <p>Último acceso: {user.lastLogin}</p>}
+                    <p className="text-xs mt-0.5">
+                      En línea: {formatUserLastOnline(user.lastOnline || user.lastSeen || user.lastLogin)}
+                    </p>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -526,21 +586,18 @@ export default function SuperadminUsers() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => {
-                        setSelectedUser(user);
-                        setIsEditUserOpen(true);
-                      }}>
+                      <DropdownMenuItem onClick={() => openEditUser(user)}>
                         <Edit className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
                       {(user.role === "patient" || user.role === "admin") && user.status === "activo" && (
                         <DropdownMenuItem onClick={async () => {
                           const reason = window.prompt(
-                            "Motivo de impersonación (mín. 5 caracteres — queda en auditoría):"
+                            "Motivo de impersonación (mín. 3 caracteres — queda en auditoría):"
                           );
                           if (!reason?.trim()) return;
-                          const ok = await startUserImpersonation(user.id, reason.trim());
-                          if (!ok) toast.error("No se pudo impersonar. Verifica el motivo (mín. 5 caracteres).");
+                          const result = await startUserImpersonation(user.id, reason.trim());
+                          if (!result.ok) toast.error(result.error);
                         }}>
                           <Eye className="h-4 w-4 mr-2" />
                           Ver como usuario
@@ -660,11 +717,23 @@ export default function SuperadminUsers() {
       </Dialog>
 
       {/* Edit User Dialog */}
-      <Dialog open={isEditUserOpen} onOpenChange={setIsEditUserOpen}>
+      <Dialog
+        open={isEditUserOpen}
+        onOpenChange={(open) => {
+          setIsEditUserOpen(open);
+          if (!open) {
+            setSelectedUser(null);
+            setEditPassword("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Usuario</DialogTitle>
           </DialogHeader>
+          {editLoading && (
+            <p className="text-sm text-muted-foreground">Cargando datos del usuario…</p>
+          )}
           {selectedUser && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -672,6 +741,7 @@ export default function SuperadminUsers() {
                 <Input
                   value={selectedUser.name}
                   onChange={(e) => setSelectedUser({ ...selectedUser, name: e.target.value })}
+                  disabled={editLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -680,6 +750,25 @@ export default function SuperadminUsers() {
                   type="email"
                   value={selectedUser.email}
                   onChange={(e) => setSelectedUser({ ...selectedUser, email: e.target.value })}
+                  disabled={editLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Teléfono</Label>
+                <Input
+                  value={selectedUser.phone || ""}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, phone: e.target.value })}
+                  disabled={editLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Nueva contraseña (opcional)</Label>
+                <Input
+                  type="password"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Dejar vacío para no cambiar"
+                  disabled={editLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -714,8 +803,12 @@ export default function SuperadminUsers() {
             <Button variant="outline" onClick={() => setIsEditUserOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleEditUser} className="gradient-primary border-0">
-              Guardar Cambios
+            <Button
+              onClick={handleEditUser}
+              className="gradient-primary border-0"
+              disabled={editSaving || editLoading || !selectedUser}
+            >
+              {editSaving ? "Guardando…" : "Guardar Cambios"}
             </Button>
           </DialogFooter>
         </DialogContent>

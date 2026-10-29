@@ -25,18 +25,21 @@ import {
   ArrowRight,
   Lightbulb,
   Scale,
-  Trophy,
-  GraduationCap,
-  HeartPulse,
   Building2,
-  Camera,
-  ArrowRightLeft,
+  Utensils,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { MealCard } from "@/components/patient/MealCard";
 import { MealDetailDialog } from "@/components/patient/MealDetailDialog";
 import { todayInColombiaISO, todayLabelColombia } from "@/lib/timezone";
+import {
+  defaultFlags,
+  fetchPatientFeatureFlags,
+  isRouteEnabled,
+  subscribeFeatureFlagRefresh,
+} from "@/lib/featureFlags";
+import { FreePatientDashboard } from "@/components/patient/FreePatientDashboard";
 
 interface DashboardStats {
   calories: {
@@ -156,12 +159,22 @@ export default function PatientDashboard() {
   const [newWeight, setNewWeight] = useState("");
   const [savingWeight, setSavingWeight] = useState(false);
   const [nextAction, setNextAction] = useState<{ label: string; path: string } | null>(null);
+  const [flags, setFlags] = useState<Record<string, boolean>>(() => defaultFlags());
+  const [flagsReady, setFlagsReady] = useState(false);
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const patientId = user?.id;
   const firstName = (user as { nombres?: string } | null)?.nombres?.split(" ")[0] || "bienvenido/a";
 
   const todayLabel = useMemo(() => todayLabelColombia(), []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("userToken");
+    fetchPatientFeatureFlags(token)
+      .then(setFlags)
+      .finally(() => setFlagsReady(true));
+    return subscribeFeatureFlagRefresh(fetchPatientFeatureFlags, setFlags);
+  }, []);
 
   useEffect(() => {
     if (!isDetailsOpen || !selectedMeal) {
@@ -238,18 +251,27 @@ export default function PatientDashboard() {
     }
   }, [dashboardData, isDetailsOpen]);
 
+  // Plan Gratis (sin meals/my_plan): dashboard de calorías + 2 sugerencias IA
+  const isFreeCalorieMode = flagsReady && !flags.meals && !flags.my_plan;
+
   useEffect(() => {
+    if (!flagsReady) return;
+    if (isFreeCalorieMode) {
+      setLoading(false);
+      return;
+    }
     if (!isAuthLoading && patientId) {
       fetchDashboardData();
     }
-  }, [isAuthLoading, patientId]);
+  }, [isAuthLoading, patientId, isFreeCalorieMode, flagsReady]);
 
   useEffect(() => {
+    if (!flagsReady || isFreeCalorieMode) return;
     if (!isAuthLoading && patientId) {
       const interval = setInterval(fetchDashboardData, 5 * 60 * 1000);
       return () => clearInterval(interval);
     }
-  }, [isAuthLoading, patientId]);
+  }, [isAuthLoading, patientId, isFreeCalorieMode, flagsReady]);
 
   const fetchDashboardData = async () => {
     try {
@@ -267,9 +289,13 @@ export default function PatientDashboard() {
 
       if (adherenceRes.ok) {
         const adherence = await adherenceRes.json();
-        if (adherence?.next_action) {
+        if (adherence?.next_action?.path) {
           setNextAction(adherence.next_action);
+        } else {
+          setNextAction(null);
         }
+      } else {
+        setNextAction(null);
       }
     } catch (error) {
       console.error("Error fetching dashboard:", error);
@@ -291,12 +317,12 @@ export default function PatientDashboard() {
       const endpoint = meal.completed ? "uncomplete" : "complete";
       const response = await fetch(`${API_URL}/tracking/meal-toggle/${patientId}/${endpoint}`, {
         method: "POST",
-        headers: {
+          headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          meal_type: meal.meal_type,
+          },
+          body: JSON.stringify({
+            meal_type: meal.meal_type,
           date: todayInColombiaISO(),
         }),
       });
@@ -327,10 +353,10 @@ export default function PatientDashboard() {
       const token = localStorage.getItem("userToken");
       const response = await fetch(`${API_URL}/patient/${patientId}/water/add`, {
         method: "POST",
-        headers: {
+          headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+          },
         body: JSON.stringify({ glass_ml: glassMl }),
       });
 
@@ -407,8 +433,26 @@ export default function PatientDashboard() {
     }
   };
 
-  return (
-    <PatientLayout>
+    if (!flagsReady || isAuthLoading) {
+      return (
+        <PatientLayout>
+          <LoadingGate loading message="Cargando tu dashboard" className="min-h-[60vh]">
+            <div />
+          </LoadingGate>
+        </PatientLayout>
+      );
+    }
+
+    if (isFreeCalorieMode) {
+      return (
+        <PatientLayout>
+          <FreePatientDashboard firstName={firstName} />
+        </PatientLayout>
+      );
+    }
+
+    return (
+      <PatientLayout>
       <LoadingGate loading={loading || isAuthLoading} message="Cargando tu dashboard" className="min-h-[60vh]">
         {!dashboardData ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
@@ -418,19 +462,22 @@ export default function PatientDashboard() {
                 Revisa tu conexión e inténtalo de nuevo.
               </p>
               <Button className="mt-5 rounded-full" onClick={fetchDashboardData}>
-                Reintentar
-              </Button>
-            </div>
+              Reintentar
+            </Button>
+        </div>
           </div>
         ) : (
           <DashboardContent
             dashboardData={dashboardData}
-            nextAction={nextAction}
+            nextAction={
+              nextAction && isRouteEnabled(nextAction.path, flags) ? nextAction : null
+            }
             navigate={navigate}
             firstName={firstName}
             todayLabel={todayLabel}
             patientId={patientId!}
             user={user}
+            flags={flags}
             updatingMeal={updatingMeal}
             addingWater={addingWater}
             selectedMeal={selectedMeal}
@@ -445,16 +492,16 @@ export default function PatientDashboard() {
             setIsWeightDialogOpen={setIsWeightDialogOpen}
             setNewWeight={setNewWeight}
             handleToggleMeal={handleToggleMeal}
-            handleAddWater={handleAddWater}
+            adjustWater={adjustWater}
             handleUpdateWeight={handleUpdateWeight}
             getImageUrl={getImageUrl}
             toast={toast}
           />
         )}
       </LoadingGate>
-    </PatientLayout>
-  );
-}
+      </PatientLayout>
+    );
+  }
 
 function DashboardContent({
   dashboardData,
@@ -464,6 +511,7 @@ function DashboardContent({
   todayLabel,
   patientId,
   user,
+  flags,
   updatingMeal,
   addingWater,
   selectedMeal,
@@ -478,12 +526,23 @@ function DashboardContent({
   setIsWeightDialogOpen,
   setNewWeight,
   handleToggleMeal,
-  handleAddWater,
+  adjustWater,
   handleUpdateWeight,
   getImageUrl,
   toast,
 }: any) {
   const { stats, today_meals, week_progress, next_appointment, tip_of_day } = dashboardData;
+  const canAdherence = isRouteEnabled("/patient/adherence", flags || defaultFlags());
+  const canAppointments = isRouteEnabled("/patient/appointments", flags || defaultFlags());
+  const canProgress = isRouteEnabled("/patient/progress", flags || defaultFlags());
+  const quickLinks = [
+    { icon: Utensils, label: "Mis Comidas", path: "/patient/meals" },
+    { icon: Apple, label: "Mi Plan", path: "/patient/my-plan" },
+    { icon: Target, label: "Adherencia", path: "/patient/adherence" },
+    { icon: Building2, label: "Mi Programa", path: "/patient/program" },
+    { icon: TrendingUp, label: "Progreso", path: "/patient/progress" },
+    { icon: Calendar, label: "Citas", path: "/patient/appointments" },
+  ].filter((item) => isRouteEnabled(item.path, flags || defaultFlags()));
   const peso =
     stats.peso_actual ?? (user as { peso_actual?: number } | null)?.peso_actual ?? null;
   const altura = stats.altura ?? (user as { altura?: number } | null)?.altura ?? null;
@@ -523,10 +582,11 @@ function DashboardContent({
 
   return (
     <>
-      <div className="space-y-5 lg:space-y-7 animate-fade-in">
+      <div className="space-y-5 lg:space-y-7">
         {nextAction && (
           <button
             type="button"
+            data-aos="fade-down"
             onClick={() => navigate(nextAction.path)}
             className="w-full flex items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3 text-left hover:bg-primary/10 transition-colors"
           >
@@ -538,28 +598,34 @@ function DashboardContent({
           </button>
         )}
 
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {[
-            { icon: Trophy, label: "Retos", path: "/patient/challenges" },
-            { icon: GraduationCap, label: "Aprender", path: "/patient/learn" },
-            { icon: Camera, label: "Diario", path: "/patient/food-diary" },
-            { icon: ArrowRightLeft, label: "Sustituir", path: "/patient/substitutions" },
-            { icon: HeartPulse, label: "Bienestar", path: "/patient/habits" },
-            { icon: Building2, label: "Mi Programa", path: "/patient/program" },
-          ].map((item) => (
-            <button
-              key={item.path}
-              type="button"
-              onClick={() => navigate(item.path)}
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-border/70 bg-card p-3 hover:border-primary/30 hover:bg-primary/[0.03] transition-colors"
-            >
-              <item.icon className="h-5 w-5 text-primary" />
-              <span className="text-[11px] font-medium">{item.label}</span>
-            </button>
-          ))}
-        </div>
+        {quickLinks.length > 0 && (
+          <div
+            className={`grid gap-2 ${
+              quickLinks.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-3"
+            }`}
+            data-aos="fade-up"
+          >
+            {quickLinks.map((item, idx) => (
+              <button
+                key={item.path}
+                type="button"
+                data-aos="zoom-in"
+                data-aos-delay={String(idx * 60)}
+                onClick={() => navigate(item.path)}
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-border/70 bg-card p-3 hover:border-primary/30 hover:bg-primary/[0.03] transition-colors"
+              >
+                <item.icon className="h-5 w-5 text-primary" />
+                <span className="text-[11px] font-medium">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {/* Hero */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.08] p-5 sm:p-6 shadow-card">
+        <div
+          data-aos="fade-up"
+          data-aos-delay="80"
+          className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/[0.08] p-5 sm:p-6 shadow-card"
+        >
           <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
           <div className="pointer-events-none absolute -bottom-14 left-1/4 h-36 w-36 rounded-full bg-emerald-500/10 blur-2xl" />
 
@@ -577,20 +643,20 @@ function DashboardContent({
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                {stats.edad_formateada && (
+            {stats.edad_formateada && (
                   <Badge className="rounded-full border-0 bg-primary/10 text-primary text-[10px] uppercase font-bold tracking-wide">
                     <Clock className="h-3 w-3 mr-1.5" />
-                    {stats.edad_formateada}
-                  </Badge>
-                )}
+                {stats.edad_formateada}
+              </Badge>
+            )}
                 <Badge variant="secondary" className="rounded-full tabular-nums">
                   {stats.meals.completed}/{stats.meals.total} comidas
                 </Badge>
                 <Badge variant="outline" className="rounded-full tabular-nums">
                   {stats.calories.consumed}/{stats.calories.target} kcal
                 </Badge>
-              </div>
-            </div>
+          </div>
+        </div>
 
             <div className="flex flex-wrap gap-2">
               <Button
@@ -620,51 +686,51 @@ function DashboardContent({
           <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
             <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-orange-500 to-amber-400" />
             <div className="pl-2 flex items-start justify-between gap-2">
-              <div className="min-w-0">
+                <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
                   Calorías hoy
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                  {stats.calories.consumed}
-                </p>
+                    {stats.calories.consumed}
+                  </p>
                 <p className="text-xs text-muted-foreground">de {stats.calories.target} kcal</p>
-              </div>
+                </div>
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500/15 to-orange-500/5 text-orange-600 dark:text-orange-400 flex items-center justify-center">
                 <Flame className="h-[18px] w-[18px]" />
+                </div>
               </div>
-            </div>
             <Progress value={Math.min(100, stats.calories.percentage)} className="mt-3 h-1.5" />
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
             <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-sky-500 to-cyan-400" />
             <div className="pl-2 flex items-start justify-between gap-2">
-              <div className="min-w-0">
+                <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
                   Agua
-                </p>
+                  </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                   {stats.water.consumed_liters}
                   <span className="text-sm font-medium text-muted-foreground ml-0.5">L</span>
-                </p>
+                  </p>
                 <p className="text-xs text-muted-foreground">Meta: {stats.water.target_liters}L</p>
-              </div>
+                </div>
               <div className="flex flex-col gap-1">
-                <Button
-                  size="icon"
-                  variant="ghost"
+                  <Button
+                    size="icon"
+                    variant="ghost"
                   onClick={() => adjustWater(-250)}
-                  disabled={addingWater || stats.water.consumed_ml <= 0}
+                    disabled={addingWater || stats.water.consumed_ml <= 0}
                   className="h-8 w-8 rounded-lg bg-destructive/5 hover:bg-destructive/10 text-destructive"
                   title="Quitar 250ml"
-                >
+                  >
                   <Minus className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
                   onClick={() => adjustWater(250)}
-                  disabled={addingWater}
+                    disabled={addingWater}
                   className="h-8 w-8 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400"
                   title="Agregar 250ml"
                 >
@@ -673,47 +739,60 @@ function DashboardContent({
                   ) : (
                     <Plus className="h-3.5 w-3.5" />
                   )}
-                </Button>
+                  </Button>
+                </div>
               </div>
-            </div>
             <Progress value={Math.min(100, stats.water.percentage)} className="mt-3 h-1.5" />
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden">
             <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary to-emerald-400" />
             <div className="pl-2 flex items-start justify-between gap-2">
-              <div className="min-w-0">
+                <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
                   Comidas
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                  {stats.meals.completed}/{stats.meals.total}
-                </p>
+                    {stats.meals.completed}/{stats.meals.total}
+                  </p>
                 <p className="text-xs text-muted-foreground">completadas hoy</p>
-              </div>
+                </div>
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary flex items-center justify-center">
                 <Apple className="h-[18px] w-[18px]" />
+                </div>
               </div>
-            </div>
             <Progress value={Math.min(100, stats.meals.percentage)} className="mt-3 h-1.5" />
           </div>
 
           <div
-            className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden cursor-pointer hover:border-emerald-500/30 transition-colors"
-            onClick={() => navigate("/patient/adherence")}
-            onKeyDown={(e) => e.key === "Enter" && navigate("/patient/adherence")}
-            role="button"
-            tabIndex={0}
+            className={`rounded-2xl border border-border/70 bg-card/90 p-4 shadow-card backdrop-blur-sm relative overflow-hidden ${
+              canAdherence
+                ? "cursor-pointer hover:border-emerald-500/30 transition-colors"
+                : canProgress
+                  ? "cursor-pointer hover:border-emerald-500/30 transition-colors"
+                  : ""
+            }`}
+            onClick={() => {
+              if (canAdherence) navigate("/patient/adherence");
+              else if (canProgress) navigate("/patient/progress");
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              if (canAdherence) navigate("/patient/adherence");
+              else if (canProgress) navigate("/patient/progress");
+            }}
+            role={canAdherence || canProgress ? "button" : undefined}
+            tabIndex={canAdherence || canProgress ? 0 : undefined}
           >
             <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-500 to-lime-400" />
             <div className="pl-2 flex items-start justify-between gap-2">
-              <div className="min-w-0">
+                <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
-                  Adherencia
+                  {canAdherence ? "Adherencia" : "Meta semanal"}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                  {stats.weekly_goal.percentage}%
-                </p>
+                    {stats.weekly_goal.percentage}%
+                  </p>
                 <p
                   className={`text-xs flex items-center gap-1 ${
                     stats.weekly_goal.change >= 0
@@ -726,12 +805,12 @@ function DashboardContent({
                   />
                   {stats.weekly_goal.change >= 0 ? "+" : ""}
                   {stats.weekly_goal.change}%
-                </p>
-              </div>
+                  </p>
+                </div>
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                 <Target className="h-[18px] w-[18px]" />
+                </div>
               </div>
-            </div>
             <Progress value={Math.min(100, stats.weekly_goal.percentage)} className="mt-3 h-1.5" />
           </div>
         </div>
@@ -747,7 +826,7 @@ function DashboardContent({
                       <TrendingUp className="h-4 w-4" />
                     </span>
                     Progreso semanal
-                  </CardTitle>
+              </CardTitle>
                   <CardDescription className="text-xs mt-1">
                     {weekCompleted} de {week_progress.length} días completados
                   </CardDescription>
@@ -763,10 +842,10 @@ function DashboardContent({
             <CardContent className="p-4 lg:p-5 space-y-3.5">
               {week_progress.map((day, index) => (
                 <div key={index} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-foreground">{day.day}</span>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-foreground">{day.day}</span>
                     <span className="text-xs text-muted-foreground">{day.date}</span>
-                  </div>
+                      </div>
                   <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
@@ -774,9 +853,9 @@ function DashboardContent({
                           ? "bg-gradient-to-r from-primary to-emerald-500 w-full"
                           : "bg-muted-foreground/15 w-0"
                       }`}
-                    />
-                  </div>
-                </div>
+                        />
+                      </div>
+                    </div>
               ))}
             </CardContent>
           </Card>
@@ -821,7 +900,7 @@ function DashboardContent({
                   {stats.calories.target > 0
                     ? `${stats.calories.target} kcal`
                     : "Sin meta asignada"}
-                </span>
+                      </span>
               </div>
             </CardContent>
           </Card>
@@ -838,7 +917,7 @@ function DashboardContent({
                       <Apple className="h-4 w-4" />
                     </span>
                     Comidas de hoy
-                  </CardTitle>
+                </CardTitle>
                   <CardDescription className="text-xs mt-1">
                     Marca lo que ya comiste
                   </CardDescription>
@@ -907,7 +986,7 @@ function DashboardContent({
                       {imcValue.toFixed(1)}
                       <span className="text-sm font-medium text-muted-foreground ml-1">
                         kg/m²
-                      </span>
+                          </span>
                     </p>
                     <Badge className={`rounded-full ${imcMeta.className}`}>{imcMeta.label}</Badge>
                     {peso != null && (
@@ -927,7 +1006,7 @@ function DashboardContent({
                     >
                       Actualizar peso
                     </Button>
-                  </div>
+                        </div>
                 ) : (
                   <div className="text-center py-2">
                     <p className="text-sm text-muted-foreground">
@@ -941,7 +1020,7 @@ function DashboardContent({
                     >
                       Registrar peso
                     </Button>
-                  </div>
+                </div>
                 )}
               </CardContent>
             </Card>
@@ -964,7 +1043,7 @@ function DashboardContent({
                         className={`h-9 w-9 lg:h-10 lg:w-10 rounded-xl flex items-center justify-center text-xs lg:text-sm font-semibold transition-colors ${
                           day.completed
                             ? "bg-gradient-to-br from-primary to-emerald-500 text-primary-foreground shadow-sm"
-                            : "bg-muted text-muted-foreground"
+                        : "bg-muted text-muted-foreground"
                         }`}
                       >
                         {day.completed ? "✓" : day.day.charAt(0)}
@@ -978,7 +1057,8 @@ function DashboardContent({
               </CardContent>
             </Card>
 
-            {/* Next Appointment */}
+            {/* Next Appointment — solo si el plan incluye citas */}
+            {canAppointments && (
             <Card className="border-border/70 shadow-card overflow-hidden rounded-2xl">
               <CardHeader className="pb-3 border-b border-border/60 bg-gradient-to-br from-card via-card to-sky-500/[0.04]">
                 <CardTitle className="flex items-center gap-2 text-sm lg:text-base">
@@ -1002,8 +1082,8 @@ function DashboardContent({
                       className="mt-3 text-[10px] rounded-full gap-1"
                     >
                       <Clock className="h-3 w-3" />
-                      {next_appointment.date}, {next_appointment.time}
-                    </Badge>
+                        {next_appointment.date}, {next_appointment.time}
+                      </Badge>
                   </button>
                 ) : (
                   <div className="p-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center">
@@ -1021,6 +1101,7 @@ function DashboardContent({
                 )}
               </CardContent>
             </Card>
+            )}
 
             {/* Tip */}
             <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-br from-primary to-emerald-600 p-5 text-primary-foreground shadow-card">
@@ -1052,16 +1133,16 @@ function DashboardContent({
           <div className="grid gap-3 py-2">
             <Label htmlFor="weight">Peso (kg)</Label>
             <Input
-              id="weight"
-              type="number"
-              step="0.1"
+                id="weight"
+                type="number"
+                step="0.1"
               className="rounded-xl"
-              value={newWeight}
-              onChange={(e) => setNewWeight(e.target.value)}
-              autoFocus
+                value={newWeight}
+                onChange={(e) => setNewWeight(e.target.value)}
+                autoFocus
               placeholder="72.5"
-            />
-          </div>
+              />
+            </div>
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
@@ -1082,6 +1163,7 @@ function DashboardContent({
       </Dialog>
 
       <MealDetailDialog
+        showCloseFooter
         open={isDetailsOpen}
         onOpenChange={setIsDetailsOpen}
         meal={mealDetailForModal ?? selectedMeal ?? null}

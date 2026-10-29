@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { MNA_SF_QUESTIONS, scoreMnaSf } from '@/lib/specialtyModule';
+import { MNA_SF_QUESTIONS, scoreMnaSf, toAreaCm2, toPmbCm } from '@/lib/specialtyModule';
 import { Activity, AlertTriangle, Bone, Ruler } from 'lucide-react';
 import type { SpecialtyPayload, SpecialtyTracking } from './types';
 
@@ -29,8 +29,9 @@ export function GeriatricSpecialtyPanel({ data, onTrackingChange, readOnly }: Pr
   };
 
   const sarcopeniaRisk = f1.riesgo_sarcopenia || (parseFloat(String(f1.hosp_perim_pantorrilla_cm ?? '')) < 31 ? 'Alto' : null);
-  const pmb = f1.perimetro_muscular_brazo;
-  const amb = f1.area_muscular_brazo;
+  const pmb = toPmbCm(f1.perimetro_muscular_brazo);
+  const amb = toAreaCm2(f1.area_muscular_brazo);
+  const agb = toAreaCm2(f1.area_grasa_brazo);
 
   return (
     <div className="space-y-4">
@@ -63,26 +64,26 @@ export function GeriatricSpecialtyPanel({ data, onTrackingChange, readOnly }: Pr
         </Card>
       </div>
 
-      {(pmb > 0 || amb > 0) && (
+      {(pmb != null || amb != null) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Bone className="h-4 w-4" />
-              Evolución antropometría braquial (plan)
+              Evolución antropometría (plan)
             </CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div>
               <span className="text-muted-foreground block">PMB</span>
-              <span className="font-bold">{pmb ? `${Number(pmb).toFixed(1)} mm` : '—'}</span>
+              <span className="font-bold">{pmb != null ? `${pmb.toFixed(2)} cm` : '—'}</span>
             </div>
             <div>
               <span className="text-muted-foreground block">AMB</span>
-              <span className="font-bold">{amb ? `${Number(amb).toFixed(1)} mm²` : '—'}</span>
+              <span className="font-bold">{amb != null ? `${amb.toFixed(2)} cm²` : '—'}</span>
             </div>
             <div>
               <span className="text-muted-foreground block">AGB</span>
-              <span className="font-bold">{f1.area_grasa_brazo ? `${Number(f1.area_grasa_brazo).toFixed(1)} mm²` : '—'}</span>
+              <span className="font-bold">{agb != null ? `${agb.toFixed(2)} cm²` : '—'}</span>
             </div>
             <div>
               <span className="text-muted-foreground block">Adiposidad</span>

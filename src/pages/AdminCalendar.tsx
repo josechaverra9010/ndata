@@ -77,8 +77,30 @@ interface Appointment {
   notes?: string;
 }
 
-/** Horas de trabajo (vista compacta por hora) */
-const hourSlots = Array.from({ length: 12 }, (_, i) => i + 8); // 8 → 19
+/** Horas de trabajo por defecto (vista compacta por hora) */
+const DEFAULT_HOUR_SLOTS = Array.from({ length: 12 }, (_, i) => i + 8); // 8 → 19
+
+type WeeklyHoursMap = Record<string, { start: string; end: string }[]>;
+
+const computeHourSlotsFromSchedule = (weeklyHours?: WeeklyHoursMap | null): number[] => {
+  if (!weeklyHours) return DEFAULT_HOUR_SLOTS;
+
+  let minHour = 24;
+  let maxHour = 0;
+
+  for (const windows of Object.values(weeklyHours)) {
+    for (const window of windows || []) {
+      const [startH] = (window.start || "08:00").split(":").map(Number);
+      const [endH, endM] = (window.end || "19:00").split(":").map(Number);
+      const endHour = (endM || 0) > 0 ? endH + 1 : endH;
+      minHour = Math.min(minHour, startH || 0);
+      maxHour = Math.max(maxHour, endHour || 0);
+    }
+  }
+
+  if (minHour >= maxHour) return DEFAULT_HOUR_SLOTS;
+  return Array.from({ length: maxHour - minHour }, (_, i) => minHour + i);
+};
 
 const statusStyles: Record<string, string> = {
   confirmada: "bg-emerald-500/10 text-emerald-700 border-emerald-500/25 dark:text-emerald-300",
@@ -127,6 +149,7 @@ export default function AdminCalendar() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState<{ date?: Date; time?: string }>({});
   const [focusedAppointmentId, setFocusedAppointmentId] = useState<number | null>(null);
+  const [hourSlots, setHourSlots] = useState<number[]>(DEFAULT_HOUR_SLOTS);
   const gridScrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -152,7 +175,41 @@ export default function AdminCalendar() {
 
   useEffect(() => {
     fetchAppointments();
+    fetchScheduleHours();
   }, []);
+
+  const getUserId = () => {
+    const userData = localStorage.getItem("userData");
+    if (userData) {
+      try {
+        return JSON.parse(userData).id as number;
+      } catch {
+        return null;
+      }
+    }
+    const token = localStorage.getItem("userToken");
+    if (token) {
+      try {
+        return JSON.parse(atob(token.split(".")[1])).id as number;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const fetchScheduleHours = async () => {
+    const userId = getUserId();
+    if (!userId) return;
+    try {
+      const response = await axios.get(`${API_URL}/admin/schedule/${userId}`, {
+        headers: authHeaders(),
+      });
+      setHourSlots(computeHourSlotsFromSchedule(response.data?.weeklyHours));
+    } catch (error) {
+      console.warn("No se pudo cargar horario del nutricionista, usando predeterminado", error);
+    }
+  };
 
   // Deep-link desde dashboard: ?date=&appointmentId=&action=new&view=
   useEffect(() => {
@@ -206,12 +263,14 @@ export default function AdminCalendar() {
   useEffect(() => {
     // Auto-scroll hacia la hora actual / primera cita en vistas de timeline
     if (view === "month" || !gridScrollRef.current) return;
-    const targetHour = Math.min(Math.max(currentHour, 8), 19);
+    const minHour = hourSlots[0] ?? 8;
+    const maxHour = hourSlots[hourSlots.length - 1] ?? 19;
+    const targetHour = Math.min(Math.max(currentHour, minHour), maxHour);
     const row = gridScrollRef.current.querySelector(`[data-hour="${targetHour}"]`);
     if (row) {
       row.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-  }, [view, selectedDate, currentHour]);
+  }, [view, selectedDate, currentHour, hourSlots]);
 
   const fetchAppointments = async () => {
     setLoading(true);
@@ -403,21 +462,21 @@ export default function AdminCalendar() {
               <Clock className="h-3 w-3 text-primary" />
               {appointment.time}
               <span className="text-muted-foreground font-normal">· {appointment.duration}</span>
-            </span>
+              </span>
             <span className="inline-flex items-center gap-1">
-              {appointment.type === "videollamada" ? (
+                {appointment.type === "videollamada" ? (
                 <Video className="h-3 w-3 text-sky-500" />
-              ) : (
+                ) : (
                 <MapPin className="h-3 w-3 text-emerald-500" />
-              )}
-              {appointment.type === "videollamada" ? "Videollamada" : "Presencial"}
-            </span>
-          </div>
-          {appointment.notes && (
+                )}
+                {appointment.type === "videollamada" ? "Videollamada" : "Presencial"}
+              </span>
+            </div>
+            {appointment.notes && (
             <p className="text-xs text-muted-foreground line-clamp-2 rounded-lg bg-muted/40 px-2.5 py-1.5">
-              {appointment.notes}
-            </p>
-          )}
+                {appointment.notes}
+              </p>
+            )}
           <div className="flex flex-wrap gap-2 pt-1">
             {appointment.status === "pendiente" && (
               <Button
@@ -441,23 +500,23 @@ export default function AdminCalendar() {
             </Button>
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-full opacity-60 group-hover:opacity-100 shrink-0"
             >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52 rounded-xl">
-            {appointment.status === "pendiente" && (
-              <DropdownMenuItem onClick={() => handleConfirmAppointment(appointment.id)}>
+                {appointment.status === "pendiente" && (
+                  <DropdownMenuItem onClick={() => handleConfirmAppointment(appointment.id)}>
                 <CheckCircle2 className="mr-2 h-4 w-4 text-emerald-600" />
-                Confirmar cita
-              </DropdownMenuItem>
-            )}
+                    Confirmar cita
+                  </DropdownMenuItem>
+                )}
             <DropdownMenuItem
               onClick={() =>
                 toast({
@@ -467,36 +526,36 @@ export default function AdminCalendar() {
               }
             >
               <CalendarIcon className="mr-2 h-4 w-4" />
-              Ver detalles
-            </DropdownMenuItem>
+                  Ver detalles
+                </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate(`/patients?patientId=${appointment.patientId}`)}>
               <User className="mr-2 h-4 w-4" />
               Abrir ficha paciente
-            </DropdownMenuItem>
+                </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate(`/progress?patientId=${appointment.patientId}`)}>
               <User className="mr-2 h-4 w-4" />
               Registrar progreso
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            {appointment.status !== "cancelada" && (
-              <DropdownMenuItem
+                {appointment.status !== "cancelada" && (
+                  <DropdownMenuItem
                 className="text-amber-700 focus:text-amber-700 dark:text-amber-400"
                 onClick={() => setAppointmentToCancel(appointment)}
-              >
+                  >
                 <X className="mr-2 h-4 w-4" />
-                Cancelar cita
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
+                    Cancelar cita
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={() => setAppointmentToDelete(appointment)}
-            >
-              Eliminar cita
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+                >
+                  Eliminar cita
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
   );
 
   const dayAppointments = getAppointmentsForDate(selectedDate);
@@ -514,7 +573,7 @@ export default function AdminCalendar() {
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-sm ring-1 ring-primary/20">
                 <CalendarIcon className="h-6 w-6" />
               </div>
-              <div>
+          <div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">Citas</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   Agenda semanal y mensual de consultas
@@ -523,13 +582,13 @@ export default function AdminCalendar() {
                   )}
                 </p>
               </div>
-            </div>
-            <NewAppointmentDialog onAppointmentCreated={fetchAppointments}>
+          </div>
+          <NewAppointmentDialog onAppointmentCreated={fetchAppointments}>
               <Button className="rounded-full shadow-md hover:shadow-lg transition-shadow shrink-0 gap-2">
                 <Plus className="h-4 w-4" />
                 Nueva cita
-              </Button>
-            </NewAppointmentDialog>
+            </Button>
+          </NewAppointmentDialog>
           </div>
         </div>
 
@@ -603,23 +662,23 @@ export default function AdminCalendar() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={handlePrevious}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
                 <Button variant="outline" className="h-10 rounded-xl px-4" onClick={handleToday}>
-                  Hoy
-                </Button>
+              Hoy
+            </Button>
                 <Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={handleNext}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
                 <div className="ml-1 sm:ml-2">
                   <p className="text-base sm:text-lg font-semibold tracking-tight capitalize">
-                    {view === "week"
+              {view === "week"
                       ? `${format(weekStart, "d MMM", { locale: es })} – ${format(addDays(weekStart, 6), "d MMM yyyy", { locale: es })}`
                       : view === "day"
                         ? format(selectedDate, "EEEE d 'de' MMMM yyyy", { locale: es })
                         : format(selectedDate, "MMMM yyyy", { locale: es })}
                   </p>
-                </div>
+          </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex flex-wrap gap-1.5 mr-1">
@@ -652,9 +711,9 @@ export default function AdminCalendar() {
                       <LayoutGrid className="h-3.5 w-3.5 hidden sm:inline" />
                       Mes
                     </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
+            </TabsList>
+          </Tabs>
+        </div>
             </div>
           </CardContent>
         </Card>
@@ -670,7 +729,7 @@ export default function AdminCalendar() {
                     {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((d) => (
                       <div key={d} className="text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground py-2">
                         {d}
-                      </div>
+                    </div>
                     ))}
                   </div>
                   <div className="grid grid-cols-7 gap-1 auto-rows-fr">
@@ -785,8 +844,8 @@ export default function AdminCalendar() {
                           }`}
                         >
                           <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                            {format(day, "EEE", { locale: es })}
-                          </div>
+                          {format(day, "EEE", { locale: es })}
+                        </div>
                           <div
                             className={`mt-1 text-base sm:text-lg font-bold h-8 w-8 mx-auto flex items-center justify-center rounded-full ${
                               isToday(day)
@@ -796,12 +855,12 @@ export default function AdminCalendar() {
                                   : "text-foreground"
                             }`}
                           >
-                            {format(day, "d")}
-                          </div>
+                          {format(day, "d")}
+                        </div>
                           {count > 0 && (
                             <div className="mt-1 text-[10px] font-semibold text-muted-foreground tabular-nums">
                               {count} cita{count !== 1 ? "s" : ""}
-                            </div>
+                      </div>
                           )}
                         </button>
                       );
@@ -854,15 +913,15 @@ export default function AdminCalendar() {
                                     <div className="font-semibold truncate leading-tight">{appointment.patientName}</div>
                                     <div className="opacity-80 flex items-center gap-1 mt-0.5">
                                       <span className="tabular-nums">{appointment.time}</span>
-                                      {appointment.type === "videollamada" ? (
-                                        <Video className="h-3 w-3" />
-                                      ) : (
-                                        <MapPin className="h-3 w-3" />
-                                      )}
-                                    </div>
+                                    {appointment.type === "videollamada" ? (
+                                      <Video className="h-3 w-3" />
+                                    ) : (
+                                      <MapPin className="h-3 w-3" />
+                                    )}
+                                  </div>
                                   </button>
                                 ))}
-                              </div>
+                                </div>
                               {hourApts.length === 0 && (
                                 <button
                                   type="button"
@@ -1018,8 +1077,8 @@ export default function AdminCalendar() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <CardTitle className="text-base font-semibold tracking-tight capitalize">
-                      {format(selectedDate, "EEEE, d MMMM", { locale: es })}
-                    </CardTitle>
+                  {format(selectedDate, "EEEE, d MMMM", { locale: es })}
+                </CardTitle>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {dayAppointments.length} cita{dayAppointments.length !== 1 ? "s" : ""} este día
                     </p>
@@ -1090,9 +1149,9 @@ export default function AdminCalendar() {
               <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Pendiente</div>
               <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Cancelada</div>
               <div className="flex items-center gap-2 pt-1"><span className="h-0.5 w-4 bg-rose-500 rounded" /> Hora actual</div>
-            </div>
           </div>
         </div>
+      </div>
       </div>
       </LoadingGate>
 

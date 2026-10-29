@@ -59,6 +59,7 @@ interface Patient {
   tiene_plan_activo?: boolean;
   plan_activo?: string | null;
   deleted_at?: string | null;
+  updated_at?: string | null;
   nutritionist_id?: number | null;
   nutritionist_name?: string | null;
   organization?: {
@@ -310,8 +311,16 @@ const Patients = () => {
   };
 
   // Handler para cuando se actualiza un paciente
-  const handlePatientUpdate = () => {
-    fetchPatients(showTrash);
+  const handlePatientUpdate = async (updated?: Record<string, unknown>) => {
+    await fetchPatients(showTrash);
+    if (updated && typeof updated.id === "number") {
+      setSelectedPatient((prev) =>
+        prev && prev.id === updated.id ? { ...prev, ...(updated as Patient) } : (updated as Patient)
+      );
+      setPatients((prev) =>
+        prev.map((p) => (p.id === updated.id ? { ...p, ...(updated as Patient) } : p))
+      );
+    }
   };
 
   // Función para reintentar cargar datos
@@ -322,8 +331,12 @@ const Patients = () => {
   // Handler para editar paciente
   const handleEdit = (patient: Patient, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    setDetailsOpen(false);
+    setPlansOpen(false);
+    setScheduleOpen(false);
+    setClinicalHistoryOpen(false);
     setSelectedPatient(patient);
-    setNewPatientOpen(true);
+    window.setTimeout(() => setNewPatientOpen(true), 0);
   };
 
   // Handler para agendar cita
@@ -1131,7 +1144,7 @@ const Patients = () => {
             // pero si cerramos NewPatientDialog, queremos asegurarnos de que el siguiente "Nuevo" sea limpio
           }
         }}
-        onSuccess={handleNewPatientSuccess}
+        onSuccess={handlePatientUpdate}
       />
 
       {selectedPatient && (

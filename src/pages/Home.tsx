@@ -163,7 +163,7 @@ const Home = () => {
 
           <div className="container mx-auto px-4 relative z-10 py-20 lg:py-28">
             <div className="flex flex-col items-center text-center gap-8 max-w-4xl mx-auto">
-              <div className="space-y-4">
+              <div className="space-y-4" data-aos="fade-up">
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/15 backdrop-blur-md border border-white/20 px-4 py-2 text-sm font-medium text-white">
                   <Newspaper className="h-4 w-4" />
                   <span>Contenido Nutricional Gratuito</span>
@@ -180,7 +180,7 @@ const Home = () => {
                   NutriData. Todo lo que necesitas para mejorar tu alimentación está aquí.
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col sm:flex-row gap-4" data-aos="fade-up" data-aos-delay="120">
                 <Link to="/auth">
                   <Button size="lg" className="gap-2 shadow-lg">
                     Comienza Ahora <ArrowRight className="h-4 w-4" />
@@ -202,7 +202,7 @@ const Home = () => {
 
         <section className="py-16 bg-muted/30">
           <div className="container mx-auto px-4">
-            <div className="text-center mb-12">
+            <div className="text-center mb-12" data-aos="fade-up">
               <h2 className="text-3xl font-bold text-foreground mb-3">¿Por qué elegir NutriData?</h2>
               <p className="text-muted-foreground max-w-2xl mx-auto">
                 Somos tu compañero ideal en el camino hacia una alimentación saludable
@@ -214,6 +214,8 @@ const Home = () => {
                 return (
                   <Card
                     key={index}
+                    data-aos="fade-up"
+                    data-aos-delay={String(index * 80)}
                     className="border-border/60 hover:border-primary/20 transition-all hover:shadow-lg"
                   >
                     <CardHeader>
@@ -234,7 +236,10 @@ const Home = () => {
 
         <section id="articulos" className="py-20 scroll-mt-20">
           <div className="container mx-auto px-4">
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-12 gap-4">
+            <div
+              className="flex flex-col md:flex-row md:items-end md:justify-between mb-12 gap-4"
+              data-aos="fade-up"
+            >
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent mb-3">
                   <BookOpen className="h-3 w-3" />
@@ -281,9 +286,13 @@ const Home = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {filteredArticles.map((article) => (
+                {filteredArticles.map((article, idx) => (
                   <Link key={article.id} to={article.slug ? `/article/${article.slug}` : `/article/${article.id}`}>
-                    <Card className="group overflow-hidden border-border/60 hover:border-primary/20 transition-all hover:shadow-xl h-full cursor-pointer">
+                    <Card
+                      data-aos="fade-up"
+                      data-aos-delay={String((idx % 6) * 70)}
+                      className="group overflow-hidden border-border/60 hover:border-primary/20 transition-all hover:shadow-xl h-full cursor-pointer"
+                    >
                       <div className="aspect-video overflow-hidden">
                         <img
                           src={article.image}
@@ -329,7 +338,7 @@ const Home = () => {
 
         <section className="py-20 bg-gradient-to-br from-primary/5 to-accent/10">
           <div className="container mx-auto px-4">
-            <div className="max-w-3xl mx-auto text-center">
+            <div className="max-w-3xl mx-auto text-center" data-aos="zoom-in">
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
                 ¿Listo para transformar tu salud?
               </h2>
@@ -354,15 +363,15 @@ const Home = () => {
                 <span className="text-lg font-semibold text-foreground">NutriData</span>
               </div>
               <div className="flex gap-8 text-sm text-muted-foreground">
-                <a href="#" className="hover:text-foreground transition-colors">
+                <Link to="/terminos" className="hover:text-foreground transition-colors">
                   Términos de Servicio
-                </a>
-                <a href="#" className="hover:text-foreground transition-colors">
+                </Link>
+                <Link to="/privacidad" className="hover:text-foreground transition-colors">
                   Política de Privacidad
-                </a>
-                <a href="#" className="hover:text-foreground transition-colors">
+                </Link>
+                <Link to="/auth" className="hover:text-foreground transition-colors">
                   Contacto
-                </a>
+                </Link>
               </div>
             </div>
             <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">

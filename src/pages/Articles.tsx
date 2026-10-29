@@ -267,9 +267,13 @@ export default function Articles() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-              {filteredArticles.map((article) => (
+              {filteredArticles.map((article, idx) => (
                 <Link key={article.id} to={articlePath(article)}>
-                  <Card className="group overflow-hidden border-border/60 hover:border-primary/25 transition-all hover:shadow-xl h-full cursor-pointer rounded-2xl">
+                  <Card
+                    data-aos="fade-up"
+                    data-aos-delay={String((idx % 9) * 60)}
+                    className="group overflow-hidden border-border/60 hover:border-primary/25 transition-all hover:shadow-xl h-full cursor-pointer rounded-2xl"
+                  >
                     <div className="aspect-video overflow-hidden relative">
                       <img
                         src={article.image}

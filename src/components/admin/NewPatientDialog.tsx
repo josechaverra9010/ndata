@@ -38,6 +38,7 @@ import {
   type RecallFormState,
 } from "@/components/admin/Recordatorio24hForm";
 import { todayInColombiaISO } from "@/lib/timezone";
+import { isHeadCircumferenceAgeEligible } from "@/lib/pediatricGrowthUtils";
 import {
   compactDatosClinicos,
   emptyDatosClinicos,
@@ -49,7 +50,7 @@ interface NewPatientDialogProps {
   patient?: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess?: () => void;
+  onSuccess?: (updatedPatient?: Record<string, unknown>) => void;
 }
 
 interface PatientFormData {
@@ -87,6 +88,80 @@ interface PatientFormData {
   programa_eps: string;
   examenes_bioquimicos: BioquimicosData;
   datos_clinicos: DatosClinicos;
+}
+
+function splitTagList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((s) => String(s).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeGenero(raw: unknown): string {
+  const g = String(raw || "").trim().toLowerCase();
+  if (["m", "masculino", "male", "hombre", "h"].includes(g)) return "masculino";
+  if (["f", "femenino", "female", "mujer"].includes(g)) return "femenino";
+  if (g === "otro" || g === "other") return "otro";
+  return "";
+}
+
+function buildFormDataFromPatient(patient: Record<string, any>): PatientFormData {
+  return {
+    nombres: patient.nombres || "",
+    apellidos: patient.apellidos || "",
+    email: patient.email || "",
+    telefono: patient.telefono || "",
+    fecha_nacimiento: patient.fecha_nacimiento || "",
+    genero: normalizeGenero(patient.genero),
+    direccion: patient.direccion || "",
+    tipo_documento: patient.tipo_documento || "CC",
+    numero_documento: patient.numero_documento || "",
+    password: "",
+    altura: patient.altura?.toString() || "",
+    peso_actual: patient.peso_actual?.toString() || "",
+    peso_objetivo: patient.peso_objetivo?.toString() || "",
+    nivel_actividad: patient.nivel_actividad || "Moderado (1.7 - 1.99)",
+    pal_factor: patient.pal_factor
+      ? patient.pal_factor.toString()
+      : patient.nivel_actividad && String(patient.nivel_actividad).includes("Sed")
+        ? "1.53"
+        : "1.76",
+    alergias: splitTagList(patient.alergias).join(", "),
+    preferencias: splitTagList(patient.preferencias).join(", "),
+    objetivos_salud: patient.objetivos_salud || "",
+    condiciones_medicas: patient.condiciones_medicas || "",
+    alimentos_disgusto: patient.alimentos_disgusto || "",
+    antecedentes_familiares: patient.antecedentes_familiares || "",
+    evaluacion_nutricional: patient.evaluacion_nutricional || "",
+    frecuencia_consumo: FOOD_GROUPS.map((grupo) => {
+      const list = Array.isArray(patient.frecuencia_consumo) ? patient.frecuencia_consumo : [];
+      const existingItem = list.find((item: { grupo?: string }) => item.grupo === grupo);
+      return existingItem || { grupo, frecuencia: "never" };
+    }),
+    status: patient.status || "activo",
+    acompanante_nombre: patient.acompanante_nombre || "",
+    acompanante_parentesco: patient.acompanante_parentesco || "",
+    acompanante_telefono: patient.acompanante_telefono || "",
+    acompanante_email: patient.acompanante_email || "",
+    acompanante_documento: patient.acompanante_documento || "",
+    acompanante_observaciones: patient.acompanante_observaciones || "",
+    programa_eps: patient.programa_eps || "",
+    examenes_bioquimicos: normalizeBioquimicos(patient.examenes_bioquimicos),
+    datos_clinicos: normalizeDatosClinicos(
+      typeof patient.datos_clinicos === "string"
+        ? (() => {
+            try {
+              return JSON.parse(patient.datos_clinicos);
+            } catch {
+              return null;
+            }
+          })()
+        : patient.datos_clinicos
+    ),
+  };
 }
 
 const initialFormData: PatientFormData = {
@@ -131,6 +206,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
   const { toast } = useToast();
   const [formData, setFormData] = useState<PatientFormData>(initialFormData);
   const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [errors, setErrors] = useState<Partial<PatientFormData>>({});
   const [recallDraft, setRecallDraft] = useState<RecallFormState>(() => emptyRecallState());
   const [latestRecall, setLatestRecall] = useState<any | null>(null);
@@ -139,47 +215,26 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
 
   useEffect(() => {
     if (patient && open) {
-      setFormData({
-        nombres: patient.nombres || "",
-        apellidos: patient.apellidos || "",
-        email: patient.email || "",
-        telefono: patient.telefono || "",
-        fecha_nacimiento: patient.fecha_nacimiento || "",
-        genero: patient.genero || "",
-        direccion: patient.direccion || "",
-        tipo_documento: patient.tipo_documento || "CC",
-        numero_documento: patient.numero_documento || "",
-        password: "", // No editar contraseña por defecto
-        altura: patient.altura?.toString() || "",
-        peso_actual: patient.peso_actual?.toString() || "",
-        peso_objetivo: patient.peso_objetivo?.toString() || "",
-        nivel_actividad: patient.nivel_actividad || "Moderado (1.7 - 1.99)",
-        pal_factor: patient.pal_factor ? patient.pal_factor.toString() : (patient.nivel_actividad && patient.nivel_actividad.includes("Sed") ? "1.53" : "1.76"),
-        alergias: Array.isArray(patient.alergias) ? patient.alergias.join(", ") : (patient.alergias || ""),
-        preferencias: Array.isArray(patient.preferencias) ? patient.preferencias.join(", ") : (patient.preferencias || ""),
-        objetivos_salud: patient.objetivos_salud || "",
-        condiciones_medicas: patient.condiciones_medicas || "",
-        alimentos_disgusto: patient.alimentos_disgusto || "",
-        antecedentes_familiares: patient.antecedentes_familiares || "",
-        evaluacion_nutricional: patient.evaluacion_nutricional || "",
-        frecuencia_consumo: FOOD_GROUPS.map(grupo => {
-          const existingItem = Array.isArray(patient.frecuencia_consumo)
-            ? patient.frecuencia_consumo.find(item => item.grupo === grupo)
-            : null;
-          return existingItem || { grupo, frecuencia: "never" };
-        }),
-        status: patient.status || "activo",
-        acompanante_nombre: patient.acompanante_nombre || "",
-        acompanante_parentesco: patient.acompanante_parentesco || "",
-        acompanante_telefono: patient.acompanante_telefono || "",
-        acompanante_email: patient.acompanante_email || "",
-        acompanante_documento: patient.acompanante_documento || "",
-        acompanante_observaciones: patient.acompanante_observaciones || "",
-        programa_eps: patient.programa_eps || "",
-        examenes_bioquimicos: normalizeBioquimicos(patient.examenes_bioquimicos),
-        datos_clinicos: normalizeDatosClinicos(patient.datos_clinicos),
-      });
-      // Cargar recordatorio 24h más reciente
+      let cancelled = false;
+      setLoadingProfile(true);
+      (async () => {
+        try {
+          const token = localStorage.getItem("userToken");
+          const res = await fetch(`${API_URL}/patients/${patient.id}`, {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+          const full = res.ok ? await res.json() : patient;
+          if (cancelled) return;
+          setFormData(buildFormDataFromPatient(full));
+        } catch {
+          if (!cancelled) setFormData(buildFormDataFromPatient(patient));
+        } finally {
+          if (!cancelled) setLoadingProfile(false);
+        }
+      })();
+
       (async () => {
         try {
           const token = localStorage.getItem("userToken");
@@ -199,6 +254,20 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
           setLatestRecall(null);
         }
       })();
+
+      return () => {
+        cancelled = true;
+      };
+    } else if (open && !patient) {
+      setFormData({
+        ...initialFormData,
+        examenes_bioquimicos: emptyBioquimicos(),
+        datos_clinicos: emptyDatosClinicos(),
+        frecuencia_consumo: FOOD_GROUPS.map((grupo) => ({ grupo, frecuencia: "never" })),
+      });
+      setErrors({});
+      setRecallDraft(emptyRecallState());
+      setLatestRecall(null);
     } else if (!open) {
       setFormData({
         ...initialFormData,
@@ -234,6 +303,11 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
     const calculo = peso / (alturaMetros * alturaMetros);
     return calculo.toFixed(2);
   }, [formData.peso_actual, formData.altura]);
+
+  const showPerimetroCefalico = useMemo(
+    () => isHeadCircumferenceAgeEligible(formData.fecha_nacimiento || null),
+    [formData.fecha_nacimiento]
+  );
 
   const handleChange = (field: keyof PatientFormData, value: string) => {
     setFormData(prev => {
@@ -327,8 +401,8 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
           peso_objetivo: formData.peso_objetivo ? parseFloat(formData.peso_objetivo) : null,
           nivel_actividad: formData.nivel_actividad,
           pal_factor: formData.pal_factor ? parseFloat(formData.pal_factor) : null,
-          alergias: formData.alergias.split(',').map(s => s.trim()).filter(s => s !== ""),
-          preferencias: formData.preferencias.split(',').map(s => s.trim()).filter(s => s !== ""),
+          alergias: splitTagList(formData.alergias),
+          preferencias: splitTagList(formData.preferencias),
           objetivos_salud: formData.objetivos_salud.trim() || null,
           condiciones_medicas: formData.condiciones_medicas.trim() || null,
           alimentos_disgusto: formData.alimentos_disgusto.trim() || null,
@@ -348,7 +422,12 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
         }),
       });
 
-      const data = await response.json();
+      let data: Record<string, unknown> = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
 
       if (!response.ok) {
         const detail = data?.detail;
@@ -394,7 +473,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
       setLatestRecall(null);
       setErrors({});
       onOpenChange(false);
-      onSuccess?.();
+      onSuccess?.(isEditing ? (data as Record<string, unknown>) : undefined);
     } catch (error: any) {
       console.error("Error creating patient:", error);
       toast({
@@ -417,18 +496,27 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? "Editar Paciente" : "Nuevo Paciente"}</DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? "Actualiza la información del paciente."
-              : "Completa la información básica del paciente. Los campos marcados con * son obligatorios."}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-visible z-[110] flex flex-col p-0 gap-0">
+        <div className="px-6 pt-6 pb-2 shrink-0">
+          <DialogHeader>
+            <DialogTitle>{isEditing ? "Editar Paciente" : "Nuevo Paciente"}</DialogTitle>
+            <DialogDescription>
+              {isEditing
+                ? "Actualiza la información del paciente."
+                : "Completa la información básica del paciente. Los campos marcados con * son obligatorios."}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <Tabs defaultValue="personal" className="w-full">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden rounded-b-lg">
+          <div className="flex-1 overflow-y-auto overflow-x-visible px-6 py-2 space-y-6">
+          {loadingProfile && isEditing ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              Cargando ficha del paciente…
+            </div>
+          ) : null}
+          <Tabs defaultValue="personal" className={`w-full ${loadingProfile && isEditing ? "pointer-events-none opacity-60" : ""}`}>
             <TabsList className="grid w-full grid-cols-3 sm:grid-cols-7 mb-6 h-auto gap-1">
               <TabsTrigger value="personal" className="flex gap-2 text-xs sm:text-sm">
                 <User className="h-4 w-4" />
@@ -560,17 +648,17 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <div className="space-y-2">
                   <Label htmlFor="genero">Género</Label>
                   <Select
-                    value={formData.genero}
+                    value={formData.genero || undefined}
                     onValueChange={(value) => handleChange("genero", value)}
                     disabled={loading}
                   >
                     <SelectTrigger id="genero">
                       <SelectValue placeholder="Selecciona género" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Masculino">Masculino</SelectItem>
-                      <SelectItem value="Femenino">Femenino</SelectItem>
-                      <SelectItem value="Otro">Otro</SelectItem>
+                    <SelectContent position="popper" sideOffset={4}>
+                      <SelectItem value="masculino">Masculino</SelectItem>
+                      <SelectItem value="femenino">Femenino</SelectItem>
+                      <SelectItem value="otro">Otro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -590,14 +678,14 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                 <div className="space-y-2">
                   <Label htmlFor="tipo_documento">Tipo de Documento</Label>
                   <Select
-                    value={formData.tipo_documento}
+                    value={formData.tipo_documento || undefined}
                     onValueChange={(value) => handleChange("tipo_documento", value)}
                     disabled={loading}
                   >
                     <SelectTrigger id="tipo_documento">
                       <SelectValue placeholder="Selecciona tipo" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" sideOffset={4}>
                       <SelectItem value="CC">Cédula de Ciudadanía (CC)</SelectItem>
                       <SelectItem value="CE">Cédula de Extranjería (CE)</SelectItem>
                       <SelectItem value="TI">Tarjeta de Identidad (TI)</SelectItem>
@@ -634,14 +722,14 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
               <div className="space-y-2">
                 <Label>Estado del paciente</Label>
                 <Select
-                  value={formData.status}
+                  value={formData.status || undefined}
                   onValueChange={(v) => handleChange("status", v)}
                   disabled={loading}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Estado" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={4}>
                     <SelectItem value="activo">Activo</SelectItem>
                     <SelectItem value="pendiente">Pendiente</SelectItem>
                     <SelectItem value="inactivo">Inactivo</SelectItem>
@@ -680,7 +768,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                       <SelectTrigger id="acompanante_parentesco">
                         <SelectValue placeholder="Selecciona (opcional)" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" sideOffset={4}>
                         <SelectItem value="Madre">Madre</SelectItem>
                         <SelectItem value="Padre">Padre</SelectItem>
                         <SelectItem value="Hijo/a">Hijo/a</SelectItem>
@@ -817,14 +905,14 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
               <div className="space-y-2">
                 <Label htmlFor="nivel_actividad">Nivel de Actividad</Label>
                 <Select
-                  value={formData.nivel_actividad}
+                  value={formData.nivel_actividad || undefined}
                   onValueChange={(value) => handleChange("nivel_actividad", value)}
                   disabled={loading}
                 >
                   <SelectTrigger id="nivel_actividad">
                     <SelectValue placeholder="Selecciona nivel" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={4}>
                     <SelectItem value="Sedentario (1.4 - 1.69)">Sedentario (1.4 - 1.69)</SelectItem>
                     <SelectItem value="Moderado (1.7 - 1.99)">Moderado (1.7 - 1.99)</SelectItem>
                     <SelectItem value="Vigoroso (2.0 - 2.4)">Vigoroso (2.0 - 2.4)</SelectItem>
@@ -874,20 +962,28 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
               <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
                 <div>
                   <p className="text-sm font-semibold text-foreground">Antropometría adicional</p>
-                  <p className="text-xs text-muted-foreground">Opcional. Se incluye en la historia clínica.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Opcional. Perímetros en cm · Pliegues en mm.
+                    {!formData.fecha_nacimiento
+                      ? " Indica la fecha de nacimiento para ver perímetro cefálico (niños ≤ 5 años)."
+                      : null}
+                  </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
+                  {showPerimetroCefalico ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="perimetro_cefalico">Perímetro cefálico (cm)</Label>
+                      <Input
+                        id="perimetro_cefalico"
+                        value={formData.datos_clinicos.perimetro_cefalico}
+                        onChange={(e) => setClinico("perimetro_cefalico", e.target.value)}
+                        disabled={loading}
+                      />
+                      <p className="text-xs text-muted-foreground">Solo aplica en lactantes y niños hasta 5 años.</p>
+                    </div>
+                  ) : null}
                   <div className="space-y-2">
-                    <Label htmlFor="perimetro_cefalico">Perímetro cefálico</Label>
-                    <Input
-                      id="perimetro_cefalico"
-                      value={formData.datos_clinicos.perimetro_cefalico}
-                      onChange={(e) => setClinico("perimetro_cefalico", e.target.value)}
-                      disabled={loading}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="perimetro_braquial">Perímetro braquial</Label>
+                    <Label htmlFor="perimetro_braquial">Perímetro braquial (cm)</Label>
                     <Input
                       id="perimetro_braquial"
                       value={formData.datos_clinicos.perimetro_braquial}
@@ -896,7 +992,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="perimetro_cintura">Perímetro de cintura</Label>
+                    <Label htmlFor="perimetro_cintura">Perímetro de cintura (cm)</Label>
                     <Input
                       id="perimetro_cintura"
                       value={formData.datos_clinicos.perimetro_cintura}
@@ -905,7 +1001,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="pliegue_tricipital">Pliegue tricipital</Label>
+                    <Label htmlFor="pliegue_tricipital">Pliegue tricipital (mm)</Label>
                     <Input
                       id="pliegue_tricipital"
                       value={formData.datos_clinicos.pliegue_tricipital}
@@ -914,11 +1010,33 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="pliegue_subescapular">Pliegue subescapular</Label>
+                    <Label htmlFor="pliegue_subescapular">Pliegue subescapular (mm)</Label>
                     <Input
                       id="pliegue_subescapular"
                       value={formData.datos_clinicos.pliegue_subescapular}
                       onChange={(e) => setClinico("pliegue_subescapular", e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pliegue_muslo">Pliegue muslo (mm)</Label>
+                    <Input
+                      id="pliegue_muslo"
+                      type="number"
+                      step="0.1"
+                      value={formData.datos_clinicos.pliegue_muslo}
+                      onChange={(e) => setClinico("pliegue_muslo", e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pliegue_pantorrilla">Pliegue pantorrilla (mm)</Label>
+                    <Input
+                      id="pliegue_pantorrilla"
+                      type="number"
+                      step="0.1"
+                      value={formData.datos_clinicos.pliegue_pantorrilla}
+                      onChange={(e) => setClinico("pliegue_pantorrilla", e.target.value)}
                       disabled={loading}
                     />
                   </div>
@@ -1257,8 +1375,9 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
               </div>
             </TabsContent>
           </Tabs>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
             <Button
               type="button"
               variant="outline"
@@ -1267,7 +1386,7 @@ export function NewPatientDialog({ patient, open, onOpenChange, onSuccess }: New
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading} className="gradient-primary">
+            <Button type="submit" disabled={loading || loadingProfile} className="gradient-primary">
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

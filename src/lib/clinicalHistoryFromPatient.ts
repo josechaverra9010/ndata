@@ -47,6 +47,8 @@ export type ClinicalHistoryFormBase = {
   perimetro_cintura: string;
   pliegue_tricipital: string;
   pliegue_subescapular: string;
+  pliegue_muslo: string;
+  pliegue_pantorrilla: string;
   imc: string;
   clasificacion_antropometrica: string;
   observaciones_antro: string;
@@ -112,6 +114,8 @@ export function emptyClinicalHistoryForm(): ClinicalHistoryForm {
     perimetro_cintura: "",
     pliegue_tricipital: "",
     pliegue_subescapular: "",
+    pliegue_muslo: "",
+    pliegue_pantorrilla: "",
     imc: "",
     clasificacion_antropometrica: "",
     observaciones_antro: "",
@@ -355,6 +359,8 @@ export function buildClinicalHistoryFromPatient(
     perimetro_cintura: dc.perimetro_cintura || "",
     pliegue_tricipital: dc.pliegue_tricipital || "",
     pliegue_subescapular: dc.pliegue_subescapular || "",
+    pliegue_muslo: dc.pliegue_muslo || "",
+    pliegue_pantorrilla: dc.pliegue_pantorrilla || "",
     imc: calcImc(p.peso_actual, p.altura),
     clasificacion_antropometrica: dc.clasificacion_antropometrica || "",
     observaciones_antro: dc.observaciones_antro || "",

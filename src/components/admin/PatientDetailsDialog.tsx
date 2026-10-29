@@ -151,6 +151,11 @@ interface Patient {
   acompanante_observaciones?: string | null;
   programa_eps?: string | null;
   examenes_bioquimicos?: Record<string, string> | null;
+  datos_clinicos?: Record<string, unknown> | null;
+  tipo_documento?: string | null;
+  numero_documento?: string | null;
+  pal_factor?: number | null;
+  fecha_nacimiento?: string | null;
   deleted_at?: string | null;
 }
 
@@ -159,7 +164,7 @@ interface PatientDetailsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdate?: () => void;
-  onEdit?: () => void;
+  onEdit?: (patient: Patient) => void;
   onViewPlans?: () => void;
   onClinicalHistory?: () => void;
   /** Vista desde papelera: mostrar recuperar / eliminar definitivo */
@@ -199,13 +204,44 @@ export function PatientDetailsDialog({
   const [showRecallForm, setShowRecallForm] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [fullPatient, setFullPatient] = useState<Patient | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
 
   useEffect(() => {
     setAvatarUrl(patient?.foto_perfil || null);
   }, [patient?.id, patient?.foto_perfil, open]);
 
+  useEffect(() => {
+    if (!open || !patient?.id) {
+      setFullPatient(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingProfile(true);
+      try {
+        const token = localStorage.getItem("userToken");
+        const res = await fetch(`${API_URL}/patients/${patient.id}`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        });
+        if (res.ok && !cancelled) {
+          setFullPatient(await res.json());
+        }
+      } catch {
+        /* keep list snapshot */
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, patient?.id, patient?.updated_at, patient?.nombres, patient?.telefono, patient?.peso_actual]);
+
   // SOLUCIÓN AL ERROR: Si no hay paciente, no renderizamos nada para evitar el crash
   if (!patient) return null;
+
+  const p: Patient = fullPatient ? { ...patient, ...fullPatient } : patient;
 
   // Función para obtener las iniciales del paciente
   const getInitials = (nombres: string, apellidos: string) => {
@@ -230,7 +266,7 @@ export function PatientDetailsDialog({
     try {
       setLoadingRecalls(true);
       const token = localStorage.getItem("userToken");
-      const response = await fetch(`${API_URL}/patients/${patient.id}/recalls`, {
+      const response = await fetch(`${API_URL}/patients/${p.id}/recalls`, {
         headers: {
           ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         }
@@ -262,7 +298,7 @@ export function PatientDetailsDialog({
       const token = localStorage.getItem("userToken");
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch(`${API_URL}/patient/${patient.id}/upload-avatar`, {
+      const response = await fetch(`${API_URL}/patient/${p.id}/upload-avatar`, {
         method: "POST",
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -298,7 +334,7 @@ export function PatientDetailsDialog({
           <div className="sticky top-0 z-10 border-b bg-gradient-to-br from-background via-background to-primary/[0.04] px-6 pt-6 pb-4">
             <DialogHeader>
               <DialogTitle className="sr-only">
-                {patient.nombres} {patient.apellidos}
+                {p.nombres} {p.apellidos}
               </DialogTitle>
               <DialogDescription className="sr-only">
                 Información detallada del paciente
@@ -307,13 +343,13 @@ export function PatientDetailsDialog({
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <Avatar className="h-16 w-16 border-2 border-primary/15 shadow-sm">
-                      <AvatarImage src={resolveMediaUrl(avatarUrl)} alt={`${patient.nombres} ${patient.apellidos}`} />
+                      <AvatarImage src={resolveMediaUrl(avatarUrl)} alt={`${p.nombres} ${p.apellidos}`} />
                       <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
-                        {getInitials(patient.nombres, patient.apellidos)}
+                        {getInitials(p.nombres, p.apellidos)}
                       </AvatarFallback>
                     </Avatar>
                     <span
-                      className={`absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background ${statusDot[patient.status] || statusDot.activo}`}
+                      className={`absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background ${statusDot[p.status] || statusDot.activo}`}
                     />
                     <input
                       ref={fileInputRef}
@@ -341,13 +377,13 @@ export function PatientDetailsDialog({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-lg tracking-tight truncate">
-                        {patient.nombres} {patient.apellidos}
+                        {p.nombres} {p.apellidos}
                       </span>
                       <Badge
                         variant="outline"
-                        className={`capitalize text-[11px] ${statusStyles[patient.status] || statusStyles.activo}`}
+                        className={`capitalize text-[11px] ${statusStyles[p.status] || statusStyles.activo}`}
                       >
-                        {patient.status}
+                        {p.status}
                       </Badge>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mt-1.5">
@@ -355,11 +391,11 @@ export function PatientDetailsDialog({
                         variant="secondary"
                         className="bg-primary/5 text-primary border-primary/10 text-[10px] uppercase font-bold tracking-wide"
                       >
-                        {patient.edad_formateada || "Edad no registrada"}
+                        {p.edad_formateada || "Edad no registrada"}
                       </Badge>
-                      {patient.email && (
+                      {p.email && (
                         <span className="text-xs text-muted-foreground truncate max-w-[220px]">
-                          {patient.email}
+                          {p.email}
                         </span>
                       )}
                     </div>
@@ -373,7 +409,7 @@ export function PatientDetailsDialog({
                     className="border-primary/20 hover:bg-primary/5 hover:text-primary"
                     onClick={() => {
                       onOpenChange(false);
-                      navigate(`/progress?patientId=${patient.id}`);
+                      navigate(`/progress?patientId=${p.id}`);
                     }}
                   >
                     <TrendingUp className="h-4 w-4 mr-2" />
@@ -385,7 +421,7 @@ export function PatientDetailsDialog({
                     className="border-primary/20 hover:bg-primary/5 hover:text-primary"
                     onClick={() => {
                       onOpenChange(false);
-                      navigate(`/messages?patientId=${patient.id}`);
+                      navigate(`/messages?patientId=${p.id}`);
                     }}
                   >
                     <MessageSquare className="h-4 w-4 mr-2" />
@@ -429,7 +465,7 @@ export function PatientDetailsDialog({
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</p>
-                      <p className="text-sm mt-0.5 truncate">{patient.email}</p>
+                      <p className="text-sm mt-0.5 truncate">{p.email}</p>
                     </div>
                   </div>
 
@@ -439,9 +475,23 @@ export function PatientDetailsDialog({
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Teléfono</p>
-                      <p className="text-sm mt-0.5">{patient.telefono || "No registrado"}</p>
+                      <p className="text-sm mt-0.5">{p.telefono || "No registrado"}</p>
                     </div>
                   </div>
+
+                  {(p.tipo_documento || p.numero_documento) && (
+                    <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
+                      <div className="rounded-lg bg-primary/10 p-2">
+                        <FileText className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Documento</p>
+                        <p className="text-sm mt-0.5">
+                          {[p.tipo_documento, p.numero_documento].filter(Boolean).join(" ") || "No registrado"}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors">
                     <div className="rounded-lg bg-primary/10 p-2">
@@ -449,7 +499,7 @@ export function PatientDetailsDialog({
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ID del sistema</p>
-                      <p className="text-sm mt-0.5">#{patient.id}</p>
+                      <p className="text-sm mt-0.5">#{p.id}</p>
                     </div>
                   </div>
 
@@ -459,11 +509,11 @@ export function PatientDetailsDialog({
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dirección</p>
-                      <p className="text-sm mt-0.5">{patient.direccion || "No registrada"}</p>
+                      <p className="text-sm mt-0.5">{p.direccion || "No registrada"}</p>
                     </div>
                   </div>
 
-                  {(patient.acompanante_nombre || patient.acompanante_telefono) && (
+                  {(p.acompanante_nombre || p.acompanante_telefono) && (
                     <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors md:col-span-2">
                       <div className="rounded-lg bg-primary/10 p-2">
                         <User className="h-4 w-4 text-primary" />
@@ -471,25 +521,25 @@ export function PatientDetailsDialog({
                       <div className="min-w-0 space-y-1">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Acompañante</p>
                         <p className="text-sm font-medium">
-                          {patient.acompanante_nombre || "—"}
-                          {patient.acompanante_parentesco ? ` (${patient.acompanante_parentesco})` : ""}
+                          {p.acompanante_nombre || "—"}
+                          {p.acompanante_parentesco ? ` (${p.acompanante_parentesco})` : ""}
                         </p>
-                        {patient.acompanante_telefono && (
-                          <p className="text-xs text-muted-foreground">Tel: {patient.acompanante_telefono}</p>
+                        {p.acompanante_telefono && (
+                          <p className="text-xs text-muted-foreground">Tel: {p.acompanante_telefono}</p>
                         )}
-                        {patient.acompanante_email && (
-                          <p className="text-xs text-muted-foreground">Email: {patient.acompanante_email}</p>
+                        {p.acompanante_email && (
+                          <p className="text-xs text-muted-foreground">Email: {p.acompanante_email}</p>
                         )}
-                        {patient.acompanante_documento && (
-                          <p className="text-xs text-muted-foreground">Doc: {patient.acompanante_documento}</p>
+                        {p.acompanante_documento && (
+                          <p className="text-xs text-muted-foreground">Doc: {p.acompanante_documento}</p>
                         )}
-                        {patient.acompanante_observaciones && (
-                          <p className="text-xs text-muted-foreground">{patient.acompanante_observaciones}</p>
+                        {p.acompanante_observaciones && (
+                          <p className="text-xs text-muted-foreground">{p.acompanante_observaciones}</p>
                         )}
                       </div>
                     </div>
                   )}
-                  {patient.programa_eps && (
+                  {p.programa_eps && (
                     <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors md:col-span-2">
                       <div className="rounded-lg bg-primary/10 p-2">
                         <Heart className="h-4 w-4 text-primary" />
@@ -498,7 +548,7 @@ export function PatientDetailsDialog({
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                           Programa al que pertenece a su EPS (si aplica)
                         </p>
-                        <p className="text-sm font-medium whitespace-pre-wrap">{patient.programa_eps}</p>
+                        <p className="text-sm font-medium whitespace-pre-wrap">{p.programa_eps}</p>
                       </div>
                     </div>
                   )}
@@ -511,7 +561,7 @@ export function PatientDetailsDialog({
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Próxima cita</p>
-                      <p className="text-sm mt-0.5">{formatDate(patient.proxima_cita)}</p>
+                      <p className="text-sm mt-0.5">{formatDate(p.proxima_cita)}</p>
                     </div>
                   </div>
 
@@ -521,7 +571,10 @@ export function PatientDetailsDialog({
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nivel de actividad</p>
-                      <p className="text-sm mt-0.5 capitalize">{patient.nivel_actividad || "No especificado"}</p>
+                      <p className="text-sm mt-0.5 capitalize">{p.nivel_actividad || "No especificado"}</p>
+                      {p.pal_factor != null && (
+                        <p className="text-xs text-muted-foreground mt-1">PAL: {p.pal_factor}</p>
+                      )}
                     </div>
                   </div>
 
@@ -531,7 +584,7 @@ export function PatientDetailsDialog({
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Rol</p>
-                      <p className="text-sm mt-0.5 capitalize">{patient.role}</p>
+                      <p className="text-sm mt-0.5 capitalize">{p.role}</p>
                     </div>
                   </div>
                 </div>
@@ -551,13 +604,13 @@ export function PatientDetailsDialog({
                         <div>
                           <p className="text-sm text-muted-foreground">Peso Actual</p>
                           <p className="text-2xl font-bold">
-                            {patient.peso_actual ? `${patient.peso_actual} kg` : "No registrado"}
+                            {p.peso_actual ? `${p.peso_actual} kg` : "No registrado"}
                           </p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Peso Objetivo</p>
                           <p className="text-2xl font-bold">
-                            {patient.peso_objetivo ? `${patient.peso_objetivo} kg` : "No registrado"}
+                            {p.peso_objetivo ? `${p.peso_objetivo} kg` : "No registrado"}
                           </p>
                         </div>
                       </div>
@@ -566,18 +619,18 @@ export function PatientDetailsDialog({
                       <div className="pt-2 border-t border-border">
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-sm text-muted-foreground">IMC (Índice de Masa Corporal)</p>
-                          {patient.peso_actual && patient.altura && (
+                          {p.peso_actual && p.altura && (
                             <Badge variant="outline" className={(() => {
-                              const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
-                              const imc = patient.peso_actual / (h * h);
+                              const h = p.altura > 3 ? p.altura / 100 : p.altura;
+                              const imc = p.peso_actual / (h * h);
                               if (imc < 18.5) return "text-blue-500 border-blue-200 bg-blue-50";
                               if (imc < 25) return "text-green-600 border-green-200 bg-green-50";
                               if (imc < 30) return "text-yellow-600 border-yellow-200 bg-yellow-50";
                               return "text-red-600 border-red-200 bg-red-50";
                             })()}>
                               {(() => {
-                                const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
-                                const imc = patient.peso_actual / (h * h);
+                                const h = p.altura > 3 ? p.altura / 100 : p.altura;
+                                const imc = p.peso_actual / (h * h);
                                 if (imc < 18.5) return "Bajo peso";
                                 if (imc < 25) return "Peso normal";
                                 if (imc < 30) return "Sobrepeso";
@@ -587,17 +640,17 @@ export function PatientDetailsDialog({
                           )}
                         </div>
                         <p className="text-2xl font-bold flex items-baseline gap-2">
-                          {patient.peso_actual && patient.altura ? (
+                          {p.peso_actual && p.altura ? (
                             <>
                               {(() => {
-                                const h = patient.altura > 3 ? patient.altura / 100 : patient.altura;
-                                return (patient.peso_actual / (h * h)).toFixed(2);
+                                const h = p.altura > 3 ? p.altura / 100 : p.altura;
+                                return (p.peso_actual / (h * h)).toFixed(2);
                               })()}
                               <span className="text-sm font-normal text-muted-foreground">kg/m²</span>
                             </>
                           ) : (
                             <span className="text-sm text-muted-foreground italic">
-                              {!patient.peso_actual ? "Falta peso" : "Falta altura"}
+                              {!p.peso_actual ? "Falta peso" : "Falta altura"}
                             </span>
                           )}
                         </p>
@@ -615,12 +668,12 @@ export function PatientDetailsDialog({
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-muted-foreground">Progreso Total</span>
-                        <span className="text-2xl font-bold text-primary">{patient.progreso}%</span>
+                        <span className="text-2xl font-bold text-primary">{p.progreso}%</span>
                       </div>
                       <div className="h-3 rounded-full bg-muted overflow-hidden">
                         <div
                           className="h-full rounded-full bg-primary transition-all duration-500"
-                          style={{ width: `${patient.progreso}%` }}
+                          style={{ width: `${p.progreso}%` }}
                         />
                       </div>
                     </div>
@@ -634,27 +687,27 @@ export function PatientDetailsDialog({
                     <div className="space-y-3 text-sm">
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Alergias</p>
-                        <p className="mt-0.5">{formatListOrText(patient.alergias)}</p>
+                        <p className="mt-0.5">{formatListOrText(p.alergias)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Preferencias</p>
-                        <p className="mt-0.5">{formatListOrText(patient.preferencias)}</p>
+                        <p className="mt-0.5">{formatListOrText(p.preferencias)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Condiciones médicas</p>
-                        <p className="mt-0.5">{patient.condiciones_medicas || "No registrado"}</p>
+                        <p className="mt-0.5">{p.condiciones_medicas || "No registrado"}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Objetivos de salud</p>
-                        <p className="mt-0.5">{patient.objetivos_salud || "No registrado"}</p>
+                        <p className="mt-0.5">{p.objetivos_salud || "No registrado"}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Alimentos que no le gustan</p>
-                        <p className="mt-0.5">{patient.alimentos_disgusto || "No registrado"}</p>
+                        <p className="mt-0.5">{p.alimentos_disgusto || "No registrado"}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">Antecedentes familiares</p>
-                        <p className="mt-0.5">{patient.antecedentes_familiares || "No registrado"}</p>
+                        <p className="mt-0.5">{p.antecedentes_familiares || "No registrado"}</p>
                       </div>
                     </div>
                   </div>
@@ -664,7 +717,7 @@ export function PatientDetailsDialog({
 
             <TabsContent value="bioquimico" className="space-y-4 mt-4">
               {(() => {
-                const bio = normalizeBioquimicos(patient.examenes_bioquimicos as any);
+                const bio = normalizeBioquimicos(p.examenes_bioquimicos as any);
                 const groups = [
                   { title: "Hemograma y otros", rows: BIO_HEMOGRAMA },
                   { title: "Otros", rows: BIO_OTROS },
@@ -735,9 +788,9 @@ export function PatientDetailsDialog({
                   <FileText className="h-5 w-5 text-primary" />
                   <h3 className="font-semibold">Evaluación Nutricional</h3>
                 </div>
-                {patient.evaluacion_nutricional ? (
+                {p.evaluacion_nutricional ? (
                   <div className="text-sm border rounded-md p-4 bg-muted/30 whitespace-pre-wrap leading-relaxed">
-                    {patient.evaluacion_nutricional}
+                    {p.evaluacion_nutricional}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-10 text-muted-foreground italic">
@@ -765,7 +818,7 @@ export function PatientDetailsDialog({
               {showRecallForm ? (
                 <div className="bg-muted/30 p-4 rounded-lg border border-border">
                   <Recordatorio24hForm
-                    patientId={patient.id}
+                    patientId={p.id}
                     onSuccess={() => {
                       setShowRecallForm(false);
                       fetchRecalls();
@@ -835,8 +888,8 @@ export function PatientDetailsDialog({
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {patient.frecuencia_consumo && Array.isArray(patient.frecuencia_consumo) && patient.frecuencia_consumo.length > 0 ? (
-                        patient.frecuencia_consumo.map((item: any) => (
+                      {p.frecuencia_consumo && Array.isArray(p.frecuencia_consumo) && p.frecuencia_consumo.length > 0 ? (
+                        p.frecuencia_consumo.map((item: any) => (
                           <tr key={item.grupo}>
                             <td className="p-3 font-medium">{item.grupo}</td>
                             <td className="p-3">
@@ -877,7 +930,7 @@ export function PatientDetailsDialog({
           </Tabs>
 
           <div className="flex items-center justify-end gap-2 pt-4 mt-2 border-t">
-            {inTrash || patient.deleted_at ? (
+            {inTrash || p.deleted_at ? (
               <>
                 <Button
                   variant="outline"
@@ -889,7 +942,7 @@ export function PatientDetailsDialog({
                     try {
                       const token = localStorage.getItem("userToken");
                       const response = await fetch(
-                        `${API_URL}/patients/${patient.id}/restore`,
+                        `${API_URL}/patients/${p.id}/restore`,
                         {
                           method: "POST",
                           headers: {
@@ -907,7 +960,7 @@ export function PatientDetailsDialog({
                       }
                       toast({
                         title: "Paciente recuperado",
-                        description: `${patient.nombres} ${patient.apellidos} volvió a la lista activa.`,
+                        description: `${p.nombres} ${p.apellidos} volvió a la lista activa.`,
                       });
                       onOpenChange(false);
                       onUpdate?.();
